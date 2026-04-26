@@ -20,6 +20,7 @@ const SVG = {
   governance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 017 7c0 3-2 5-4 6v3h-6v-3c-2-1-4-3-4-6a7 7 0 017-7z"/><path d="M9 18h6M10 21h4"/></svg>',
   grafana: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><polyline points="6 16 10 10 14 13 18 8"/><circle cx="6" cy="16" r="1" fill="currentColor"/></svg>',
+  radar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>',
 };
 
 function _getGreeting() {
@@ -192,6 +193,7 @@ export function render(container) {
 
       <div class="quick-actions">
         <div class="quick-chip" data-action="health">${SVG.health} Salud del sistema</div>
+        <div class="quick-chip" data-action="institutional-radar" style="color:#79c0ff;border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.06)">${SVG.radar} Radar institucional</div>
         <div class="quick-chip" data-action="clawd-direct">${SVG.brain} ATLAS Directo</div>
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
         <div class="quick-chip quant-chip" data-action="code-quant-dashboard" style="color:#00d4aa;border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.07)">${SVG.trading} Code Quant</div>
@@ -265,6 +267,10 @@ export function render(container) {
         <div class="app-tile" data-app="assistant">
           <div class="app-tile-icon">${SVG.brain}</div>
           <div class="app-tile-label">AI Assistant</div>
+        </div>
+        <div class="app-tile" data-app="institutional-radar" style="border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.05)">
+          <div class="app-tile-icon" style="color:#79c0ff">${SVG.radar}</div>
+          <div class="app-tile-label" style="color:#79c0ff">Radar institucional</div>
         </div>
         <div class="app-tile" data-app="monitor">
           <div class="app-tile-icon">${SVG.monitor}</div>
@@ -406,6 +412,7 @@ export function render(container) {
 
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
+    'institutional-radar': { href: '/radar/dashboard', newTab: true },
     workspace: { href: '/workspace', newTab: true },
     bitacora:  { hash: '/bitacora' },
     'rauli-vision': { hash: '/apps/vision' },
@@ -451,6 +458,7 @@ export function render(container) {
 
   const TILE_ROUTES = {
     'assistant':    { hash: '/chat' },
+    'institutional-radar': { href: '/radar/dashboard', newTab: true },
     'workspace-ext':{ href: '/workspace', newTab: true },
     'governance':   { hash: '/autonomy' },
     'approvals':    { hash: '/approvals' },
