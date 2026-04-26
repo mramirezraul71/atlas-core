@@ -72,11 +72,14 @@ class OllamaConfig:
     host: str = "http://localhost:11434"
     models: Dict[str, str] = field(
         default_factory=lambda: {
-            "coder": "deepseek-coder:6.7b",
-            "chat": "deepseek-r1:latest",
-            "fast": "llama3.2:latest",
+            "coder": "deepseek-coder-v2:16b",
+            "chat": "llama3.1:8b",
+            "fast": "llama3.1:8b",
             "embedding": "nomic-embed-text:latest",
-            "reasoning": "deepseek-r1:14b",
+            "reasoning": "qwen3-coder:30b",
+            "coder_fallback": "qwen2.5-coder:7b",
+            "vision": "qwen3-vl:30b",
+            "vision_fallback": "llama3.2-vision:11b",
         }
     )
     timeout: int = 120
@@ -92,7 +95,6 @@ class DeepSeekConfig:
     api_key: Optional[str] = None
     models: Dict[str, str] = field(
         default_factory=lambda: {
-            "coder": "deepseek-coder",
             "chat": "deepseek-chat",
             "reasoner": "deepseek-reasoner",
         }

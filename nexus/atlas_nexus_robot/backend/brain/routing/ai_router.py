@@ -7,7 +7,7 @@ import logging
 import os
 import time
 from enum import Enum
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 import yaml
@@ -43,6 +43,7 @@ class AIRouter:
         self.config_path = config_path
         self.config = self._load_config()
         self.provider_status = {}
+        self._last_routing_context: Dict[str, Any] = {}
         self.query_classifier = get_query_classifier()
 
         # Verificar disponibilidad de proveedores
@@ -155,14 +156,50 @@ class AIRouter:
         Returns:
             Tuple (provider_name, model_name, reason)
         """
-        # Clasificar la query si no se proporcionó tipo
+        # Clasificar y estimar complejidad para smart routing
+        query_analysis = self.query_classifier.analyze_query(query)
         if query_type is None:
-            query_type, confidence = self.query_classifier.classify_query(query)
+            query_type = QueryType(query_analysis["type"])
+        complexity_level = query_analysis.get("complexity_level", "medium")
+        complexity_score = float(query_analysis.get("complexity_score", 0.5))
 
         # Obtener routing rules
         routing_rules = self.config.get("routing_rules", {}).get(query_type.value, {})
-        preferred_model = routing_rules.get("preferred_model", "llama3.2")
-        fallback_provider = routing_rules.get("fallback_provider", "deepseek")
+        preferred_model = routing_rules.get("preferred_model", "llama3.1:8b")
+        fallback_provider = routing_rules.get("fallback_provider", "ollama")
+        smart_cfg = self.config.get("system", {}).get("smart_routing", {})
+        simple_max = float(smart_cfg.get("simple_max_complexity", 0.35))
+        complex_min = float(smart_cfg.get("complex_min_complexity", 0.68))
+        if complexity_score <= simple_max:
+            complexity_level = "simple"
+        elif complexity_score >= complex_min:
+            complexity_level = "complex"
+        else:
+            complexity_level = "medium"
+
+        # Smart routing: fast model para tareas simples y modelos pesados para complejas
+        if bool(smart_cfg.get("enabled", True)):
+            tier_model_candidates = self._get_tier_model_candidates(
+                routing_rules=routing_rules,
+                complexity_level=complexity_level,
+                fast_default_model=smart_cfg.get("fast_default_model", "llama3.1:8b"),
+            )
+            for model_name in tier_model_candidates:
+                provider_name = self._find_provider_for_model(model_name)
+                if provider_name:
+                    reason = (
+                        f"Smart routing {complexity_level} ({query_type.value}) -> "
+                        f"{provider_name}:{model_name}"
+                    )
+                    self._last_routing_context = {
+                        "query_type": query_type.value,
+                        "complexity_level": complexity_level,
+                        "complexity_score": complexity_score,
+                        "selected_tier": complexity_level,
+                        "routing_mode": "smart",
+                        "candidate_models": tier_model_candidates,
+                    }
+                    return provider_name, model_name, reason
 
         # Intentar proveedores en orden de prioridad
         for provider_name in self._get_providers_by_priority():
@@ -174,6 +211,13 @@ class AIRouter:
 
             # Buscar modelo preferido
             if preferred_model in available_models:
+                self._last_routing_context = {
+                    "query_type": query_type.value,
+                    "complexity_level": complexity_level,
+                    "complexity_score": complexity_score,
+                    "selected_tier": "normal",
+                    "routing_mode": "legacy-preferred",
+                }
                 return (
                     provider_name,
                     preferred_model,
@@ -183,6 +227,13 @@ class AIRouter:
             # Si no está el preferido, usar cualquier modelo disponible del proveedor
             if available_models:
                 model_name = list(available_models.keys())[0]
+                self._last_routing_context = {
+                    "query_type": query_type.value,
+                    "complexity_level": complexity_level,
+                    "complexity_score": complexity_score,
+                    "selected_tier": "fallback",
+                    "routing_mode": "legacy-any-model",
+                }
                 return (
                     provider_name,
                     model_name,
@@ -197,6 +248,13 @@ class AIRouter:
             fallback_models = fallback_config.get("models", {})
             if fallback_models:
                 model_name = list(fallback_models.keys())[0]
+                self._last_routing_context = {
+                    "query_type": query_type.value,
+                    "complexity_level": complexity_level,
+                    "complexity_score": complexity_score,
+                    "selected_tier": "fallback",
+                    "routing_mode": "fallback-provider",
+                }
                 return (
                     fallback_provider,
                     model_name,
@@ -209,6 +267,13 @@ class AIRouter:
             openai_models = openai_config.get("models", {})
             if openai_models:
                 model_name = list(openai_models.keys())[0]
+                self._last_routing_context = {
+                    "query_type": query_type.value,
+                    "complexity_level": complexity_level,
+                    "complexity_score": complexity_score,
+                    "selected_tier": "last-resort",
+                    "routing_mode": "openai-last-resort",
+                }
                 return "openai", model_name, "Último recurso disponible"
 
         raise Exception("No hay proveedores de IA disponibles")
@@ -220,6 +285,118 @@ class AIRouter:
             providers.items(), key=lambda x: x[1].get("priority", 999)
         )
         return [name for name, _ in sorted_providers]
+
+    def _find_provider_for_model(self, model_name: str) -> Optional[str]:
+        """Busca un proveedor disponible que tenga exactamente ese modelo."""
+        for provider_name in self._get_providers_by_priority():
+            if self.provider_status.get(provider_name) != ProviderStatus.AVAILABLE:
+                continue
+            models = (
+                self.config.get("providers", {}).get(provider_name, {}).get("models", {})
+            )
+            if model_name in models:
+                return provider_name
+        return None
+
+    def _get_tier_model_candidates(
+        self, routing_rules: Dict[str, Any], complexity_level: str, fast_default_model: str
+    ) -> List[str]:
+        """Construye la lista de modelos candidatos por complejidad."""
+        simple_model = routing_rules.get("simple_model")
+        normal_model = routing_rules.get("normal_model") or routing_rules.get(
+            "preferred_model"
+        )
+        complex_model = routing_rules.get("complex_model") or normal_model
+
+        if complexity_level == "simple":
+            ordered = [simple_model, fast_default_model, normal_model, complex_model]
+        elif complexity_level == "complex":
+            ordered = [complex_model, normal_model, simple_model, fast_default_model]
+        else:
+            ordered = [normal_model, simple_model, complex_model, fast_default_model]
+
+        seen = set()
+        unique_ordered: List[str] = []
+        for model_name in ordered:
+            if not model_name or model_name in seen:
+                continue
+            unique_ordered.append(model_name)
+            seen.add(model_name)
+        return unique_ordered
+
+    def _get_smart_routing_config(self) -> Dict[str, Any]:
+        """Obtiene bloque de configuracion smart_routing."""
+        return self.config.get("system", {}).get("smart_routing", {}) or {}
+
+    def _get_active_routing_profile_name(self) -> str:
+        """
+        Determina el perfil activo de smart routing.
+        Permite override por variable de entorno ATLAS_ROUTING_PROFILE.
+        """
+        smart_cfg = self._get_smart_routing_config()
+        profiles = smart_cfg.get("profiles", {})
+        env_profile = os.getenv("ATLAS_ROUTING_PROFILE", "").strip()
+        configured_profile = str(smart_cfg.get("active_profile", "")).strip()
+        candidate = env_profile or configured_profile
+
+        if isinstance(profiles, dict) and candidate in profiles:
+            return candidate
+        return configured_profile or "default"
+
+    def _get_smart_tier_values(
+        self, key: str, default_values: Dict[str, int]
+    ) -> Dict[str, int]:
+        """
+        Retorna valores por tier fusionando:
+        defaults -> valores globales -> perfil activo.
+        """
+        smart_cfg = self._get_smart_routing_config()
+        profile_name = self._get_active_routing_profile_name()
+        profiles = smart_cfg.get("profiles", {})
+        profile_cfg = (
+            profiles.get(profile_name, {})
+            if isinstance(profiles, dict)
+            and isinstance(profiles.get(profile_name, {}), dict)
+            else {}
+        )
+
+        merged: Dict[str, Any] = dict(default_values)
+        global_values = smart_cfg.get(key, {})
+        if isinstance(global_values, dict):
+            merged.update(global_values)
+        profile_values = profile_cfg.get(key, {})
+        if isinstance(profile_values, dict):
+            merged.update(profile_values)
+
+        normalized: Dict[str, int] = {}
+        for tier, fallback in default_values.items():
+            try:
+                normalized[tier] = int(merged.get(tier, fallback))
+            except Exception:
+                normalized[tier] = int(fallback)
+        return normalized
+
+    def _get_effective_max_tokens(self, model_config: Dict[str, Any]) -> int:
+        """
+        Ajusta max_tokens por tier para mantener respuestas agiles en fast-path
+        y permitir mas salida en tareas complejas.
+        """
+        configured_max = int(model_config.get("max_tokens", 4096))
+        tier = str(self._last_routing_context.get("selected_tier") or "medium")
+        default_limits = {"simple": 160, "medium": 420, "complex": 900}
+        tier_limits = self._get_smart_tier_values("output_tokens", default_limits)
+        tier_limit = int(tier_limits.get(tier, default_limits.get(tier, 420)))
+        return max(64, min(configured_max, tier_limit))
+
+    def _get_effective_timeout_seconds(self) -> int:
+        """Timeout por tier para evitar cortes prematuros en modelos pesados."""
+        tier = str(self._last_routing_context.get("selected_tier") or "medium")
+        default_timeout = {"simple": 40, "medium": 90, "complex": 150}
+        tier_timeout = self._get_smart_tier_values(
+            "request_timeout_seconds", default_timeout
+        )
+        timeout_s = int(tier_timeout.get(tier, default_timeout.get(tier, 90)))
+        return max(20, timeout_s)
 
     def generate_response(self, query: str, query_type: QueryType = None) -> Dict:
         """
@@ -263,7 +440,9 @@ class AIRouter:
                 "reason": reason,
                 "cost": cost,
                 "response_time": round(response_time, 2),
-                "query_type": query_type.value if query_type else "unknown",
+                "query_type": self._last_routing_context.get(
+                    "query_type", query_type.value if query_type else "unknown"
+                ),
                 "metadata": {
                     "provider_priority": provider_config.get("priority", 999),
                     "model_specialty": provider_config.get("models", {})
@@ -272,6 +451,18 @@ class AIRouter:
                     "max_tokens": provider_config.get("models", {})
                     .get(model_name, {})
                     .get("max_tokens", 4096),
+                    "routing_mode": self._last_routing_context.get("routing_mode"),
+                    "selected_tier": self._last_routing_context.get("selected_tier"),
+                    "routing_profile": self._get_active_routing_profile_name(),
+                    "complexity_level": self._last_routing_context.get(
+                        "complexity_level"
+                    ),
+                    "complexity_score": self._last_routing_context.get(
+                        "complexity_score"
+                    ),
+                    "candidate_models": self._last_routing_context.get(
+                        "candidate_models", []
+                    ),
                 },
             }
 
@@ -302,12 +493,14 @@ class AIRouter:
                 "stream": False,
                 "options": {
                     "temperature": model_config.get("temperature", 0.7),
-                    "num_predict": model_config.get("max_tokens", 4096),
+                    "num_predict": self._get_effective_max_tokens(model_config),
                 },
             }
 
             response = requests.post(
-                f"{base_url}/api/generate", json=payload, timeout=30
+                f"{base_url}/api/generate",
+                json=payload,
+                timeout=self._get_effective_timeout_seconds(),
             )
 
             if response.status_code == 200:
@@ -333,7 +526,7 @@ class AIRouter:
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": query}],
-                "max_tokens": model_config.get("max_tokens", 4096),
+                "max_tokens": self._get_effective_max_tokens(model_config),
                 "temperature": model_config.get("temperature", 0.7),
                 "stream": False,
             }
@@ -347,7 +540,7 @@ class AIRouter:
                 f"{provider_config.get('base_url')}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=30,
+                timeout=self._get_effective_timeout_seconds(),
             )
 
             if response.status_code == 200:
@@ -373,7 +566,7 @@ class AIRouter:
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": query}],
-                "max_tokens": model_config.get("max_tokens", 4096),
+                "max_tokens": self._get_effective_max_tokens(model_config),
                 "temperature": model_config.get("temperature", 0.7),
                 "stream": False,
             }
@@ -387,7 +580,7 @@ class AIRouter:
                 f"{provider_config.get('base_url')}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=30,
+                timeout=self._get_effective_timeout_seconds(),
             )
 
             if response.status_code == 200:

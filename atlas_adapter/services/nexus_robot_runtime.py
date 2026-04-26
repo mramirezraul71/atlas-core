@@ -237,7 +237,7 @@ def reconnect_cuerpo(repo_root: Path, env_path: Path) -> dict:
         env["NEXUS_ATLAS_PATH"] = str(nexus_path)
         env["NEXUS_ROBOT_PATH"] = str(robot_path)
         result = subprocess.run(
-            [py, str(script)],
+            [py, str(script), "--include-nexus"],
             cwd=str(repo_root),
             env=env,
             capture_output=True,

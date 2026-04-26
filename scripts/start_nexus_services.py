@@ -36,24 +36,45 @@ ROBOT_HEALTH_URLS = (
 )
 
 
-def _resolve_python() -> str:
-    atlas_py = (os.getenv("ATLAS_PYTHON") or "").strip()
-    if atlas_py and Path(atlas_py).exists():
-        return atlas_py
-    candidates = [
+def _resolve_python(service: str) -> str:
+    service = (service or "").strip().lower()
+    if service == "nexus":
+        override_var = "ATLAS_NEXUS_PYTHON"
+        service_candidates = [
+            REPO_ROOT / ".venv_nexus" / "Scripts" / "python.exe",
+            NEXUS_DIR / "venv" / "Scripts" / "python.exe",
+        ]
+    elif service == "robot":
+        override_var = "ATLAS_ROBOT_PYTHON"
+        service_candidates = [
+            REPO_ROOT / ".venv_robot" / "Scripts" / "python.exe",
+            ROBOT_DIR / "venv" / "Scripts" / "python.exe",
+        ]
+    else:
+        override_var = "ATLAS_PYTHON"
+        service_candidates = []
+
+    for env_var in (override_var, "ATLAS_PYTHON"):
+        env_py = (os.getenv(env_var) or "").strip()
+        if env_py and Path(env_py).exists():
+            return env_py
+
+    candidates = service_candidates + [
         REPO_ROOT / ".venv" / "Scripts" / "python.exe",
         REPO_ROOT / "venv" / "Scripts" / "python.exe",
     ]
     for c in candidates:
         if c.exists():
             return str(c)
+
     env_py = (os.getenv("PYTHON") or "").strip()
     if env_py and Path(env_py).exists():
         return env_py
     return "python"
 
 
-PYTHON = _resolve_python()
+NEXUS_PYTHON = _resolve_python("nexus")
+ROBOT_PYTHON = _resolve_python("robot")
 
 
 def _start(cmd: list[str], cwd: Path, name: str) -> bool:
@@ -134,12 +155,16 @@ def start_robot_only() -> str:
         return "Robot(already)"
     main_py = ROBOT_DIR / "main.py"
     if main_py.exists():
-        return "Robot" if _start([PYTHON, "main.py"], ROBOT_DIR, "Robot") else "none"
+        return (
+            "Robot"
+            if _start([ROBOT_PYTHON, "main.py"], ROBOT_DIR, "Robot")
+            else "none"
+        )
     return (
         "Robot"
         if _start(
             [
-                PYTHON,
+                ROBOT_PYTHON,
                 "-m",
                 "uvicorn",
                 "main:app",
@@ -162,7 +187,9 @@ def main(robot_only: bool = False, include_nexus: bool = False):
     if include_nexus and NEXUS_DIR.exists():
         if _port_listening(8000) or _service_is_healthy(NEXUS_HEALTH_URLS):
             started.append("NEXUS(already)")
-        elif _start([PYTHON, "nexus.py", "--mode", "api"], NEXUS_DIR, "NEXUS"):
+        elif _start(
+            [NEXUS_PYTHON, "nexus.py", "--mode", "api"], NEXUS_DIR, "NEXUS"
+        ):
             started.append("NEXUS")
 
     if ROBOT_DIR.exists():
@@ -171,12 +198,12 @@ def main(robot_only: bool = False, include_nexus: bool = False):
         else:
             main_py = ROBOT_DIR / "main.py"
             if main_py.exists():
-                if _start([PYTHON, "main.py"], ROBOT_DIR, "Robot"):
+                if _start([ROBOT_PYTHON, "main.py"], ROBOT_DIR, "Robot"):
                     started.append("Robot")
             else:
                 if _start(
                     [
-                        PYTHON,
+                        ROBOT_PYTHON,
                         "-m",
                         "uvicorn",
                         "main:app",
