@@ -132,6 +132,21 @@ try:
 except Exception:
     pass
 
+# Desarrollo / depuración: nunca servir JS/CSS/HTML V4 o Radar desde caché del navegador.
+_NOCACHE_PATH_FRAGMENTS = ("/v4/static/", "/ui/static/", "/radar/static/", "/radar/dashboard/assets/")
+_NOCACHE_EXACT = frozenset({"/ui", "/v4", "/radar/dashboard"})
+
+
+@app.middleware("http")
+async def add_nocache_static_assets(request: Request, call_next):
+    response = await call_next(request)
+    p = request.url.path
+    if p in _NOCACHE_EXACT or any(frag in p for frag in _NOCACHE_PATH_FRAGMENTS):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 
 class Step(BaseModel):
     tool: str
@@ -5496,8 +5511,8 @@ def serve_ui_legacy():
     return {"ok": False, "error": "dashboard.html not found"}
 
 
-@app.get("/ui/static/{file_path:path}")
-async def serve_ui_static(file_path: str):
+@app.api_route("/ui/static/{file_path:path}", methods=["GET", "HEAD"])
+async def serve_ui_static(request: Request, file_path: str):
     """Serve v4 static assets under /ui/static/* (kept for compatibility)."""
     from fastapi import HTTPException
 
@@ -5539,8 +5554,8 @@ def serve_v4():
     return RedirectResponse(url="/ui", status_code=302)
 
 
-@app.get("/v4/static/{file_path:path}")
-async def serve_v4_static(file_path: str):
+@app.api_route("/v4/static/{file_path:path}", methods=["GET", "HEAD"])
+async def serve_v4_static(request: Request, file_path: str):
     """Serve v4 static assets (JS, CSS) for the landing."""
     from fastapi import HTTPException
 
@@ -17892,201 +17907,355 @@ async def quant_ui_root():
     raise HTTPException(status_code=404, detail="Code-Quant dashboard not built")
 
 
+_OPTIONS_STATUS_CACHE_LOCK = threading.Lock()
+_OPTIONS_STATUS_CACHE_PAYLOAD: dict[str, Any] | None = None
+_OPTIONS_STATUS_CACHE_MONO: float = 0.0
+_OPTIONS_STATUS_CACHE_TTL_SEC = max(
+    1.0, float(os.getenv("ATLAS_OPTIONS_STATUS_CACHE_TTL_SEC", "8"))
+)
+_OPTIONS_STATUS_STALE_MAX_SEC = max(
+    _OPTIONS_STATUS_CACHE_TTL_SEC,
+    float(os.getenv("ATLAS_OPTIONS_STATUS_STALE_MAX_SEC", "180")),
+)
+_OPTIONS_STATUS_BUILD_TIMEOUT_SEC = max(
+    1.0, float(os.getenv("ATLAS_OPTIONS_STATUS_BUILD_TIMEOUT_SEC", "6"))
+)
+_OPTIONS_STATUS_PROM_TIMEOUT_SEC = max(
+    0.5, float(os.getenv("ATLAS_OPTIONS_STATUS_PROM_TIMEOUT_SEC", "1.5"))
+)
+_OPTIONS_STATUS_METRICS_TIMEOUT_SEC = max(
+    0.5, float(os.getenv("ATLAS_OPTIONS_STATUS_METRICS_TIMEOUT_SEC", "1.5"))
+)
+_OPTIONS_STATUS_PERF_TIMEOUT_SEC = max(
+    0.5, float(os.getenv("ATLAS_OPTIONS_STATUS_PERF_TIMEOUT_SEC", "2.0"))
+)
+_OPTIONS_STATUS_REFRESH_LOCK = asyncio.Lock()
+
+
+def _options_status_cache_enabled() -> bool:
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return False
+    raw = (os.getenv("ATLAS_OPTIONS_STATUS_CACHE_ENABLED", "true") or "").strip().lower()
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
+def _options_status_cache_get(max_age_sec: float) -> dict[str, Any] | None:
+    with _OPTIONS_STATUS_CACHE_LOCK:
+        payload = _OPTIONS_STATUS_CACHE_PAYLOAD
+        ts = _OPTIONS_STATUS_CACHE_MONO
+    if payload is None:
+        return None
+    age = time.monotonic() - ts
+    if age > max_age_sec:
+        return None
+    return dict(payload)
+
+
+def _options_status_cache_put(payload: dict[str, Any]) -> None:
+    with _OPTIONS_STATUS_CACHE_LOCK:
+        global _OPTIONS_STATUS_CACHE_PAYLOAD, _OPTIONS_STATUS_CACHE_MONO
+        _OPTIONS_STATUS_CACHE_PAYLOAD = dict(payload)
+        _OPTIONS_STATUS_CACHE_MONO = time.monotonic()
+
+
+def _options_status_with_meta(
+    payload: dict[str, Any], cache_state: str, refresh_error: str | None = None
+) -> dict[str, Any]:
+    out = dict(payload)
+    out["cache_state"] = cache_state
+    if refresh_error:
+        out["last_refresh_error"] = refresh_error
+    return out
+
+
+def _options_status_bootstrap_fallback(error_text: str) -> dict[str, Any]:
+    now_utc = datetime.now(timezone.utc).isoformat()
+    return {
+        "ok": True,
+        "status": "DEGRADED",
+        "automation_mode": "paper_only",
+        "loop_mode": "session_only",
+        "trades_completed_total": 0,
+        "trades_closed_today": 0,
+        "wr_basic": None,
+        "pf_basic": None,
+        "iv_rank_current": None,
+        "iv_rank_quality_tier": None,
+        "iv_rank_quality_score": None,
+        "journal_events_today": 0,
+        "journal_sessions_today": 0,
+        "journal_last_write_age_seconds": None,
+        "go_sessions_today": 0,
+        "blocked_sessions_today": 0,
+        "go_nogo_label": "DEGRADED",
+        "go_nogo_gauge_hint": None,
+        "symbol": None,
+        "win_rate_approx": None,
+        "paper_trades_closed_today": 0,
+        "paper_trades_target": 100,
+        "paper_trades_progress_pct": 0.0,
+        "grafana_health_dashboard_url": None,
+        "grafana_signals_dashboard_url": None,
+        "grafana_paper_performance_dashboard_url": None,
+        "options_ui_url": "/quant-ui",
+        "last_updated_utc": now_utc,
+        "notes": f"options status fallback active: {error_text}",
+    }
+
+
+def _build_options_engine_status_snapshot() -> dict[str, Any]:
+    import concurrent.futures
+    import urllib.parse
+    import urllib.request
+
+    def _query_prometheus(expr: str) -> list[dict[str, Any]]:
+        base = os.environ.get("ATLAS_PROMETHEUS_URL", "http://127.0.0.1:9090").rstrip("/")
+        url = f"{base}/api/v1/query?query={urllib.parse.quote(expr, safe='')}"
+        with urllib.request.urlopen(url, timeout=_OPTIONS_STATUS_PROM_TIMEOUT_SEC) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return list((((payload or {}).get("data") or {}).get("result") or []))
+
+    def _query_local_metrics() -> str:
+        base = os.environ.get("ATLAS_CODE_QUANT_METRICS_URL", "http://127.0.0.1:8795/metrics")
+        with urllib.request.urlopen(base, timeout=_OPTIONS_STATUS_METRICS_TIMEOUT_SEC) as resp:
+            return resp.read().decode("utf-8", errors="ignore")
+
+    def _query_paper_performance() -> dict[str, Any] | None:
+        base = os.environ.get("ATLAS_CODE_QUANT_BASE_URL", "http://127.0.0.1:8795").rstrip("/")
+        url = f"{base}/options/paper-performance"
+        with urllib.request.urlopen(url, timeout=_OPTIONS_STATUS_PERF_TIMEOUT_SEC) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+        payload = json.loads(raw)
+        return payload if isinstance(payload, dict) else None
+
+    _metrics_text_cache: str | None = None
+    _metrics_text_lock = threading.Lock()
+
+    def _metrics_scrape_value(metric_name: str) -> float | None:
+        nonlocal _metrics_text_cache
+        try:
+            if _metrics_text_cache is None:
+                with _metrics_text_lock:
+                    if _metrics_text_cache is None:
+                        _metrics_text_cache = _query_local_metrics()
+            pattern = re.compile(
+                rf"^{re.escape(metric_name)}(?:\{{[^}}]*\}})?\s+([-+0-9.eE]+)\s*$",
+                re.MULTILINE,
+            )
+            match = pattern.search(_metrics_text_cache or "")
+            if not match:
+                return None
+            return float(match.group(1))
+        except Exception:
+            return None
+
+    def _series_value(expr: str) -> float | None:
+        try:
+            rows = _query_prometheus(expr)
+            raw = ((rows[0] or {}).get("value") or [None, None])[1] if rows else None
+            if raw is None:
+                return _metrics_scrape_value(expr)
+            return float(raw)
+        except Exception:
+            return _metrics_scrape_value(expr)
+
+    def _status_from_go_nogo(go_value: float | None) -> str:
+        if go_value is None:
+            return "DEGRADED"
+        if go_value >= 0.75:
+            return "GO"
+        if go_value > 0.0:
+            return "DEGRADED"
+        return "NO_GO"
+
+    def _iv_quality_tier_from_score(score: float | None) -> int | None:
+        if score is None:
+            return None
+        if score >= 0.9:
+            return 2
+        if score >= 0.5:
+            return 1
+        return 0
+
+    metric_names = [
+        "atlas_options_session_go_nogo",
+        "atlas_options_paper_trades_closed_today",
+        "atlas_options_paper_trades_open",
+        "atlas_options_journal_events_today",
+        "atlas_options_journal_sessions_today",
+        "atlas_options_journal_last_write_age_seconds",
+        "atlas_options_iv_rank_quality_score",
+        "atlas_options_iv_rank_value",
+        "atlas_options_paper_win_rate_ratio",
+        "atlas_options_paper_profit_factor",
+    ]
+    metric_values: dict[str, float | None] = {}
+    max_workers = max(1, min(8, len(metric_names)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(_series_value, name): name for name in metric_names}
+        for fut in concurrent.futures.as_completed(futures):
+            name = futures[fut]
+            try:
+                metric_values[name] = fut.result()
+            except Exception:
+                metric_values[name] = None
+
+    go_nogo = metric_values.get("atlas_options_session_go_nogo")
+    closed_today = metric_values.get("atlas_options_paper_trades_closed_today")
+    open_today = metric_values.get("atlas_options_paper_trades_open")
+    journal_events = metric_values.get("atlas_options_journal_events_today")
+    journal_sessions = metric_values.get("atlas_options_journal_sessions_today")
+    journal_age = metric_values.get("atlas_options_journal_last_write_age_seconds")
+    iv_rank_score = metric_values.get("atlas_options_iv_rank_quality_score")
+    iv_rank_current = metric_values.get("atlas_options_iv_rank_value")
+    if iv_rank_current is None:
+        iv_rank_current = _series_value("atlas_options_iv_rank_current")
+    wr_basic = metric_values.get("atlas_options_paper_win_rate_ratio")
+    pf_basic = metric_values.get("atlas_options_paper_profit_factor")
+    closed_today_i = int(closed_today or 0)
+    trades_completed_total = closed_today_i
+    blocked_sessions_today = 0
+    go_sessions_today = 0
+    perf_snapshot: dict[str, Any] | None = None
+    perf_ok = False
+    try:
+        perf_snapshot = _query_paper_performance()
+        perf_ok = bool((perf_snapshot or {}).get("ok"))
+        if perf_ok:
+            summary = (perf_snapshot or {}).get("summary")
+            if isinstance(summary, dict):
+                trades_completed_total = int(
+                    summary.get("closed_trades_total") or trades_completed_total
+                )
+                wr_basic = summary.get("win_rate_pct")
+                pf_basic = summary.get("profit_factor")
+                blocked_sessions_today = int(summary.get("blocked_sessions_today") or 0)
+                go_sessions_today = int(summary.get("go_sessions_today") or 0)
+    except Exception:
+        perf_ok = False
+
+    open_today_i = int(open_today or 0)
+    journal_events_i = int(journal_events or 0)
+    journal_sessions_i = int(journal_sessions or 0)
+    status = _status_from_go_nogo(go_nogo)
+    if journal_sessions_i > 0 and closed_today_i == 0 and open_today_i == 0:
+        loop_mode = "session_only"
+    else:
+        loop_mode = "full_cycle"
+
+    notes: list[str] = []
+    if iv_rank_current is None:
+        notes.append("iv_rank metrics not wired yet")
+    if journal_events_i <= 0:
+        notes.append("journal has no events today")
+    elif loop_mode == "session_only":
+        notes.append("session plan is live but entry/close/autoclose loop is not active yet")
+    if journal_age is not None and journal_age > 300:
+        notes.append("journal write age is stale")
+    if wr_basic is not None:
+        try:
+            wr_basic = float(wr_basic)
+        except (TypeError, ValueError):
+            wr_basic = None
+    if pf_basic is not None:
+        try:
+            pf_basic = float(pf_basic)
+        except (TypeError, ValueError):
+            pf_basic = None
+    if wr_basic is not None and wr_basic < 0:
+        wr_basic = None
+    if pf_basic is not None and pf_basic < 0:
+        pf_basic = None
+    if not perf_ok:
+        notes.append("paper performance metrics unavailable; using fallback metrics")
+    elif blocked_sessions_today > 0:
+        notes.append(f"go sessions blocked by sizing today={blocked_sessions_today}")
+        if status == "GO":
+            status = "DEGRADED"
+
+    grafana_url = os.environ.get("ATLAS_GRAFANA_BASE_URL", "http://localhost:3002").rstrip("/")
+    target = 100
+    progress = min(100.0, 100.0 * closed_today_i / target) if target else 0.0
+    return {
+        "ok": True,
+        "status": status,
+        "automation_mode": "paper_only",
+        "loop_mode": loop_mode,
+        "trades_completed_total": trades_completed_total,
+        "trades_closed_today": closed_today_i,
+        "wr_basic": wr_basic,
+        "pf_basic": pf_basic,
+        "iv_rank_current": iv_rank_current,
+        "iv_rank_quality_tier": _iv_quality_tier_from_score(iv_rank_score),
+        "iv_rank_quality_score": iv_rank_score,
+        "journal_events_today": journal_events_i,
+        "journal_sessions_today": journal_sessions_i,
+        "journal_last_write_age_seconds": journal_age,
+        "go_sessions_today": go_sessions_today,
+        "blocked_sessions_today": blocked_sessions_today,
+        "go_nogo_label": status.replace("_", "-"),
+        "go_nogo_gauge_hint": go_nogo,
+        "symbol": None,
+        "win_rate_approx": wr_basic,
+        "paper_trades_closed_today": closed_today_i,
+        "paper_trades_target": target,
+        "paper_trades_progress_pct": progress,
+        "grafana_health_dashboard_url": f"{grafana_url}/d/atlas-options-health/options-engine-health",
+        "grafana_signals_dashboard_url": f"{grafana_url}/d/atlas-options-signals-intent/options-engine-signals-intent",
+        "grafana_paper_performance_dashboard_url": f"{grafana_url}/d/atlas-options-paper-performance/options-engine-paper-performance",
+        "options_ui_url": "/quant-ui",
+        "last_updated_utc": datetime.now(timezone.utc).isoformat(),
+        "notes": "; ".join(notes) if notes else "paper session status derived from live Prometheus metrics",
+    }
+
+
 @app.get("/api/options-engine-status", include_in_schema=False)
 async def options_engine_status():
     """Snapshot ligero del Options Engine paper para el hub 8791."""
-    try:
-        import urllib.parse
-        import urllib.request
-        import re
+    cache_enabled = _options_status_cache_enabled()
 
-        def _query_prometheus(expr: str) -> list[dict[str, Any]]:
-            base = os.environ.get("ATLAS_PROMETHEUS_URL", "http://127.0.0.1:9090").rstrip("/")
-            url = f"{base}/api/v1/query?query={urllib.parse.quote(expr, safe='')}"
-            with urllib.request.urlopen(url, timeout=5) as resp:
-                payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
-            return list((((payload or {}).get("data") or {}).get("result") or []))
+    if cache_enabled:
+        fresh = _options_status_cache_get(_OPTIONS_STATUS_CACHE_TTL_SEC)
+        if fresh is not None:
+            return _options_status_with_meta(fresh, "fresh")
 
-        def _query_local_metrics() -> str:
-            base = os.environ.get("ATLAS_CODE_QUANT_METRICS_URL", "http://127.0.0.1:8795/metrics")
-            with urllib.request.urlopen(base, timeout=5) as resp:
-                return resp.read().decode("utf-8", errors="ignore")
+    # Evita tormenta de requests cuando varios clientes consultan a la vez.
+    if _OPTIONS_STATUS_REFRESH_LOCK.locked():
+        if cache_enabled:
+            stale = _options_status_cache_get(_OPTIONS_STATUS_STALE_MAX_SEC)
+            if stale is not None:
+                return _options_status_with_meta(stale, "stale_refreshing")
+        return _options_status_bootstrap_fallback("options snapshot warming up")
 
-        def _query_paper_performance() -> dict[str, Any] | None:
-            base = os.environ.get("ATLAS_CODE_QUANT_BASE_URL", "http://127.0.0.1:8795").rstrip("/")
-            url = f"{base}/options/paper-performance"
-            with urllib.request.urlopen(url, timeout=5) as resp:
-                raw = resp.read().decode("utf-8", errors="ignore")
-            payload = json.loads(raw)
-            return payload if isinstance(payload, dict) else None
-
-        _metrics_text_cache: str | None = None
-
-        def _metrics_scrape_value(metric_name: str) -> float | None:
-            nonlocal _metrics_text_cache
-            try:
-                if _metrics_text_cache is None:
-                    _metrics_text_cache = _query_local_metrics()
-                pattern = re.compile(rf"^{re.escape(metric_name)}(?:\{{[^}}]*\}})?\s+([-+0-9.eE]+)\s*$", re.MULTILINE)
-                match = pattern.search(_metrics_text_cache)
-                if not match:
-                    return None
-                return float(match.group(1))
-            except Exception:
-                return None
-
-        def _series_value(expr: str) -> float | None:
-            rows = _query_prometheus(expr)
-            if not rows:
-                return _metrics_scrape_value(expr)
-            raw = ((rows[0] or {}).get("value") or [None, None])[1]
-            try:
-                return float(raw)
-            except (TypeError, ValueError):
-                return _metrics_scrape_value(expr)
-
-        def _status_from_go_nogo(go_value: float | None) -> str:
-            if go_value is None:
-                return "DEGRADED"
-            if go_value >= 0.75:
-                return "GO"
-            if go_value > 0.0:
-                return "DEGRADED"
-            return "NO_GO"
-
-        def _iv_quality_tier_from_score(score: float | None) -> int | None:
-            if score is None:
-                return None
-            if score >= 0.9:
-                return 2
-            if score >= 0.5:
-                return 1
-            return 0
-
-        go_nogo = _series_value("atlas_options_session_go_nogo")
-        closed_today = _series_value("atlas_options_paper_trades_closed_today")
-        open_today = _series_value("atlas_options_paper_trades_open")
-        journal_events = _series_value("atlas_options_journal_events_today")
-        journal_sessions = _series_value("atlas_options_journal_sessions_today")
-        journal_age = _series_value("atlas_options_journal_last_write_age_seconds")
-        iv_rank_score = _series_value("atlas_options_iv_rank_quality_score")
-        iv_rank_current = _series_value("atlas_options_iv_rank_value")
-        if iv_rank_current is None:
-            iv_rank_current = _series_value("atlas_options_iv_rank_current")
-        wr_basic = _series_value("atlas_options_paper_win_rate_ratio")
-        pf_basic = _series_value("atlas_options_paper_profit_factor")
-        closed_today_i = int(closed_today or 0)
-        trades_completed_total = closed_today_i
-        blocked_sessions_today = 0
-        go_sessions_today = 0
-        perf_snapshot: dict[str, Any] | None = None
-        perf_ok = False
+    async with _OPTIONS_STATUS_REFRESH_LOCK:
+        if cache_enabled:
+            fresh = _options_status_cache_get(_OPTIONS_STATUS_CACHE_TTL_SEC)
+            if fresh is not None:
+                return _options_status_with_meta(fresh, "fresh")
         try:
-            perf_snapshot = _query_paper_performance()
-            perf_ok = bool((perf_snapshot or {}).get("ok"))
-            if perf_ok:
-                summary = (perf_snapshot or {}).get("summary")
-                if isinstance(summary, dict):
-                    # Reglas solicitadas: derivar desde /options/paper-performance.
-                    trades_completed_total = int(summary.get("closed_trades_total") or trades_completed_total)
-                    wr_basic = summary.get("win_rate_pct")
-                    pf_basic = summary.get("profit_factor")
-                    blocked_sessions_today = int(summary.get("blocked_sessions_today") or 0)
-                    go_sessions_today = int(summary.get("go_sessions_today") or 0)
-        except Exception:
-            perf_ok = False
+            payload = await asyncio.wait_for(
+                asyncio.to_thread(_build_options_engine_status_snapshot),
+                timeout=_OPTIONS_STATUS_BUILD_TIMEOUT_SEC,
+            )
+        except Exception as exc:
+            error_text = str(exc) or exc.__class__.__name__
+            if cache_enabled:
+                stale = _options_status_cache_get(_OPTIONS_STATUS_STALE_MAX_SEC)
+                if stale is not None:
+                    out = _options_status_with_meta(
+                        stale,
+                        "stale_error",
+                        refresh_error=error_text,
+                    )
+                    base_note = str(out.get("notes") or "").strip()
+                    extra = f"metrics refresh delayed: {error_text}"
+                    out["notes"] = f"{base_note}; {extra}" if base_note else extra
+                    return out
+            return _options_status_bootstrap_fallback(error_text)
 
-        open_today_i = int(open_today or 0)
-        journal_events_i = int(journal_events or 0)
-        journal_sessions_i = int(journal_sessions or 0)
-        status = _status_from_go_nogo(go_nogo)
-        if journal_sessions_i > 0 and closed_today_i == 0 and open_today_i == 0:
-            loop_mode = "session_only"
-        else:
-            loop_mode = "full_cycle"
-
-        notes: list[str] = []
-        if iv_rank_current is None:
-            notes.append("iv_rank metrics not wired yet")
-        if journal_events_i <= 0:
-            notes.append("journal has no events today")
-        elif loop_mode == "session_only":
-            notes.append("session plan is live but entry/close/autoclose loop is not active yet")
-        if journal_age is not None and journal_age > 300:
-            notes.append("journal write age is stale")
-        if wr_basic is not None:
-            try:
-                wr_basic = float(wr_basic)
-            except (TypeError, ValueError):
-                wr_basic = None
-        if pf_basic is not None:
-            try:
-                pf_basic = float(pf_basic)
-            except (TypeError, ValueError):
-                pf_basic = None
-        if wr_basic is not None and wr_basic < 0:
-            wr_basic = None
-        if pf_basic is not None and pf_basic < 0:
-            pf_basic = None
-        if not perf_ok:
-            notes.append("paper performance metrics unavailable; using fallback metrics")
-        elif blocked_sessions_today > 0:
-            notes.append(f"go sessions blocked by sizing today={blocked_sessions_today}")
-            if status == "GO":
-                status = "DEGRADED"
-
-        grafana_url = os.environ.get("ATLAS_GRAFANA_BASE_URL", "http://localhost:3002").rstrip("/")
-        target = 100
-        progress = min(100.0, 100.0 * closed_today_i / target) if target else 0.0
-        return {
-            "ok": True,
-            "status": status,
-            "automation_mode": "paper_only",
-            "loop_mode": loop_mode,
-            "trades_completed_total": trades_completed_total,
-            "trades_closed_today": closed_today_i,
-            "wr_basic": wr_basic,
-            "pf_basic": pf_basic,
-            "iv_rank_current": iv_rank_current,
-            "iv_rank_quality_tier": _iv_quality_tier_from_score(iv_rank_score),
-            "iv_rank_quality_score": iv_rank_score,
-            "journal_events_today": journal_events_i,
-            "journal_sessions_today": journal_sessions_i,
-            "journal_last_write_age_seconds": journal_age,
-            "go_sessions_today": go_sessions_today,
-            "blocked_sessions_today": blocked_sessions_today,
-            "go_nogo_label": status.replace("_", "-"),
-            "go_nogo_gauge_hint": go_nogo,
-            "symbol": None,
-            "win_rate_approx": wr_basic,
-            "paper_trades_closed_today": closed_today_i,
-            "paper_trades_target": target,
-            "paper_trades_progress_pct": progress,
-            "grafana_health_dashboard_url": f"{grafana_url}/d/atlas-options-health/options-engine-health",
-            "grafana_signals_dashboard_url": f"{grafana_url}/d/atlas-options-signals-intent/options-engine-signals-intent",
-            "grafana_paper_performance_dashboard_url": f"{grafana_url}/d/atlas-options-paper-performance/options-engine-paper-performance",
-            "options_ui_url": "/quant-ui",
-            "last_updated_utc": datetime.now(timezone.utc).isoformat(),
-            "notes": "; ".join(notes) if notes else "paper session status derived from live Prometheus metrics",
-        }
-    except Exception as exc:
-        return {
-            "ok": True,
-            "status": "DEGRADED",
-            "automation_mode": "paper_only",
-            "loop_mode": "session_only",
-            "trades_completed_total": 0,
-            "trades_closed_today": 0,
-            "wr_basic": None,
-            "pf_basic": None,
-            "iv_rank_current": None,
-            "iv_rank_quality_tier": None,
-            "grafana_health_dashboard_url": None,
-            "grafana_signals_dashboard_url": None,
-            "grafana_paper_performance_dashboard_url": None,
-            "options_ui_url": "/quant-ui",
-            "notes": f"options status fallback active: {exc}",
-        }
+        if cache_enabled:
+            _options_status_cache_put(payload)
+        return _options_status_with_meta(payload, "live")
 
 
 @app.get("/atlas-ui", include_in_schema=False)

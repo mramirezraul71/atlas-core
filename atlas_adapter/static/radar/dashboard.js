@@ -159,6 +159,18 @@
     el.symbolActivePill.textContent = s ? `Activo: ${s}` : "";
   }
 
+  const FETCH_JSON_TIMEOUT_MS = 18000;
+
+  function _fetchTimeoutSignal(ms) {
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      return AbortSignal.timeout(ms);
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    ctrl.signal.addEventListener("abort", () => clearTimeout(t), { once: true });
+    return ctrl.signal;
+  }
+
   function setSymbolSearchMessage(text) {
     if (!text) {
       el.symbolSearchMessage.textContent = "";
@@ -223,7 +235,11 @@
       return searchResponseCache.get(key);
     }
     const url = `/api/radar/symbols/search?q=${encodeURIComponent(q)}&limit=25`;
-    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: _fetchTimeoutSignal(15000),
+    });
     if (!res.ok) {
       searchResponseCache.delete(key);
       return {
@@ -649,17 +665,28 @@
     }, 200);
   }
 
-  async function fetchJson(url) {
-    const started = performance.now();
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
-    const elapsed = performance.now() - started;
-    if (!res.ok) {
-      throw new Error(`${res.status} ${res.statusText}`);
+  async function fetchJson(url, timeoutMs = FETCH_JSON_TIMEOUT_MS) {
+    const r = await fetchJsonResult(url, timeoutMs);
+    if (!r.ok) throw r.error;
+    return { data: r.data, elapsed: r.elapsed };
+  }
+
+  async function fetchJsonResult(url, timeoutMs = FETCH_JSON_TIMEOUT_MS) {
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+        signal: _fetchTimeoutSignal(timeoutMs),
+      });
+      const elapsed = performance.now() - t0;
+      if (!res.ok) {
+        return { ok: false, error: new Error(`${res.status} ${res.statusText}`), data: null, elapsed };
+      }
+      return { ok: true, data: await res.json(), error: null, elapsed };
+    } catch (e) {
+      return { ok: false, error: e, data: null, elapsed: performance.now() - t0 };
     }
-    return { data: await res.json(), elapsed };
   }
 
   async function refreshAll() {
@@ -669,56 +696,101 @@
     el.refreshBtn.disabled = true;
     el.refreshBtn.textContent = "Actualizando...";
     try {
-      const [summaryRes, providersRes, decisionsRes, statsRes, dealerRes, fastRes, structuralRes, politicalRes, cameraRes] =
-        await Promise.all([
-          fetchJson(endpoints.summary(symbol)),
-          fetchJson(endpoints.providers),
-          fetchJson(endpoints.decisionsRecent),
-          fetchJson(endpoints.decisionsStats),
-          fetchJson(endpoints.dealer(symbol)),
-          fetchJson(endpoints.fast(symbol)),
-          fetchJson(endpoints.structural(symbol)),
-          fetchJson(endpoints.political(symbol)),
-          fetchJson(endpoints.cameraStatus),
-        ]);
+    const reqs = [
+      { key: "summary", url: endpoints.summary(symbol), to: 22000 },
+      { key: "providers", url: endpoints.providers, to: 12000 },
+      { key: "decisionsR", url: endpoints.decisionsRecent, to: 12000 },
+      { key: "stats", url: endpoints.decisionsStats, to: 12000 },
+      { key: "dealer", url: endpoints.dealer(symbol), to: 16000 },
+      { key: "fast", url: endpoints.fast(symbol), to: 16000 },
+      { key: "struct", url: endpoints.structural(symbol), to: 16000 },
+      { key: "pol", url: endpoints.political(symbol), to: 16000 },
+      { key: "camera", url: endpoints.cameraStatus, to: 12000 },
+    ];
+    const m = {};
+    const settled = await Promise.all(reqs.map((q) => fetchJsonResult(q.url, q.to)));
+    reqs.forEach((q, i) => {
+      m[q.key] = settled[i];
+    });
 
-      const latency = Math.max(
-        summaryRes.elapsed,
-        providersRes.elapsed,
-        decisionsRes.elapsed,
-        dealerRes.elapsed,
-        fastRes.elapsed,
-        structuralRes.elapsed
-      );
+    const le = (k) => (m[k].ok ? m[k].elapsed : 0);
+    const latency = Math.max(
+      le("summary"),
+      le("providers"),
+      le("decisionsR"),
+      le("dealer"),
+      le("fast"),
+      le("struct")
+    );
+    if (latency > 0) {
       el.latenciaActual.textContent = `${latency.toFixed(0)} ms`;
-      el.ultimaActualizacion.textContent = startedLabel;
+    }
+    el.ultimaActualizacion.textContent = startedLabel;
 
-      state.lastSummary = summaryRes.data;
-      state.lastQuantReachable = summaryRes.data?.transport?.stub !== true;
+    if (m.summary.ok) {
+      state.lastSummary = m.summary.data;
+      state.lastQuantReachable = m.summary.data?.transport?.stub !== true;
       state.lastSnapshotUsefulAt = Date.now();
-      renderPrincipal(summaryRes.data, providersRes.data, decisionsRes.data, dealerRes.data, fastRes.data, structuralRes.data, {
-        camera: cameraRes.data?.camera || {},
-      });
-      renderDecisions(decisionsRes.data);
-      renderProviders(providersRes.data, statsRes.data);
-      renderSymbol(symbol, summaryRes.data, dealerRes.data, fastRes.data, structuralRes.data, politicalRes.data);
-      persistActiveSymbol(symbol);
-      updateSymbolPill();
-      updateSseConnectionUi();
-      if (!state.streamConnected) {
-        setLiveStatus("Encuesta periódica");
-      }
-    } catch (error) {
+    }
+    const summary = m.summary.ok ? m.summary.data : state.lastSummary;
+
+    if (!summary) {
+      const detail = [m.summary, m.providers, m.dealer, m.fast]
+        .map((r) => (!r.ok && r.error ? String(r.error.message) : null))
+        .filter(Boolean)
+        .join(" · ");
       el.latenciaActual.textContent = "-";
-      el.ultimaActualizacion.textContent = startedLabel;
       el.estadoGlobal.className = "badge badge-rejected";
-      el.estadoGlobal.textContent = state.lastSummary ? "Actualización parcial" : "Error de actualización";
+      el.estadoGlobal.textContent = "Error de actualización";
       el.estadoFresh.className = "badge badge-stale";
-      el.estadoFresh.textContent = String(error.message || error);
-      const keep = state.lastSummary
-        ? "Se conserva el último snapshot válido en pantalla."
-        : "No hay snapshot previo para mostrar.";
-      el.alertasRapidas.innerHTML = `<div class="alert-item">${keep} Detalle: ${String(error.message || error)}</div>`;
+      el.estadoFresh.textContent = m.summary.ok === false && m.summary.error ? String(m.summary.error.message) : "Sin resumen";
+      el.alertasRapidas.innerHTML = `<div class="alert-item">Ningún snapshot disponible. ${detail || "Reintenta o revisa Quant."}</div>`;
+      return;
+    }
+
+    const providersD = m.providers.ok ? m.providers.data : { providers: [] };
+    const decisionsD = m.decisionsR.ok ? m.decisionsR.data : { recent: [] };
+    const statsD = m.stats.ok ? m.stats.data : null;
+    const dealerD = m.dealer.ok ? m.dealer.data : {};
+    const fastD = m.fast.ok ? m.fast.data : {};
+    const structuralD = m.struct.ok ? m.struct.data : {};
+    const politicalD = m.pol.ok ? m.pol.data : {};
+    const cameraInner = m.camera.ok
+      ? (m.camera.data && m.camera.data.camera !== undefined
+          ? m.camera.data.camera
+          : m.camera.data)
+      : (summary && summary.camera_context ? summary.camera_context : {});
+
+    const partialFails = Object.entries(m)
+      .filter(([, v]) => !v.ok)
+      .map(([k, v]) => `${k}: ${v.error?.message || "fallo"}`);
+
+    renderPrincipal(summary, providersD, decisionsD, dealerD, fastD, structuralD, { camera: cameraInner || {} });
+    renderDecisions(decisionsD);
+    if (m.stats.ok || m.providers.ok) {
+      renderProviders(providersD, statsD || {});
+    } else {
+      renderProviders({ providers: [] }, {});
+    }
+    renderSymbol(symbol, summary, dealerD, fastD, structuralD, politicalD);
+    el.alertasRapidas.querySelectorAll('.alert-item[data-partial="1"]').forEach((n) => n.remove());
+    if (partialFails.length) {
+      const note = `Endpoints parciales: ${partialFails.join("; ")}`;
+      el.alertasRapidas.insertAdjacentHTML("beforeend", `<div class="alert-item" data-partial="1">${note}</div>`);
+    }
+
+    persistActiveSymbol(symbol);
+    updateSymbolPill();
+    updateSseConnectionUi();
+    if (!state.streamConnected) {
+      setLiveStatus("Encuesta periódica");
+    }
+    } catch (err) {
+      console.error("[radar] refreshAll", err);
+      el.alertasRapidas.insertAdjacentHTML(
+        "afterbegin",
+        `<div class="alert-item">Error al renderizar: ${String(err?.message || err)}</div>`
+      );
     } finally {
       el.refreshBtn.disabled = false;
       el.refreshBtn.textContent = "Actualizar";

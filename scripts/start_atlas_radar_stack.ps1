@@ -209,6 +209,11 @@ $env:QUANT_API_KEY = $env:ATLAS_QUANT_API_KEY
 # Puerto HTTP del motor: 8792 para alinear con QUANT_BASE_URL del radar/PUSH
 $env:QUANT_API_PORT = "8792"
 $env:ATLAS_MINIMAL_STARTUP = if ($env:ATLAS_MINIMAL_STARTUP) { $env:ATLAS_MINIMAL_STARTUP } else { "true" }
+# Quant lee QUANT_* (no ATLAS_MINIMAL_*): sin lightweight, el startup completo abre vision/USB y OpenCV puede matar el proceso.
+$env:QUANT_LIGHTWEIGHT_STARTUP = "true"
+if ($DisableCamera) {
+    $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED = "false"
+}
 
 Write-Step "Arrancando Quant (8792)..."
 if (-not (Wait-PortListenerGone -Port 8792 -MaxSec 8)) {

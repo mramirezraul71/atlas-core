@@ -158,7 +158,7 @@ def build_quant_camera_health_payload(vision: Any) -> dict[str, Any]:
         "pnp_hints": [],
         "probe_notes": "",
     }
-    if provider == "insta360":
+    if provider == "insta360" and enable_camera:
         try:
             physical = InstaCapture().build_health_snapshot(pnp_timeout_sec=2.5)
         except Exception as exc:

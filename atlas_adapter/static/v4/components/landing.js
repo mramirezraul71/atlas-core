@@ -534,6 +534,21 @@ export function render(container) {
     return { label: 'Journal stale', dot: 'stale' };
   }
 
+  const OPTIONS_FETCH_TIMEOUT_MS = 8000;
+  const OPTIONS_REFRESH_MS = 30000;
+  const OPTIONS_BOOTSTRAP_RETRY_MS = 5000;
+
+  function scheduleOptionsBootstrapRetry() {
+    if (container.__optionsLastOk) return;
+    if (container.__optionsBootstrapRetryTimer) return;
+    container.__optionsBootstrapRetryTimer = window.setTimeout(() => {
+      container.__optionsBootstrapRetryTimer = null;
+      loadOptionsStatus().then(ok => {
+        if (ok) container.__optionsLastOk = true;
+      });
+    }, OPTIONS_BOOTSTRAP_RETRY_MS);
+  }
+
   async function loadOptionsStatus() {
     const badgeEl = container.querySelector('#landing-options-badge');
     const subEl = container.querySelector('#landing-options-sub');
@@ -546,8 +561,20 @@ export function render(container) {
     const perfEl = container.querySelector('#landing-options-performance');
     const uiEl = container.querySelector('#landing-options-ui');
     if (!badgeEl || !subEl || !gridEl || !noteEl || !dotEl || !refreshTextEl) return false;
+    if (container.__optionsLoadInFlight) return false;
+
+    container.__optionsLoadInFlight = true;
+    const controller = new AbortController();
+    container.__optionsAbortController = controller;
+    const timeoutId = window.setTimeout(() => {
+      try { controller.abort(); } catch {}
+    }, OPTIONS_FETCH_TIMEOUT_MS);
     try {
-      const r = await fetch('/api/options-engine-status');
+      const r = await fetch('/api/options-engine-status', {
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' },
+      });
       const d = await r.json();
       if (!r.ok || d.ok === false) throw new Error(d.error || `HTTP ${r.status}`);
 
@@ -591,9 +618,14 @@ export function render(container) {
       dotEl.className = `landing-options-dot ${freshness.dot}`;
       refreshTextEl.textContent = `${formatRefreshTime(d.last_updated_utc)} Â· ${freshness.label}`;
       if (uiEl) uiEl.href = d.options_ui_url || '/quant-ui';
+      if (container.__optionsBootstrapRetryTimer) {
+        clearTimeout(container.__optionsBootstrapRetryTimer);
+        container.__optionsBootstrapRetryTimer = null;
+      }
       container.__optionsLastOk = true;
       return true;
     } catch (err) {
+      const errMsg = err?.name === 'AbortError' ? 'request timeout' : String(err);
       if (container.__optionsLastOk) {
         noteEl.className = 'landing-options-note warn';
         dotEl.className = 'landing-options-dot warm';
@@ -620,7 +652,15 @@ export function render(container) {
       noteEl.className = 'landing-options-note warn';
       dotEl.className = 'landing-options-dot warm';
       refreshTextEl.textContent = `${refreshTextEl.textContent || 'Last refresh pending'} · refresh delayed`;
-      noteEl.textContent = `metrics unavailable · ${String(err)}`;
+      noteEl.textContent = `metrics unavailable · ${errMsg}`;
+      scheduleOptionsBootstrapRetry();
+      return false;
+    } finally {
+      clearTimeout(timeoutId);
+      if (container.__optionsAbortController === controller) {
+        container.__optionsAbortController = null;
+      }
+      container.__optionsLoadInFlight = false;
     }
   }
 
@@ -630,7 +670,7 @@ export function render(container) {
     loadOptionsStatus().then(ok => {
       if (ok) container.__optionsLastOk = true;
     });
-  }, 30000);
+  }, OPTIONS_REFRESH_MS);
 
   return () => {
     unsubHealth();
@@ -639,9 +679,19 @@ export function render(container) {
       clearInterval(container.__optionsRefreshTimer);
       container.__optionsRefreshTimer = null;
     }
+    if (container.__optionsBootstrapRetryTimer) {
+      clearTimeout(container.__optionsBootstrapRetryTimer);
+      container.__optionsBootstrapRetryTimer = null;
+    }
+    if (container.__optionsAbortController) {
+      try { container.__optionsAbortController.abort(); } catch {}
+      container.__optionsAbortController = null;
+    }
+    container.__optionsLoadInFlight = false;
   };
 }
 
 window.AtlasLanding = { render };
+
 
 

@@ -324,7 +324,7 @@ function _handleRoute() {
 }
 
 async function _loadModules() {
-const MODULE_BUILD = '20260320-paper-phase3d-order-flow';
+  const MODULE_BUILD = '20260320-paper-phase3d-order-flow';
   const MODULE_NAMES = [
     'health', 'modules', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
@@ -332,39 +332,58 @@ const MODULE_BUILD = '20260320-paper-phase3d-order-flow';
     'tutorias', 'cognitive', 'vision', 'chat', 'apps', 'clawd_direct', 'codex_supervisor', 'live_diagnostic',
     'atlas_quant', 'access_control',
   ];
-  for (const name of MODULE_NAMES) {
-    try {
-      const mod = (await import(`/v4/static/modules/${name}.js?v=${MODULE_BUILD}`)).default;
-      if (mod?.id) MODULE_REGISTRY[mod.id] = mod;
-    } catch (e) {
-      console.warn(`[Atlas v4.2] Module "${name}" no cargado:`, e.message);
-      const fallbackId = _moduleIdFromName(name);
-      if (!MODULE_REGISTRY[fallbackId]) {
-        MODULE_REGISTRY[fallbackId] = {
-          id: fallbackId,
-          render(v) {
-            _renderModuleError(v, fallbackId, e?.message || String(e));
-          },
-        };
+  const MODULE_IMPORT_MS = 20000;
+  const _importWithTimeout = (name) =>
+    Promise.race([
+      import(`/v4/static/modules/${name}.js?v=${MODULE_BUILD}`),
+      new Promise((_, rej) => {
+        setTimeout(() => rej(new Error(`timeout ${MODULE_IMPORT_MS}ms`)), MODULE_IMPORT_MS);
+      }),
+    ]);
+  await Promise.all(
+    MODULE_NAMES.map(async (name) => {
+      try {
+        const mod = (await _importWithTimeout(name)).default;
+        if (mod?.id) MODULE_REGISTRY[mod.id] = mod;
+      } catch (e) {
+        console.warn(`[Atlas v4.2] Module "${name}" no cargado:`, e?.message || e);
+        const fallbackId = _moduleIdFromName(name);
+        if (!MODULE_REGISTRY[fallbackId]) {
+          MODULE_REGISTRY[fallbackId] = {
+            id: fallbackId,
+            render(v) {
+              _renderModuleError(v, fallbackId, e?.message || String(e));
+            },
+          };
+        }
       }
-    }
-  }
+    })
+  );
 }
 
 function _startHealthPolling() {
   let failStreak = 0;
 
+  function _healthSignal(ms) {
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      return AbortSignal.timeout(ms);
+    }
+    const c = new AbortController();
+    setTimeout(() => c.abort(), ms);
+    return c.signal;
+  }
+
   async function _fetchHealthPayload() {
     const timeoutMs = 10000;
     const _json = async (url) => {
-      const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      const r = await fetch(url, { signal: _healthSignal(timeoutMs) });
       if (!r.ok) throw new Error(`http_${r.status}`);
       return r.json();
     };
     try {
-      return await _json('/health');
+      return await _json("/health");
     } catch {
-      return await _json('/status');
+      return await _json("/status");
     }
   }
 
@@ -391,35 +410,63 @@ function _startHealthPolling() {
   setInterval(_poll, 12000);
 }
 
+function _mountBootPlaceholder(root) {
+  if (!root) return;
+  root.innerHTML = `
+    <div id="v4-boot-screen" class="v4-boot-screen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:24px;box-sizing:border-box;background:var(--bg-primary, #0a0e14);color:var(--text-primary, #e6edf3);font-family:Inter,system-ui,sans-serif">
+      <div style="font-size:18px;font-weight:600;letter-spacing:0.02em">ATLAS V4</div>
+      <div style="font-size:13px;opacity:0.75;text-align:center;max-width:420px">Inicializando interfaz… Si tarda, los módulos siguen cargando en segundo plano.</div>
+      <div class="v4-boot-pulse" style="width:40px;height:4px;border-radius:4px;background:linear-gradient(90deg,transparent,var(--accent-cyan, #00d4aa),transparent);animation:atlasBootPulse 1.2s ease-in-out infinite"></div>
+    </div>
+    <style>@keyframes atlasBootPulse{0%,100%{opacity:0.35;transform:scaleX(0.6)}50%{opacity:1;transform:scaleX(1)}}</style>
+  `;
+}
+
 async function main() {
+  const app = document.getElementById('app');
+  if (!app) {
+    console.error("[Atlas v4] Falta nodo #app");
+    return;
+  }
+  _mountBootPlaceholder(app);
+
   const savedTheme = localStorage.getItem('atlas-theme') || 'cyan';
   _themeIdx = THEMES.indexOf(savedTheme);
   if (_themeIdx < 0) _themeIdx = 0;
   _applyTheme(THEMES[_themeIdx]);
 
-  await _loadModules();
+  const modulesPromise = _loadModules();
+  /* No bloquear el shell por 27 módulos: el landing viene de landing.js (script en index). */
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
 
-  const app = document.getElementById('app');
-  app.innerHTML = '';
+  app.innerHTML = "";
 
   _buildTopbar(app);
   window.AtlasUpdatePanel = { open: _openUpdatePanel };
   window.AtlasMegaMenu?.mount?.(app);
 
-  const viewContainer = document.createElement('main');
-  viewContainer.id = 'app-view';
+  const viewContainer = document.createElement("main");
+  viewContainer.id = "app-view";
   app.appendChild(viewContainer);
 
   window.AtlasCompanion?.mount?.(app);
 
-  window.addEventListener('hashchange', _handleRoute);
+  window.addEventListener("hashchange", _handleRoute);
   _handleRoute();
 
   _startHealthPolling();
 
+  void modulesPromise.then(() => {
+    try {
+      _handleRoute();
+    } catch (_e) {}
+  });
+
   let _idleTimer = null;
-  document.addEventListener('mousemove', () => {
-    if (window.AtlasCompanion?.getState() === 'sleeping') window.AtlasCompanion.wake();
+  document.addEventListener("mousemove", () => {
+    if (window.AtlasCompanion?.getState() === "sleeping") window.AtlasCompanion.wake();
     clearTimeout(_idleTimer);
     _idleTimer = setTimeout(() => window.AtlasCompanion?.sleep(), 120000);
   });

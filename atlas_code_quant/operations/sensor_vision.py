@@ -407,7 +407,7 @@ class SensorVisionService:
             nexus_ok = self._direct_nexus_available(timeout_sec=nexus_timeout_sec)
             provider_ready = nexus_ok
         elif provider == "insta360":
-            insta360_ok = self._insta360_available()
+            insta360_ok = self._insta360_available() if bool(getattr(settings, "enable_camera", False)) else False
             provider_ready = insta360_ok
         elif provider == "atlas_push_bridge":
             bridge_status = self._atlas_push_bridge_status(timeout_sec=push_bridge_timeout_sec)
@@ -453,7 +453,8 @@ class SensorVisionService:
                 "status_mode": "fast_cached",
             }
         bridge_status = self._atlas_push_bridge_status() if provider == "atlas_push_bridge" else None
-        insta360_ok = self._insta360_available()
+        cam_on = bool(getattr(settings, "enable_camera", False))
+        insta360_ok = self._insta360_available() if cam_on else False
         provider_ready = (
             provider in {"off", "manual"}
             or (provider == "desktop_capture" and self._desktop_capture_available())
@@ -514,18 +515,27 @@ class SensorVisionService:
                 "detail": bridge_status,
             })
 
-        # insta360 check
-        insta360_ok = self._insta360_available()
-        pipeline = self._insta360_pipeline()
-        insta360_source = pipeline._capture.source_available() if pipeline else "none"
+        # insta360 check — solo si cámara habilitada; si no, evitar OpenCV/EasyOCR (puede tumbar el proceso).
+        cam_on = bool(getattr(settings, "enable_camera", False))
+        if cam_on:
+            insta360_ok = self._insta360_available()
+            pipeline = self._insta360_pipeline()
+            insta360_source = pipeline._capture.source_available() if pipeline else "none"
+            insta_note = (
+                f"Fuente activa: {insta360_source}" if insta360_ok else (
+                    "No hay fuente de video disponible. Conecta la Insta360 via USB o configura "
+                    "INSTA360_RTMP_URL. El modo 'desktop' esta disponible como fallback."
+                )
+            )
+        else:
+            insta360_ok = False
+            insta360_source = "none"
+            insta_note = "Omitido: ENABLE_CAMERA=false (sin sonda USB/OpenCV)."
         checks.append({
             "name": "insta360",
             "source": insta360_source,
             "reachable": insta360_ok,
-            "note": f"Fuente activa: {insta360_source}" if insta360_ok else (
-                "No hay fuente de video disponible. Conecta la Insta360 via USB o configura "
-                "INSTA360_RTMP_URL. El modo 'desktop' esta disponible como fallback."
-            ),
+            "note": insta_note,
         })
 
         provider_ready = (
