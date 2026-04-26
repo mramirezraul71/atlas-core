@@ -241,3 +241,4 @@ atlas_code_quant/learning/xgboost_signal/models/audit_report.md
 
 # Fase 5 Institutional Radar: artefacto Lighthouse local (reproducible)
 reports/temp_f5_lh_radar.json
+reports/tmp_f5_*
