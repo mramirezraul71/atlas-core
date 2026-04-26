@@ -92,6 +92,8 @@
       structural_only: "Solo contexto estructural",
       fast_only: "Solo contexto táctico (fast)",
       non_operable: "No operable",
+      demonstration_without_engine: "Modo demostración (sin motor radar)",
+      modo_demostracion_sin_motor: "Modo demostración (sin motor radar)",
       unknown: "Desconocido",
       desconocido: "Desconocido",
     };
@@ -167,7 +169,10 @@
     return badgeHtml(kind, text);
   }
 
-  function readinessBadge(isReady, stale) {
+  function readinessBadge(isReady, stale, hint) {
+    if (hint === "modo_demostracion") {
+      return badgeHtml("neutral", "Modo demostración");
+    }
     if (stale) return badgeHtml("stale", "Obsoleto");
     return isReady ? badgeHtml("accepted", "Activo") : badgeHtml("caution", "Degradado");
   }
@@ -212,7 +217,10 @@
 
   async function fetchJson(url) {
     const started = performance.now();
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
     const elapsed = performance.now() - started;
     if (!res.ok) {
       throw new Error(`${res.status} ${res.statusText}`);
@@ -281,12 +289,18 @@
     const meta = signal?.meta ?? {};
     const classification = meta?.snapshot_classification || "unknown";
 
-    el.estadoGlobal.className =
-      classification === "fully_operable"
-        ? "badge badge-accepted"
-        : classification === "non_operable"
-        ? "badge badge-rejected"
-        : "badge badge-caution";
+    if (classification === "fully_operable") {
+      el.estadoGlobal.className = "badge badge-accepted";
+    } else if (classification === "non_operable") {
+      el.estadoGlobal.className = "badge badge-rejected";
+    } else if (
+      classification === "demonstration_without_engine" ||
+      classification === "modo_demostracion_sin_motor"
+    ) {
+      el.estadoGlobal.className = "badge badge-neutral";
+    } else {
+      el.estadoGlobal.className = "badge badge-caution";
+    }
     el.estadoGlobal.textContent = clasificacionEs(classification);
 
     setFreshness(signal?.timestamp);
@@ -331,7 +345,7 @@
         return `
           <tr>
             <td>${provider?.provider || provider?.name || "-"}</td>
-            <td>${readinessBadge(ready, stale)}</td>
+            <td>${readinessBadge(ready, stale, provider?.ui_status_hint)}</td>
             <td class="metric">${formatNumber(provider?.latency_ms ?? provider?.current_latency_ms, 0)} ms</td>
             <td class="metric">${formatNumber(provider?.p95_latency_ms, 0)} ms</td>
             <td>${provider?.active_fallback_indicator ? badgeHtml("caution", "Activo") : badgeHtml("neutral", "No")}</td>
@@ -437,7 +451,11 @@
 
     el.tablaProvidersFull.innerHTML = list
       .map((provider) => {
-        const readyBadge = readinessBadge(Boolean(provider?.is_ready ?? provider?.ready), provider?.stale_indicator);
+        const readyBadge = readinessBadge(
+          Boolean(provider?.is_ready ?? provider?.ready),
+          provider?.stale_indicator,
+          provider?.ui_status_hint
+        );
         const circuit = provider?.circuit_open_indicator ? badgeHtml("rejected", "Abierto") : badgeHtml("accepted", "Cerrado");
         return `
           <tr>
