@@ -238,3 +238,6 @@ reports/atlas_quant_implementation_scorecard_20*.md
 # Auditorías locales del modelo XGBoost (generadas al entrenar/scorear)
 atlas_code_quant/learning/xgboost_signal/models/audit_report.json
 atlas_code_quant/learning/xgboost_signal/models/audit_report.md
+
+# Fase 5 Institutional Radar: artefacto Lighthouse local (reproducible)
+reports/temp_f5_lh_radar.json
