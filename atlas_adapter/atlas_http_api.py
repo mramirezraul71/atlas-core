@@ -11843,9 +11843,9 @@ class CanaryConfigBody(BaseModel):
 # â”€â”€ Config IA centralizada (sync Dashboard â†” Workspace) â”€â”€
 
 _ai_config = {
-    "mode": "auto",
+    "mode": "auto_local",
     "provider": "ollama",
-    "model": "llama3.2",
+    "model": "auto_local",
     "temperature": 0.7,
     "top_p": 0.9,
     "top_k": 40,
@@ -11859,15 +11859,38 @@ _ai_config = {
     "save_history": True,
     "log_level": "info",
     "specialists": {
-        "code": {"enabled": True, "model": "deepseek-coder"},
-        "vision": {"enabled": True, "model": "llava"},
-        "chat": {"enabled": True, "model": "llama3.2"},
-        "analysis": {"enabled": True, "model": "llama3.2"},
-        "creative": {"enabled": False, "model": "llama3.2"},
+        "code": {"enabled": True, "model": "deepseek-coder-v2:16b"},
+        "vision": {"enabled": True, "model": "qwen3-vl:30b"},
+        "chat": {"enabled": True, "model": "llama3.1:8b"},
+        "analysis": {"enabled": True, "model": "qwen3-coder:30b"},
+        "creative": {"enabled": False, "model": "llama3.1:8b"},
     },
 }
 
 _AI_CONFIG_FILE = BASE_DIR / "config" / "ai_config.json"
+
+
+def _normalize_ai_config():
+    """Normaliza config IA para mantener default en automatica local."""
+    mode = str(_ai_config.get("mode", "") or "").strip().lower()
+    if mode in ("", "hybrid", "auto-local", "local_auto", "automatic_local"):
+        mode = "auto_local"
+    if mode not in ("auto_local", "auto", "manual"):
+        mode = "auto_local"
+    _ai_config["mode"] = mode
+
+    provider = str(_ai_config.get("provider", "") or "").strip().lower()
+    if mode == "auto_local":
+        provider = "ollama"
+        _ai_config["model"] = "auto_local"
+    elif not provider:
+        provider = "ollama"
+    _ai_config["provider"] = provider
+
+    if provider == "ollama":
+        model = str(_ai_config.get("model", "") or "").strip()
+        if not model:
+            _ai_config["model"] = "auto_local"
 
 
 def _load_ai_config():
@@ -11879,6 +11902,7 @@ def _load_ai_config():
             _ai_config.update(saved)
         except Exception:
             pass
+    _normalize_ai_config()
 
 
 def _save_ai_config():
@@ -11926,6 +11950,7 @@ def update_ai_config(payload: dict):
     for key in allowed:
         if key in payload:
             _ai_config[key] = payload[key]
+    _normalize_ai_config()
     _save_ai_config()
     return {"ok": True, "message": "Configuracion actualizada"}
 

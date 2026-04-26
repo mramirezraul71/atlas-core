@@ -1,7 +1,7 @@
 {
-  "mode": "hybrid",
+  "mode": "auto_local",
   "provider": "ollama",
-  "model": "",
+  "model": "auto_local",
   "temperature": 0.2,
   "top_p": 0.8,
   "top_k": 40,
@@ -17,23 +17,23 @@
   "specialists": {
     "code": {
       "enabled": true,
-      "model": "deepseek-coder"
+      "model": "deepseek-coder-v2:16b"
     },
     "vision": {
       "enabled": true,
-      "model": "llava"
+      "model": "qwen3-vl:30b"
     },
     "chat": {
       "enabled": true,
-      "model": "llama3.2"
+      "model": "llama3.1:8b"
     },
     "analysis": {
       "enabled": true,
-      "model": "llama3.2"
+      "model": "qwen3-coder:30b"
     },
     "creative": {
       "enabled": false,
-      "model": "llama3.2"
+      "model": "llama3.1:8b"
     }
   }
 }
