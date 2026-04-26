@@ -9,6 +9,9 @@ $TaskName       = "RAULI-VISION-Watchdog"
 $EspejoPort     = 8080   # espejo.exe — Go backend
 $ProxyPort      = 3000   # simple-server.py — Python proxy → :8080
 $DashPort       = 5174   # dashboard React/Vite
+$EspejoHealth   = "http://127.0.0.1:$EspejoPort/api/health"
+$ProxyHealth    = "http://127.0.0.1:$ProxyPort/health"
+$DashHealth     = "http://127.0.0.1:$DashPort/"
 $LogFile        = "$PSScriptRoot\logs\rauli_vision_watchdog.log"
 
 function Write-Step([string]$msg) {
@@ -19,6 +22,15 @@ function Write-Ok([string]$msg) {
 }
 function Write-Warn([string]$msg) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ! $msg" -ForegroundColor Yellow
+}
+
+function Test-Health([string]$url, [int]$timeoutSec = 5) {
+    try {
+        $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec $timeoutSec
+        return ($r.StatusCode -ge 200 -and $r.StatusCode -lt 400)
+    } catch {
+        return $false
+    }
 }
 
 # ── Verificar si el watchdog ya corre (Get-Process no expone CommandLine en WinPS 5.1)
@@ -46,11 +58,11 @@ $espejoOk = $false
 $proxyOk  = $false
 $dashOk   = $false
 
-while ((Get-Date) -lt $deadline -and (-not ($espejoOk -and $dashOk))) {
+while ((Get-Date) -lt $deadline -and (-not ($espejoOk -and $proxyOk -and $dashOk))) {
     Start-Sleep -Seconds 2
-    $espejoOk = (Get-NetTCPConnection -State Listen -LocalPort $EspejoPort -EA SilentlyContinue) -ne $null
-    $proxyOk  = (Get-NetTCPConnection -State Listen -LocalPort $ProxyPort  -EA SilentlyContinue) -ne $null
-    $dashOk   = (Get-NetTCPConnection -State Listen -LocalPort $DashPort   -EA SilentlyContinue) -ne $null
+    $espejoOk = Test-Health $EspejoHealth 4
+    $proxyOk  = Test-Health $ProxyHealth 4
+    $dashOk   = Test-Health $DashHealth 5
     $eIcon = if ($espejoOk) { '+' } else { '-' }
     $pIcon = if ($proxyOk)  { '+' } else { '-' }
     $dIcon = if ($dashOk)   { '+' } else { '-' }
@@ -58,7 +70,7 @@ while ((Get-Date) -lt $deadline -and (-not ($espejoOk -and $dashOk))) {
 }
 Write-Host ""
 
-if ($espejoOk -and $dashOk) {
+if ($espejoOk -and $proxyOk -and $dashOk) {
     Write-Ok "Todos los servicios activos"
     Write-Host ""
     Write-Host "  Abriendo RAULI-VISION..." -ForegroundColor Magenta
