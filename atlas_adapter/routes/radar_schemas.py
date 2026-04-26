@@ -13,7 +13,7 @@ motor puede añadir claves en el futuro.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -77,6 +77,17 @@ RadarProviderHealthPayload = RadarDiagnosticsPayload
 
 
 # --- Resumen dashboard --------------------------------------------------------
+
+
+class RadarDegradationEntry(BaseModel):
+    """Entrada en ``degradations_active`` (M2)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    code: str
+    label: str
+    severity: Literal["info", "warning", "critical"] = "warning"
+    source: str
 
 
 class RadarTransportBlock(BaseModel):
@@ -152,7 +163,7 @@ class RadarSummaryPayload(BaseModel):
     radar: RadarRadarBlock
     decision_gate: RadarDecisionGate
     camera_context: dict[str, Any]
-    degradations_active: list[Any] = Field(default_factory=list)
+    degradations_active: list[RadarDegradationEntry] = Field(default_factory=list)
     provider_health_summary: RadarProviderHealthSummary
     quant: RadarQuantBlock | None = None
 

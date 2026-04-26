@@ -45,6 +45,67 @@ def _bias_from_candidate(cand: dict[str, Any] | None) -> str:
     return "neutral"
 
 
+def compute_degradations_active(
+    transport: dict[str, Any],
+    provider_health_summary: dict[str, Any],
+    camera_context: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Entradas explicativas de degradación para el dashboard (M2).
+
+    Códigos: STUB_MODE, QUANT_UNREACHABLE, PROVIDERS_DEGRADED, CAMERA_UNAVAILABLE.
+    """
+    out: list[dict[str, str]] = []
+    if transport.get("stub") is True:
+        out.append(
+            {
+                "code": "STUB_MODE",
+                "label": "Modo demostración: no hay reporte en vivo del escáner en este ciclo (stub).",
+                "severity": "warning",
+                "source": "transport",
+            }
+        )
+    if transport.get("quant") is False:
+        out.append(
+            {
+                "code": "QUANT_UNREACHABLE",
+                "label": "Puente PUSH→Quant no conectado o clave de API no configurada en el servidor.",
+                "severity": "critical",
+                "source": "quant",
+            }
+        )
+    try:
+        dc = int(provider_health_summary.get("degraded_count") or 0)
+    except (TypeError, ValueError):
+        dc = 0
+    if dc > 0:
+        checked = provider_health_summary.get("providers_checked")
+        out.append(
+            {
+                "code": "PROVIDERS_DEGRADED",
+                "label": (
+                    f"Proveedores en estado degradado: {dc}"
+                    + (f" (revisados: {checked})" if checked is not None else "")
+                ),
+                "severity": "warning",
+                "source": "provider",
+            }
+        )
+    pr = camera_context.get("provider_ready")
+    st = str(camera_context.get("state") or "").strip().lower()
+    bad_states = frozenset({"unavailable", "degraded", "disabled", "not_configured"})
+    if pr is False or (st and st in bad_states):
+        sev = "warning" if st == "degraded" else "critical"
+        out.append(
+            {
+                "code": "CAMERA_UNAVAILABLE",
+                "label": "Cámara o proveedor de visión no listo para captura en vivo.",
+                "severity": sev,
+                "source": "camera",
+            }
+        )
+    return out
+
+
 def _snapshot_classification(symbol: str, report: dict[str, Any], cand: dict[str, Any] | None) -> str:
     if report.get("error"):
         return "non_operable"
@@ -108,7 +169,7 @@ def build_dashboard_summary(symbol: str, report: dict[str, Any], *, quant_ms: fl
             "timestamp": ts,
         }
 
-    return {
+    result: dict[str, Any] = {
         "symbol": sym,
         "last_update": ts,
         "stream_available": True,
@@ -152,12 +213,15 @@ def build_dashboard_summary(symbol: str, report: dict[str, Any], *, quant_ms: fl
             "presence_score": None,
             "activity_level": None,
         },
-        "degradations_active": [],
         "provider_health_summary": {
             "providers_checked": 2,
             "degraded_count": 0 if status.get("running") else 1,
         },
     }
+    result["degradations_active"] = compute_degradations_active(
+        result["transport"], result["provider_health_summary"], result["camera_context"]
+    )
+    return result
 
 
 def build_providers_payload(report: dict[str, Any]) -> dict[str, Any]:

@@ -48,7 +48,17 @@
     },
   };
 
+  function escAttr(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
   const el = {
+    degradationsPanel: document.getElementById("degradationsPanel"),
+    degradationsList: document.getElementById("degradationsList"),
     refreshBtn: document.getElementById("refreshBtn"),
     symbolInput: document.getElementById("symbolInput"),
     autoRefreshToggle: document.getElementById("autoRefreshToggle"),
@@ -745,6 +755,7 @@
       el.estadoFresh.className = "badge badge-stale";
       el.estadoFresh.textContent = m.summary.ok === false && m.summary.error ? String(m.summary.error.message) : "Sin resumen";
       el.alertasRapidas.innerHTML = `<div class="alert-item">Ningún snapshot disponible. ${detail || "Reintenta o revisa Quant."}</div>`;
+      renderDegradations(null);
       return;
     }
 
@@ -890,6 +901,29 @@
     ]);
 
     renderCameraPanel(cameraHealth, summary);
+    renderDegradations(summary);
+  }
+
+  function renderDegradations(summary) {
+    if (!el.degradationsPanel || !el.degradationsList) return;
+    const raw = summary && Array.isArray(summary.degradations_active) ? summary.degradations_active : [];
+    if (!raw.length) {
+      el.degradationsPanel.classList.add("hidden");
+      el.degradationsList.innerHTML = "";
+      return;
+    }
+    el.degradationsPanel.classList.remove("hidden");
+    const allowed = { info: true, warning: true, critical: true };
+    el.degradationsList.innerHTML = raw
+      .map((d) => {
+        const sev = allowed[d.severity] ? d.severity : "warning";
+        return `<li class="degradation-item" data-severity="${escAttr(sev)}"><div class="degradation-code">${escAttr(
+          d.code
+        )}</div><div>${escAttr(d.label)}</div><span class="sr-only">Origen: ${escAttr(
+          d.source
+        )}</span></li>`;
+      })
+      .join("");
   }
 
   function renderAlerts(meta, latestDecision) {

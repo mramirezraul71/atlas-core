@@ -56,6 +56,7 @@ from atlas_adapter.routes.radar_quant_mapper import (
     build_political,
     build_providers_payload,
     build_structural,
+    compute_degradations_active,
 )
 
 logger = logging.getLogger("atlas.radar.public")
@@ -235,6 +236,7 @@ def _stub_summary(symbol: str) -> dict[str, Any]:
             "sse_heartbeat_sec": _RADAR_SSE_HEARTBEAT_SEC,
             "sse_snapshot_sec": _RADAR_SSE_SNAPSHOT_SEC,
             "stub": True,
+            "quant": False,
         },
         "radar": {
             "signal": {
@@ -255,7 +257,6 @@ def _stub_summary(symbol: str) -> dict[str, Any]:
         },
         "decision_gate": {"recent": [], "latest": None},
         "camera_context": _stub_camera()["camera"],
-        "degradations_active": [],
         "provider_health_summary": {"providers_checked": 1, "degraded_count": 0},
     }
 
@@ -274,9 +275,19 @@ async def radar_build_dashboard_for_sse(symbol: str) -> tuple[dict[str, Any], bo
         tr["sse_snapshot_sec"] = _RADAR_SSE_SNAPSHOT_SEC
         body["transport"] = tr
         body["camera_context"] = cam_panel
+        body["degradations_active"] = compute_degradations_active(
+            body.get("transport") or {},
+            body.get("provider_health_summary") or {},
+            body.get("camera_context") or {},
+        )
         return body, True, report
     stub = _stub_summary(sym)
     stub["camera_context"] = cam_panel
+    stub["degradations_active"] = compute_degradations_active(
+        stub.get("transport") or {},
+        stub.get("provider_health_summary") or {},
+        stub.get("camera_context") or {},
+    )
     return stub, False, None
 
 

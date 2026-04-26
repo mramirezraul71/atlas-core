@@ -5,7 +5,7 @@ los tests de oro o de umbral deben fallar.
 """
 from __future__ import annotations
 
-from atlas_adapter.routes.radar_quant_mapper import build_dashboard_summary
+from atlas_adapter.routes.radar_quant_mapper import build_dashboard_summary, compute_degradations_active
 from atlas_adapter.routes.radar_schemas import RadarSummaryPayload
 
 # Claves que ``build_dashboard_summary`` / ``pick_candidate`` esperan en el reporte.
@@ -101,7 +101,33 @@ def test_build_dashboard_summary_degraded_without_running() -> None:
     body = build_dashboard_summary("SPY", rep)
     cls = body["radar"]["signal"]["meta"]["snapshot_classification"]
     assert cls in ("structural_only", "non_operable", "operable_with_degradation")
+    codes = {d["code"] for d in (body.get("degradations_active") or [])}
+    assert "PROVIDERS_DEGRADED" in codes
     RadarSummaryPayload.model_validate(body)
+
+
+def test_compute_degradations_active_stub_and_quant() -> None:
+    d = compute_degradations_active(
+        {"stub": True, "quant": False, "sse": True},
+        {"providers_checked": 1, "degraded_count": 0},
+        {"provider_ready": True, "state": "ready"},
+    )
+    codes = {x["code"] for x in d}
+    assert "STUB_MODE" in codes
+    assert "QUANT_UNREACHABLE" in codes
+    assert "CAMERA_UNAVAILABLE" not in codes
+
+
+def test_compute_degradations_providers_and_camera() -> None:
+    d = compute_degradations_active(
+        {"stub": False, "quant": True, "sse": True},
+        {"providers_checked": 2, "degraded_count": 1},
+        {"provider_ready": False, "state": "unavailable"},
+    )
+    codes = {x["code"] for x in d}
+    assert "PROVIDERS_DEGRADED" in codes
+    assert "CAMERA_UNAVAILABLE" in codes
+    assert "STUB_MODE" not in codes
 
 
 def test_build_dashboard_summary_missing_spy_candidate_degraded() -> None:
