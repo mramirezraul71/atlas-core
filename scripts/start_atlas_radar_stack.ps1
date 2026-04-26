@@ -12,6 +12,12 @@
 .PARAMETER DisableCamera
   Si está presente, ENABLE_CAMERA=false en Quant.
 
+.PARAMETER FullStartup
+  Si está presente, fuerza QUANT_LIGHTWEIGHT_STARTUP=false (arranque completo para métricas canónicas).
+
+.PARAMETER UseInsta360
+  Fuerza QUANT_DEFAULT_VISION_PROVIDER=insta360. Si no se especifica, se usa desktop_capture por estabilidad.
+
 .PARAMETER SkipKill
   No intenta matar procesos previos (solo útil si ya liberaste puertos).
 
@@ -28,6 +34,8 @@
 param(
     [string]$RepoRoot = "",
     [switch]$DisableCamera,
+    [switch]$FullStartup,
+    [switch]$UseInsta360,
     [switch]$SkipKill,
     [int]$QuantWaitSec = 12,
     [int]$PushWaitSec = 10
@@ -138,7 +146,8 @@ Write-Step "Validando entorno..."
 if (-not (Test-Path $QuantRoot)) { Write-Fail "No existe atlas_code_quant: $QuantRoot"; exit 2 }
 if (-not (Test-Path $AdapterRoot)) { Write-Fail "No existe atlas_adapter: $AdapterRoot"; exit 2 }
 if (-not $env:ATLAS_QUANT_API_KEY -or [string]::IsNullOrWhiteSpace($env:ATLAS_QUANT_API_KEY)) {
-    Write-Fail "ATLAS_QUANT_API_KEY no está definida en la sesión. Ej.: `$env:ATLAS_QUANT_API_KEY = '...'"; exit 2
+    Write-Warning "ATLAS_QUANT_API_KEY no definida; usando clave local por defecto 'atlas-quant-local' para stack local."
+    $env:ATLAS_QUANT_API_KEY = "atlas-quant-local"
 }
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 Write-Ok "Rutas y API key OK."
@@ -199,8 +208,20 @@ Remove-Item $QuantLog, $QuantErr -Force -ErrorAction SilentlyContinue
 $env:PYTHONPATH = $RepoRoot
 if ($DisableCamera) {
     $env:ENABLE_CAMERA = "false"
+    $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED = "false"
+    $env:QUANT_DEFAULT_VISION_PROVIDER = "off"
 } else {
     $env:ENABLE_CAMERA = "true"
+    if ($UseInsta360) {
+        $env:QUANT_DEFAULT_VISION_PROVIDER = "insta360"
+        $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED = "true"
+    } else {
+        # Default operativo y estable para hosts sin captura USB/RTMP confiable.
+        if (-not $env:QUANT_DEFAULT_VISION_PROVIDER -or [string]::IsNullOrWhiteSpace($env:QUANT_DEFAULT_VISION_PROVIDER)) {
+            $env:QUANT_DEFAULT_VISION_PROVIDER = "desktop_capture"
+        }
+        $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED = "false"
+    }
 }
 # La clave ya validada; Quant y PUSH deben compartirla
 $env:ATLAS_QUANT_API_KEY = $env:ATLAS_QUANT_API_KEY.Trim()
@@ -209,11 +230,15 @@ $env:QUANT_API_KEY = $env:ATLAS_QUANT_API_KEY
 # Puerto HTTP del motor: 8792 para alinear con QUANT_BASE_URL del radar/PUSH
 $env:QUANT_API_PORT = "8792"
 $env:ATLAS_MINIMAL_STARTUP = if ($env:ATLAS_MINIMAL_STARTUP) { $env:ATLAS_MINIMAL_STARTUP } else { "true" }
-# Quant lee QUANT_* (no ATLAS_MINIMAL_*): sin lightweight, el startup completo abre vision/USB y OpenCV puede matar el proceso.
-$env:QUANT_LIGHTWEIGHT_STARTUP = "true"
-if ($DisableCamera) {
-    $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED = "false"
-}
+# Quant lee QUANT_* (no ATLAS_MINIMAL_*).
+# Por defecto mantenemos lightweight para estabilidad; con -FullStartup se activa boot completo.
+$env:QUANT_LIGHTWEIGHT_STARTUP = if ($FullStartup) { "false" } else { "true" }
+$visionProviderForLog = if ($env:QUANT_DEFAULT_VISION_PROVIDER) { $env:QUANT_DEFAULT_VISION_PROVIDER } else { "<auto>" }
+Write-Step ("Configuración Quant: ENABLE_CAMERA={0}, QUANT_STARTUP_VISUAL_CONNECT_ENABLED={1}, QUANT_LIGHTWEIGHT_STARTUP={2}, QUANT_DEFAULT_VISION_PROVIDER={3}" -f `
+    $env:ENABLE_CAMERA, `
+    $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED, `
+    $env:QUANT_LIGHTWEIGHT_STARTUP, `
+    $visionProviderForLog)
 
 Write-Step "Arrancando Quant (8792)..."
 if (-not (Wait-PortListenerGone -Port 8792 -MaxSec 8)) {

@@ -1042,6 +1042,16 @@
   function executeCommand(raw) {
     const cmd = raw.trim().toLowerCase();
     if (!cmd) return;
+    if (
+      cmd === "volver ui" ||
+      cmd === "abrir ui" ||
+      cmd === "volver al hub" ||
+      cmd === "hub atlas" ||
+      cmd === "volver a 8791/ui"
+    ) {
+      window.location.assign("/ui");
+      return;
+    }
     if (cmd.includes("providers degradados")) {
       document.querySelector('[data-tab="providers"]').click();
       filterProviderRows(true);
@@ -1066,7 +1076,8 @@
       refreshAll();
       return;
     }
-    el.commandHint.textContent = "Comando no reconocido. Ejemplos: providers degradados | señales rechazadas | abrir dealer de SPY";
+    el.commandHint.textContent =
+      "Comando no reconocido. Ejemplos: volver ui | providers degradados | señales rechazadas | abrir dealer de SPY";
   }
 
   function filterProviderRows(onlyDegraded) {

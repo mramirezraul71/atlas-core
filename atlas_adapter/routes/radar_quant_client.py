@@ -22,14 +22,55 @@ _CACHE_LOCK = asyncio.Lock()
 _cache_mono: float = 0.0
 _cache_report: dict[str, Any] | None = None
 _CACHE_TTL_SEC = 2.5
+_CAM_CACHE_LOCK = asyncio.Lock()
+_cam_cache_mono: float = 0.0
+_cam_cache_payload: dict[str, Any] | None = None
+_CAM_CACHE_TTL_SEC = 2.0
+_CAM_CACHE_STALE_SEC = 180.0
+
+
+def _env_flag_true(name: str, default: bool) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw not in ("0", "false", "no", "off")
+
+
+def _resolve_quant_api_key_for_radar() -> str:
+    """Clave para puente Radar→Quant.
+
+    Prioriza clave explícita de entorno y, para entorno local de desarrollo,
+    permite fallback a la clave local por defecto (`atlas-quant-local`).
+    """
+    explicit = (os.getenv("ATLAS_QUANT_API_KEY") or os.getenv("QUANT_API_KEY") or "").strip()
+    if explicit:
+        return explicit
+    # Evita romper despliegues locales existentes donde PUSH no heredó la env key
+    # pero Quant sigue en la clave local por defecto.
+    if _env_flag_true("ATLAS_RADAR_ALLOW_DEFAULT_LOCAL_KEY", True):
+        return (get_quant_api_key() or "").strip()
+    return ""
+
+
+def _quant_base_candidates() -> list[str]:
+    preferred = get_quant_api_base().rstrip("/")
+    out: list[str] = []
+    for base in (
+        preferred,
+        "http://127.0.0.1:8792",
+        "http://127.0.0.1:8795",
+    ):
+        b = (base or "").strip().rstrip("/")
+        if b and b not in out:
+            out.append(b)
+    return out
 
 
 def radar_quant_http_enabled() -> bool:
     """Si es falso, el radar no intentará llamar a Quant (solo stub)."""
     if os.getenv("ATLAS_RADAR_QUANT_HTTP", "1").strip().lower() in ("0", "false", "no", "off"):
         return False
-    # Requiere clave explícita en entorno del proceso PUSH (seguridad acordada).
-    return bool((os.getenv("ATLAS_QUANT_API_KEY") or os.getenv("QUANT_API_KEY") or "").strip())
+    return bool(_resolve_quant_api_key_for_radar())
 
 
 async def fetch_scanner_report_cached(activity_limit: int = 60) -> dict[str, Any] | None:
@@ -43,21 +84,27 @@ async def fetch_scanner_report_cached(activity_limit: int = 60) -> dict[str, Any
         if _cache_report is not None and (now - _cache_mono) < _CACHE_TTL_SEC:
             return _cache_report
 
-    base = get_quant_api_base().rstrip("/")
-    key = get_quant_api_key()
-    url = f"{base}/scanner/report"
+    key = _resolve_quant_api_key_for_radar()
     headers = {"X-Api-Key": key, "Accept": "application/json"}
-    try:
-        # El reporte del escáner puede tardar >10s (yfinance / universo); timeout corto forzaba stub en radar.
-        read_sec = float(os.getenv("ATLAS_RADAR_SCANNER_HTTP_TIMEOUT_SEC", "120").strip() or "120")
-        read_sec = max(15.0, min(read_sec, 300.0))
-        timeout = httpx.Timeout(read_sec, connect=8.0)
-        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-            response = await client.get(url, headers=headers, params={"activity_limit": activity_limit})
-            response.raise_for_status()
-            body = response.json()
-    except Exception as exc:
-        _log.debug("fetch_scanner_report_cached fallo: %s", exc, exc_info=True)
+    # El reporte del escáner puede tardar >10s (yfinance / universo); timeout corto forzaba stub en radar.
+    read_sec = float(os.getenv("ATLAS_RADAR_SCANNER_HTTP_TIMEOUT_SEC", "120").strip() or "120")
+    read_sec = max(15.0, min(read_sec, 300.0))
+    timeout = httpx.Timeout(read_sec, connect=8.0)
+    body: dict[str, Any] | None = None
+    for base in _quant_base_candidates():
+        url = f"{base}/scanner/report"
+        try:
+            async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+                response = await client.get(url, headers=headers, params={"activity_limit": activity_limit})
+                response.raise_for_status()
+                raw = response.json()
+            if isinstance(raw, dict):
+                body = raw
+                break
+        except Exception as exc:
+            _log.debug("fetch_scanner_report_cached fallo base=%s: %s", base, exc, exc_info=True)
+            continue
+    if body is None:
         async with _CACHE_LOCK:
             _cache_report = None
             _cache_mono = 0.0
@@ -111,21 +158,27 @@ async def fetch_universe_search(q: str, limit: int = 25) -> dict[str, Any] | Non
     if hit is not None and (now - hit[0]) < _SEARCH_CACHE_TTL_SEC:
         return hit[1]
 
-    base = get_quant_api_base().rstrip("/")
-    api_key = get_quant_api_key()
-    url = f"{base}/scanner/universe/search"
+    api_key = _resolve_quant_api_key_for_radar()
     headers = {"X-Api-Key": api_key, "Accept": "application/json"}
-    try:
-        timeout = httpx.Timeout(12.0, connect=3.0)
-        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-            response = await client.get(
-                url,
-                headers=headers,
-                params={"q": q, "limit": max(1, min(int(limit), 100))},
-            )
-            response.raise_for_status()
-            body = response.json()
-    except Exception:
+    timeout = httpx.Timeout(12.0, connect=3.0)
+    body: dict[str, Any] | None = None
+    for base in _quant_base_candidates():
+        url = f"{base}/scanner/universe/search"
+        try:
+            async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+                response = await client.get(
+                    url,
+                    headers=headers,
+                    params={"q": q, "limit": max(1, min(int(limit), 100))},
+                )
+                response.raise_for_status()
+                raw = response.json()
+            if isinstance(raw, dict):
+                body = raw
+                break
+        except Exception:
+            continue
+    if body is None:
         return None
 
     if not isinstance(body, dict) or not body.get("ok"):
@@ -140,26 +193,50 @@ async def fetch_universe_search(q: str, limit: int = 25) -> dict[str, Any] | Non
 
 
 async def fetch_quant_camera_health() -> dict[str, Any] | None:
-    """GET /camera/health en Quant (StdResponse.data). Sin caché: salud debe ser reciente."""
+    """GET /camera/health en Quant (StdResponse.data) con caché corta y fallback stale."""
     if not radar_quant_http_enabled():
         return None
 
-    base = get_quant_api_base().rstrip("/")
-    api_key = get_quant_api_key()
-    url = f"{base}/camera/health"
+    global _cam_cache_mono, _cam_cache_payload
+    now = time.monotonic()
+    async with _CAM_CACHE_LOCK:
+        if _cam_cache_payload is not None and (now - _cam_cache_mono) < _CAM_CACHE_TTL_SEC:
+            return dict(_cam_cache_payload)
+
+    api_key = _resolve_quant_api_key_for_radar()
     headers = {"X-Api-Key": api_key, "Accept": "application/json"}
-    try:
-        timeout = httpx.Timeout(8.0, connect=2.5)
-        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            body = response.json()
-    except Exception:
+    timeout = httpx.Timeout(8.0, connect=2.5)
+    body: dict[str, Any] | None = None
+    for base in _quant_base_candidates():
+        url = f"{base}/camera/health"
+        try:
+            async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                raw = response.json()
+            if isinstance(raw, dict):
+                body = raw
+                break
+        except Exception:
+            continue
+    if body is None:
+        async with _CAM_CACHE_LOCK:
+            if _cam_cache_payload is not None and (time.monotonic() - _cam_cache_mono) < _CAM_CACHE_STALE_SEC:
+                return dict(_cam_cache_payload)
         return None
 
     if not isinstance(body, dict) or not body.get("ok"):
+        async with _CAM_CACHE_LOCK:
+            if _cam_cache_payload is not None and (time.monotonic() - _cam_cache_mono) < _CAM_CACHE_STALE_SEC:
+                return dict(_cam_cache_payload)
         return None
     data = body.get("data")
     if not isinstance(data, dict):
+        async with _CAM_CACHE_LOCK:
+            if _cam_cache_payload is not None and (time.monotonic() - _cam_cache_mono) < _CAM_CACHE_STALE_SEC:
+                return dict(_cam_cache_payload)
         return None
+    async with _CAM_CACHE_LOCK:
+        _cam_cache_payload = dict(data)
+        _cam_cache_mono = time.monotonic()
     return data

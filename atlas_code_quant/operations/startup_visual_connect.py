@@ -34,7 +34,30 @@ def apply_startup_camera_autoconfigure(*, vision_service: Any, settings: Any) ->
         logger.warning("Startup camera autoconfigure: diagnose failed: %s", exc)
         return out
     current = str(diag.get("provider") or "").strip().lower()
+    insta_chk = next((c for c in (diag.get("checks") or []) if isinstance(c, dict) and c.get("name") == "insta360"), {})
+    insta_reachable = bool(insta_chk.get("reachable"))
+    desktop_available = bool(diag.get("desktop_capture_available"))
     if current == "insta360":
+        # Si el proveedor persistido es Insta360 pero no hay fuente disponible,
+        # degradar a desktop para evitar loops OpenCV que pueden tumbar el proceso.
+        if not insta_reachable and desktop_available:
+            try:
+                vision_service.update(
+                    provider="desktop_capture",
+                    notes="startup fallback: insta360 unavailable -> desktop_capture",
+                )
+                out["applied"] = True
+                out["provider"] = "desktop_capture"
+                out["reason"] = "fallback_insta360_unavailable"
+                return out
+            except Exception as exc:
+                out["applied"] = False
+                out["error"] = str(exc)
+                logger.warning(
+                    "Startup camera autoconfigure: fallback desktop_capture failed: %s",
+                    exc,
+                )
+                return out
         out["applied"] = False
         out["reason"] = "already_insta360"
         return out
@@ -49,7 +72,6 @@ def apply_startup_camera_autoconfigure(*, vision_service: Any, settings: Any) ->
             out["error"] = str(exc)
             logger.warning("Startup camera autoconfigure: insta360 RTMP apply failed: %s", exc)
             return out
-    insta_chk = next((c for c in (diag.get("checks") or []) if isinstance(c, dict) and c.get("name") == "insta360"), {})
     if bool(insta_chk.get("reachable")):
         try:
             vision_service.update(provider="insta360", notes="startup: ENABLE_CAMERA auto (USB/pipeline)")

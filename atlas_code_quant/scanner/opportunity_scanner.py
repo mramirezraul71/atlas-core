@@ -32,9 +32,9 @@ from market_context.vix_handler import build_vix_context
 from learning.adaptive_policy import AdaptiveLearningService
 from learning.ml_signal_ranker import MLSignalRanker
 from learning.trade_events import SignalContext
-from scanner.options_flow_provider import MarketTelemetryStore, OptionsFlowProvider
-from scanner.universe_catalog import ScannerUniverseCatalog
-from scanner.asset_classifier import AssetClass, classify_asset
+from .options_flow_provider import MarketTelemetryStore, OptionsFlowProvider
+from .universe_catalog import ScannerUniverseCatalog
+from .asset_classifier import AssetClass, classify_asset
 
 logger = logging.getLogger("quant.scanner")
 
