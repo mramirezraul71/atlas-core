@@ -198,7 +198,7 @@ export function render(container) {
         <div class="quick-chip quant-chip" data-action="code-quant-dashboard" style="color:#00d4aa;border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.07)">${SVG.trading} Code Quant</div>
         <div class="quick-chip quant-chip" data-action="atlas-quant-scanner" style="color:#00d4aa;border-color:rgba(0,212,170,0.25)">&#9670; Escaner Quant</div>
         <div class="quick-chip quant-chip" data-action="option-strat" style="color:#00d4aa;border-color:rgba(0,212,170,0.35);background:rgba(0,212,170,0.07)">&#9651; OptionStrat</div>
-        <div class="quick-chip quant-chip" data-action="institutional-radar" style="color:#79c0ff;border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.06)">${SVG.radar} Radar Institucional</div>
+        <div class="quick-chip quant-chip quick-chip--institutional-radar" data-action="institutional-radar">${SVG.radar} Radar Institucional</div>
         <div class="quick-chip quant-chip" data-action="grafana-quant" style="color:#f46800;border-color:rgba(244,104,0,0.35)">${SVG.grafana} Grafana</div>
         <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
@@ -258,9 +258,9 @@ export function render(container) {
           <div class="app-tile-icon" style="color:#00d4aa">&#9651;</div>
           <div class="app-tile-label" style="color:#00d4aa">OptionStrat</div>
         </div>
-        <div class="app-tile" data-app="institutional-radar" style="border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.05)">
-          <div class="app-tile-icon" style="color:#79c0ff">${SVG.radar}</div>
-          <div class="app-tile-label" style="color:#79c0ff">Radar Institucional</div>
+        <div class="app-tile app-tile--institutional-radar" data-app="institutional-radar">
+          <div class="app-tile-icon">${SVG.radar}</div>
+          <div class="app-tile-label">Radar Institucional</div>
         </div>
         <div class="app-tile" data-app="grafana-quant" style="border-color:rgba(244,104,0,0.35)">
           <div class="app-tile-icon" style="color:#f46800">${SVG.grafana}</div>

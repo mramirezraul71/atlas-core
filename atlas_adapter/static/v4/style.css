@@ -1631,3 +1631,18 @@ button { cursor: pointer; font-family: inherit; }
     padding: 12px;
   }
 }
+
+/* ═══ Fase 3: Radar institucional — tokens compartidos (/static/shared/tokens.css) ═══ */
+.quick-chip.quick-chip--institutional-radar {
+  color: var(--atlas-surface-radar);
+  border-color: var(--atlas-surface-radar-border);
+  background: var(--atlas-surface-radar-bg-chip);
+}
+.app-tile--institutional-radar {
+  border-color: var(--atlas-surface-radar-border);
+  background: var(--atlas-surface-radar-bg-tile);
+}
+.app-tile--institutional-radar .app-tile-icon,
+.app-tile--institutional-radar .app-tile-label {
+  color: var(--atlas-surface-radar);
+}

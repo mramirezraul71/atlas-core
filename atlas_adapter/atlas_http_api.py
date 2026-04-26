@@ -133,7 +133,13 @@ except Exception:
     pass
 
 # Desarrollo / depuración: nunca servir JS/CSS/HTML V4 o Radar desde caché del navegador.
-_NOCACHE_PATH_FRAGMENTS = ("/v4/static/", "/ui/static/", "/radar/static/", "/radar/dashboard/assets/")
+_NOCACHE_PATH_FRAGMENTS = (
+    "/v4/static/",
+    "/ui/static/",
+    "/radar/static/",
+    "/radar/dashboard/assets/",
+    "/static/shared/",
+)
 _NOCACHE_EXACT = frozenset({"/ui", "/v4", "/radar/dashboard"})
 
 
@@ -5563,6 +5569,30 @@ async def serve_v4_static(request: Request, file_path: str):
     path = STATIC_DIR / "v4" / safe
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail=f"v4 asset not found: {safe}")
+    ct_map = {
+        ".js": "application/javascript",
+        ".css": "text/css",
+        ".html": "text/html",
+        ".json": "application/json",
+        ".svg": "image/svg+xml",
+    }
+    ct = ct_map.get(path.suffix, "application/octet-stream")
+    return FileResponse(
+        path,
+        media_type=ct,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@app.api_route("/static/shared/{file_path:path}", methods=["GET", "HEAD"])
+async def serve_shared_static(request: Request, file_path: str):
+    """Design tokens y assets compartidos (V4 + Radar) bajo ``atlas_adapter/static/shared/``."""
+    from fastapi import HTTPException
+
+    safe = (file_path or "").replace("..", "").strip("/")
+    path = STATIC_DIR / "shared" / safe
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"shared asset not found: {safe}")
     ct_map = {
         ".js": "application/javascript",
         ".css": "text/css",

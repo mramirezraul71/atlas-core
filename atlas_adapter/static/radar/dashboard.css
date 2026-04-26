@@ -1,33 +1,46 @@
 :root {
-  --bg-primary: #0a0a0a;
-  --bg-secondary: #111111;
-  --bg-tertiary: #1a1a1a;
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-emphasis: rgba(255, 255, 255, 0.12);
-  --text-primary: #e5e5e5;
-  --text-secondary: #a3a3a3;
-  --text-tertiary: #737373;
-  --accent-primary: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-subtle: rgba(59, 130, 246, 0.1);
+  /* Base compartida: ver /static/shared/tokens.css (Fase 3) */
+  --bg-primary: var(--atlas-bg-deep, #0a0a0a);
+  --bg-secondary: var(--atlas-bg-surface, #111111);
+  --bg-tertiary: var(--atlas-bg-elevated, #1a1a1a);
+  --border-subtle: var(--atlas-border-subtle, rgba(255, 255, 255, 0.06));
+  --border-emphasis: var(--atlas-border-muted, rgba(255, 255, 255, 0.12));
+  --text-primary: var(--atlas-text-primary, #e5e5e5);
+  --text-secondary: var(--atlas-text-secondary, #a3a3a3);
+  --text-tertiary: var(--atlas-text-tertiary, #737373);
+  --accent-primary: var(--atlas-accent, #3b82f6);
+  --accent-hover: var(--atlas-accent-hover, #2563eb);
+  --accent-subtle: var(--atlas-accent-soft, rgba(59, 130, 246, 0.1));
   --status-bullish: #10b981;
   --status-bearish: #ef4444;
   --status-caution: #f59e0b;
   --status-neutral: #6b7280;
   --status-stale: #dc2626;
-  --font-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: var(
+    --atlas-font-mono,
+    "JetBrains Mono",
+    "Fira Code",
+    "Consolas",
+    monospace
+  );
+  --font-sans: var(
+    --atlas-font-sans,
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif
+  );
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-base: 1rem;
   --text-lg: 1.125rem;
   --text-xl: 1.25rem;
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
+  --space-1: var(--atlas-space-1, 0.25rem);
+  --space-2: var(--atlas-space-2, 0.5rem);
+  --space-3: var(--atlas-space-3, 0.75rem);
+  --space-4: var(--atlas-space-4, 1rem);
+  --space-6: var(--atlas-space-6, 1.5rem);
+  --space-8: var(--atlas-space-8, 2rem);
 }
 
 * {
@@ -40,6 +53,20 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--text-sm);
+}
+
+.radar-return-link {
+  font-size: 13px;
+  color: var(--atlas-link, #58a6ff);
+  text-decoration: none;
+  border: 1px solid var(--atlas-link-border, rgba(88, 166, 255, 0.35));
+  padding: 6px 12px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.radar-return-link:hover {
+  text-decoration: underline;
 }
 
 .app-shell {
@@ -572,7 +599,7 @@ select:focus-visible,
 [role="option"]:focus-visible,
 [role="listbox"]:focus-visible,
 .symbol-suggest-item:focus-visible {
-  outline: 2px solid var(--accent-primary, #0ea5e9);
+  outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
 
@@ -583,8 +610,9 @@ select:focus:not(:focus-visible) {
   outline: none;
 }
 
-#returnUiLink:focus-visible {
-  outline: 2px solid var(--accent-primary, #0ea5e9);
+#returnUiLink:focus-visible,
+.radar-return-link:focus-visible {
+  outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
 
