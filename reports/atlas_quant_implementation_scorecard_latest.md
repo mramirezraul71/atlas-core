@@ -1,6 +1,6 @@
 # ATLAS Quant - Trading Implementation Scorecard
 
-- Generated at: `2026-04-26T12:17:37.358951+00:00`
+- Generated at: `2026-04-26T12:47:39.217102+00:00`
 - Process compliance: `97.5/100` (healthy)
 - Implementation usefulness: `55.0/100` (watch)
 
