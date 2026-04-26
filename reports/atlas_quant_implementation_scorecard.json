@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-21T12:58:23.578120+00:00",
+  "generated_at": "2026-04-26T10:56:16.214727+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -95,15 +95,15 @@
     },
     "memory_persistence_score": {
       "name": "memory_persistence_score",
-      "value": 100.0,
+      "value": 97.3,
       "status": "healthy",
       "details": {
-        "delivered_events": 1717,
-        "total_events": 2374,
-        "queued_local_only_events": 0,
-        "active_pending_events": 0,
+        "delivered_events": 1718,
+        "total_events": 2375,
+        "queued_local_only_events": 69,
+        "active_pending_events": 69,
         "historical_local_only_events": 657,
-        "delivery_ratio_pct": 100.0,
+        "delivery_ratio_pct": 96.14,
         "last_memory_ok": true,
         "last_bitacora_ok": true,
         "replay_tracking_ready": true,
@@ -140,8 +140,8 @@
     },
     "observability_feedback_score": {
       "name": "observability_feedback_score",
-      "value": 88.0,
-      "status": "healthy",
+      "value": 80.0,
+      "status": "workable",
       "details": {
         "report_available": true,
         "overall_status": "ready",
@@ -154,8 +154,8 @@
         "provisioning_rebuild_ok": true,
         "reload_resilience_pct": 100.0,
         "foundation_score_pct": 100.0,
-        "freshness_pct": 40.0,
-        "age_hours": 39.36
+        "freshness_pct": 0.0,
+        "age_hours": 157.33
       }
     },
     "visual_benchmark_feedback_score": {
@@ -291,7 +291,7 @@
     }
   },
   "supporting_indicators": {
-    "brain_delivery_ratio_pct": 100.0,
+    "brain_delivery_ratio_pct": 96.14,
     "attributed_open_positions_pct": 100.0,
     "open_untracked_ratio_pct": 0.0,
     "recent_unattributed_count": 0,
@@ -299,7 +299,7 @@
     "post_mortem_coverage_pct": 100.0,
     "recent_attribution_pct": 100.0,
     "external_learning_translation_score": 100.0,
-    "observability_feedback_score": 88.0,
+    "observability_feedback_score": 80.0,
     "visual_benchmark_feedback_score": 100.0,
     "visual_benchmark_source_count": 4,
     "visual_benchmark_translation_pct": 0.0,
