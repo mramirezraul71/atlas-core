@@ -9,8 +9,10 @@ import { poll, stop } from "../lib/polling.js";
 const POLL_ID = "config-module";
 const REALTIME_POLL_ID = "config-module:realtime";
 const REALTIME_INTERVAL_MS = 12000;
+const ACTIVITY_HISTORY_LIMIT = 8;
 const AUTO_LOCAL_MODE = "auto_local";
 const AUTO_LOCAL_MODEL = "auto_local";
+const WORKING_PHASES = new Set(["starting", "running", "planning", "executing"]);
 
 const MODE_OPTIONS = [
   { value: AUTO_LOCAL_MODE, label: "Automatica local (default)" },
@@ -188,6 +190,82 @@ function _renderInput(id, placeholder, current, type = "text") {
       style="width:100%;padding:7px 10px;background:var(--surface-1);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;box-sizing:border-box">`;
 }
 
+function _renderTextarea(id, placeholder, current, rows = 4) {
+  return `
+    <textarea id="${id}" rows="${rows}" placeholder="${_esc(placeholder)}"
+      style="width:100%;padding:7px 10px;background:var(--surface-1);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;box-sizing:border-box;resize:vertical;font-family:inherit">${_esc(String(current ?? ""))}</textarea>`;
+}
+
+function _toBoolean(value, defaultValue = false) {
+  if (typeof value === "boolean") return value;
+  if (value === null || value === undefined || value === "") return defaultValue;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "si", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return defaultValue;
+}
+
+function _renderBooleanSelect(id, current) {
+  const boolValue = _toBoolean(current, false);
+  return _renderSelect(
+    id,
+    [
+      { value: "true", label: "Activo" },
+      { value: "false", label: "Inactivo" },
+    ],
+    String(boolValue),
+  );
+}
+
+function _unwrapData(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  return raw?.data ?? raw;
+}
+
+function _safeNum(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function _formatInt(value, fallback = "--") {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.round(num).toLocaleString();
+}
+
+function _formatDecimal(value, digits = 1, fallback = "--") {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return num.toFixed(digits);
+}
+
+function _formatPercent(value, digits = 1, fallback = "--") {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return `${num.toFixed(digits)}%`;
+}
+
+function _formatMoney(value, fallback = "--") {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return `$${num.toFixed(2)}`;
+}
+
+function _parseTsMs(ts) {
+  if (!ts) return 0;
+  if (typeof ts === "number" && Number.isFinite(ts)) {
+    return ts > 1e12 ? ts : ts * 1000;
+  }
+  const parsed = Date.parse(String(ts));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function _formatTime(ts) {
+  const ms = _parseTsMs(ts);
+  if (!ms) return "--:--";
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function _modeHelpText(mode) {
   if (mode === AUTO_LOCAL_MODE) {
     return "Default: usa modelos locales de Ollama y escala por complejidad/especialidad.";
@@ -249,6 +327,16 @@ export default {
             <div style="padding:12px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
           </div>
 
+          <div class="section-title">Observabilidad IA</div>
+          <div id="cfg-observability" style="margin-bottom:20px">
+            <div style="padding:12px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
+          </div>
+
+          <div class="section-title">Actividad en tiempo real</div>
+          <div id="cfg-activity" style="margin-bottom:20px">
+            <div style="padding:12px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
+          </div>
+
           <div class="section-title">Modelos Ollama (Local)</div>
           <div class="action-bar" style="margin-bottom:12px">
             <button class="action-btn" id="btn-ollama-list">
@@ -300,41 +388,35 @@ async function _fetchConfigData() {
 
 async function _fetchConfigDataWithOptions(options = {}) {
   const includeAutonomy = Boolean(options?.includeAutonomy);
-  const requests = [
-    fetch("/health").then((r) => r.json()).catch(() => null),
-    fetch("/health/deep").then((r) => r.json()).catch(() => null),
-    fetch("/config/ai").then((r) => r.json()).catch(() => null),
-    fetch("/api/workspace/interpreter/models")
+  const requests = {
+    healthRes: fetch("/health").then((r) => r.json()).catch(() => null),
+    healthDeepRes: fetch("/health/deep").then((r) => r.json()).catch(() => null),
+    aiRes: fetch("/config/ai").then((r) => r.json()).catch(() => null),
+    workspaceRes: fetch("/api/workspace/interpreter/models")
       .then((r) => r.json())
       .catch(() => null),
-    fetch("/config/ai/ollama-models").then((r) => r.json()).catch(() => null),
-    fetch("/api/brain/state").then((r) => r.json()).catch(() => null),
-  ];
+    ollamaRes: fetch("/config/ai/ollama-models").then((r) => r.json()).catch(() => null),
+    brainStateRes: fetch("/api/brain/state").then((r) => r.json()).catch(() => null),
+    aiStatusRes: fetch("/ai/status").then((r) => r.json()).catch(() => null),
+    agentModelsRes: fetch("/agent/models").then((r) => r.json()).catch(() => null),
+    observabilityRes: fetch("/api/observability/metrics")
+      .then((r) => r.json())
+      .catch(() => null),
+    metricsRes: fetch("/metrics").then((r) => r.json()).catch(() => null),
+  };
+
   if (includeAutonomy) {
-    requests.push(
-      fetch("/api/autonomy/status").then((r) => r.json()).catch(() => null),
-    );
+    requests.autonomyRes = fetch("/api/autonomy/status")
+      .then((r) => r.json())
+      .catch(() => null);
   }
 
-  const [
-    healthRes,
-    healthDeepRes,
-    aiRes,
-    workspaceRes,
-    ollamaRes,
-    brainStateRes,
-    autonomyRes,
-  ] = await Promise.all(requests);
-
-  return {
-    healthRes,
-    healthDeepRes,
-    autonomyRes: includeAutonomy ? autonomyRes : null,
-    aiRes,
-    workspaceRes,
-    ollamaRes,
-    brainStateRes,
-  };
+  const entries = await Promise.all(
+    Object.entries(requests).map(async ([key, req]) => [key, await req]),
+  );
+  const payload = Object.fromEntries(entries);
+  if (!includeAutonomy) payload.autonomyRes = null;
+  return payload;
 }
 
 function _applyConfigData(
@@ -351,6 +433,10 @@ function _applyConfigData(
     workspaceRes,
     ollamaRes,
     brainStateRes,
+    aiStatusRes,
+    agentModelsRes,
+    observabilityRes,
+    metricsRes,
   } = payload || {};
   const workspaceModels = _extractWorkspaceModels(workspaceRes);
   const ollamaModels = _extractOllamaModels(ollamaRes);
@@ -376,7 +462,15 @@ function _applyConfigData(
     _renderAIForm(container, aiPayload, catalog);
     container._cfgAppliedAiSignature = aiSignature;
   }
-  _renderProviders(container, brainStateRes, workspaceRes);
+  _renderProviders(
+    container,
+    brainStateRes,
+    workspaceRes,
+    aiStatusRes,
+    agentModelsRes,
+  );
+  _renderObservability(container, autonomyRes, aiStatusRes, observabilityRes, metricsRes);
+  _renderLiveActivity(container, autonomyRes, aiStatusRes, observabilityRes, agentModelsRes);
   _renderOllamaTable(container, ollamaModels);
 }
 
@@ -394,12 +488,7 @@ function _isConfigFormBusy(container) {
 }
 
 async function _refreshRealtime(container) {
-  const includeAutonomy = !Number.isFinite(
-    Number(container?._cfgUptimeBaseHours),
-  );
-  const payload = includeAutonomy
-    ? await _fetchConfigDataWithOptions({ includeAutonomy: true })
-    : await _fetchConfigData();
+  const payload = await _fetchConfigDataWithOptions({ includeAutonomy: true });
   const refreshForm = !_isConfigFormBusy(container);
   _applyConfigData(container, payload, refreshForm);
 }
@@ -501,6 +590,16 @@ function _renderAIForm(container, payload, catalog) {
       catalog.reasoningModels[0] ||
       "qwen3-coder:30b",
   );
+  const topP = _safeNum(payload?.top_p, 0.9);
+  const topK = _safeNum(payload?.top_k, 40);
+  const maxTokens = _safeNum(payload?.max_tokens, 2048);
+  const repeatPenalty = _safeNum(payload?.repeat_penalty, 1.1);
+  const systemPrompt = String(
+    payload?.system_prompt ||
+      "Eres ATLAS, sistema autonomo de gestion inteligente. Responde con soluciones tecnicas concretas.",
+  );
+  const ollamaUrl = String(payload?.ollama_url || "http://localhost:11434");
+  const logLevel = String(payload?.log_level || "info").toLowerCase();
 
   grid.innerHTML = `
     <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
@@ -539,6 +638,26 @@ function _renderAIForm(container, payload, catalog) {
         style="width:100%;padding:7px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;box-sizing:border-box">
     </div>
     <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Top P</div>
+      <input id="cfg-top-p" type="number" min="0" max="1" step="0.01" value="${topP}"
+        style="width:100%;padding:7px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Top K</div>
+      <input id="cfg-top-k" type="number" min="0" max="200" step="1" value="${Math.round(topK)}"
+        style="width:100%;padding:7px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Max tokens</div>
+      <input id="cfg-max-tokens" type="number" min="256" max="32768" step="64" value="${Math.round(maxTokens)}"
+        style="width:100%;padding:7px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Repeat penalty</div>
+      <input id="cfg-repeat-penalty" type="number" min="0.8" max="2" step="0.05" value="${repeatPenalty}"
+        style="width:100%;padding:7px 10px;background:var(--surface-0);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Memoria contexto</div>
       ${_renderSelect(
         "cfg-ctx-type",
@@ -548,6 +667,35 @@ function _renderAIForm(container, payload, catalog) {
         ],
         payload?.memory_context || "long",
       )}
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Nivel log</div>
+      ${_renderSelect(
+        "cfg-log-level",
+        [
+          { value: "debug", label: "Debug" },
+          { value: "info", label: "Info" },
+          { value: "warning", label: "Warning" },
+          { value: "error", label: "Error" },
+        ],
+        logLevel,
+      )}
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Respuesta streaming</div>
+      ${_renderBooleanSelect("cfg-stream-response", payload?.stream_response)}
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Guardar historial</div>
+      ${_renderBooleanSelect("cfg-save-history", payload?.save_history)}
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px;grid-column:1 / -1">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">URL Ollama</div>
+      ${_renderInput("cfg-ollama-url", "http://localhost:11434", ollamaUrl)}
+    </div>
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px;grid-column:1 / -1">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">System prompt</div>
+      ${_renderTextarea("cfg-system-prompt", "Instrucciones base del orquestador", systemPrompt, 4)}
     </div>
   `;
 
@@ -578,7 +726,63 @@ function _applyModeBehavior(container) {
   }
 }
 
-function _renderProviders(container, brainStateRaw, workspaceRaw) {
+function _extractAiProviderMap(aiStatusRaw) {
+  const aiStatus = _unwrapData(aiStatusRaw);
+  const rows = Array.isArray(aiStatus?.providers) ? aiStatus.providers : [];
+  const map = {};
+  for (const row of rows) {
+    const id = String(row?.id || "").trim().toLowerCase();
+    if (!id) continue;
+    map[id] = {
+      available: typeof row?.available === "boolean" ? row.available : null,
+      isFree: typeof row?.is_free === "boolean" ? row.is_free : null,
+      name: String(row?.name || id),
+    };
+  }
+  return map;
+}
+
+function _extractAgentRuntimeByProvider(agentModelsRaw) {
+  const rows = _unwrapData(agentModelsRaw);
+  const list = Array.isArray(rows) ? rows : [];
+  const out = {};
+
+  for (const row of list) {
+    const providerId = String(row?.provider || "").trim().toLowerCase();
+    if (!providerId) continue;
+    if (!out[providerId]) {
+      out[providerId] = {
+        total: 0,
+        availableCount: 0,
+        availabilityKnown: false,
+        warn: false,
+        message: "",
+      };
+    }
+    const bucket = out[providerId];
+    bucket.total += 1;
+    if (typeof row?.available === "boolean") {
+      bucket.availabilityKnown = true;
+      if (row.available) bucket.availableCount += 1;
+    }
+    const runtimeState = String(row?.runtime_state || "").trim().toLowerCase();
+    if (runtimeState === "warn" || runtimeState === "err" || runtimeState === "error") {
+      bucket.warn = true;
+    }
+    const msg = String(row?.status_message || row?.runtime_error || "").trim();
+    if (msg && !bucket.message) bucket.message = msg;
+  }
+
+  return out;
+}
+
+function _renderProviders(
+  container,
+  brainStateRaw,
+  workspaceRaw,
+  aiStatusRaw,
+  agentModelsRaw,
+) {
   const el = container.querySelector("#cfg-providers");
   if (!el) return;
 
@@ -588,11 +792,15 @@ function _renderProviders(container, brainStateRaw, workspaceRaw) {
     ? brain.provider_options
     : [];
   const countByProvider = _extractWorkspaceProviderCounts(workspaceRaw);
+  const aiProviderMap = _extractAiProviderMap(aiStatusRaw);
+  const runtimeByProvider = _extractAgentRuntimeByProvider(agentModelsRaw);
 
   const providers = new Set(["ollama"]);
   for (const p of providerOptions) providers.add(String(p?.id || "").trim());
   for (const key of Object.keys(credentials || {})) providers.add(String(key || ""));
   for (const key of Object.keys(countByProvider || {})) providers.add(String(key || ""));
+  for (const key of Object.keys(aiProviderMap || {})) providers.add(String(key || ""));
+  for (const key of Object.keys(runtimeByProvider || {})) providers.add(String(key || ""));
 
   const ordered = Array.from(providers)
     .filter(Boolean)
@@ -608,21 +816,371 @@ function _renderProviders(container, brainStateRaw, workspaceRaw) {
       .map((providerId) => {
         const modelCount = countByProvider[providerId] || 0;
         const cred = credentials[providerId] || {};
+        const aiMeta = aiProviderMap[providerId] || {};
+        const runtimeMeta = runtimeByProvider[providerId] || {};
         const configured =
-          providerId === "ollama" || Boolean(cred?.configured) || modelCount > 0;
-        const statusClass = configured ? "active" : "down";
-        const dotClass = configured ? "ok" : "down";
+          providerId === "ollama" ||
+          Boolean(cred?.configured) ||
+          modelCount > 0 ||
+          (runtimeMeta?.total || 0) > 0;
+
+        const runtimeAvailable =
+          runtimeMeta?.availabilityKnown === true
+            ? runtimeMeta.availableCount > 0
+            : null;
+        const aiAvailable =
+          typeof aiMeta?.available === "boolean" ? aiMeta.available : null;
+        const operational = runtimeAvailable !== null ? runtimeAvailable : aiAvailable;
+
+        const down = operational === false;
+        const warn = !down && Boolean(runtimeMeta?.warn);
+        const statusClass = down ? "down" : "active";
+        const dotClass = down ? "down" : "ok";
+        const modelRuntimeText =
+          runtimeMeta?.total > 0
+            ? `${runtimeMeta.availableCount || 0}/${runtimeMeta.total} runtime`
+            : "sin runtime";
+        const billingTag =
+          aiMeta?.isFree === true
+            ? "Gratis"
+            : aiMeta?.isFree === false
+              ? "Pago/API"
+              : "N/A";
+
+        let statusLabel = "Activo";
+        if (down) statusLabel = "No disponible";
+        else if (!configured) statusLabel = "Sin credenciales";
+        else if (warn) statusLabel = "Activo con alertas";
+
+        const runtimeMsg = String(runtimeMeta?.message || "").slice(0, 120);
         return `<div class="provider-card ${statusClass}">
           <div class="provider-name">${_esc(providerId)}</div>
-          <div class="provider-role">${modelCount} modelos detectados</div>
+          <div class="provider-role">${modelCount} modelos workspace | ${_esc(modelRuntimeText)}</div>
+          <div class="provider-role">Tipo: ${_esc(billingTag)}</div>
           <div class="provider-status">
             <div class="provider-dot ${dotClass}"></div>
-            ${configured ? "Activo" : "Sin credenciales"}
+            ${_esc(statusLabel)}
           </div>
+          ${runtimeMsg ? `<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">${_esc(runtimeMsg)}</div>` : ""}
         </div>`;
       })
       .join("")}
   </div>`;
+}
+
+function _renderObservability(
+  container,
+  autonomyRaw,
+  aiStatusRaw,
+  observabilityRaw,
+  metricsRaw,
+) {
+  const el = container.querySelector("#cfg-observability");
+  if (!el) return;
+
+  const autonomy = _unwrapData(autonomyRaw);
+  const kpis = autonomy?.kpis || {};
+  const aiStatus = _unwrapData(aiStatusRaw);
+  const observability = _unwrapData(observabilityRaw);
+  const metrics = _unwrapData(metricsRaw);
+  const routeToModel =
+    aiStatus?.route_to_model && typeof aiStatus.route_to_model === "object"
+      ? aiStatus.route_to_model
+      : {};
+  const telemetry =
+    aiStatus?.telemetry && typeof aiStatus.telemetry === "object"
+      ? aiStatus.telemetry
+      : {};
+
+  const totalRequests = _safeNum(
+    observability?.total_requests,
+    _safeNum(metrics?.total_requests, 0),
+  );
+  const activeRequests = _safeNum(
+    observability?.active_requests,
+    _safeNum(metrics?.active_requests, 0),
+  );
+  const memoryMb = _safeNum(
+    observability?.memory_mb,
+    _safeNum(metrics?.memory_mb, 0),
+  );
+  const healthScore = _safeNum(
+    observability?.health_score,
+    _safeNum(autonomy?.level, 0),
+  );
+  const successRate = _safeNum(kpis?.success_rate_24h, _safeNum(kpis?.success_rate, 0));
+  const queue = _safeNum(kpis?.pending_queue_count, 0);
+  const incidents = _safeNum(kpis?.incidents_resolved, 0);
+  const mttr = _safeNum(kpis?.mttr_minutes, 0);
+  const spent = _safeNum(aiStatus?.spent_today_usd, 0);
+  const budget = _safeNum(aiStatus?.budget_daily_usd, 0);
+  const maxTaskCost = _safeNum(aiStatus?.max_cost_per_task_usd, 0);
+  const externalApisLabel =
+    typeof aiStatus?.external_apis_allowed === "boolean"
+      ? aiStatus.external_apis_allowed
+        ? "Permitidas"
+        : "Bloqueadas"
+      : "Sin datos";
+  const paidApisLabel =
+    typeof aiStatus?.paid_api_allowed === "boolean"
+      ? aiStatus.paid_api_allowed
+        ? "Permitidas"
+        : "Bloqueadas"
+      : "Sin datos";
+
+  const routeRows = Object.entries(routeToModel).slice(0, 8);
+  const telemetryRows = Object.entries(telemetry)
+    .map(([id, row]) => ({
+      id,
+      requests: _safeNum(row?.requests, 0),
+      successRate: _safeNum(row?.success_rate, 0) * 100,
+      errorRate: _safeNum(row?.error_rate, 0) * 100,
+      latency: _safeNum(row?.latency_avg_ms, 0),
+      cost: _safeNum(row?.cost_estimate_usd, 0),
+    }))
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 4);
+
+  el.innerHTML = `
+    <div class="stat-row" style="margin-bottom:12px">
+      <div class="stat-card">
+        <div class="stat-card-label">Solicitudes</div>
+        <div class="stat-card-value" style="font-size:18px">${_esc(_formatInt(totalRequests))}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Solicitudes activas</div>
+        <div class="stat-card-value ${activeRequests > 0 ? "accent" : ""}" style="font-size:18px">${_esc(_formatInt(activeRequests))}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Memoria proceso</div>
+        <div class="stat-card-value" style="font-size:18px">${_esc(`${_formatDecimal(memoryMb, 1, "0.0")} MB`)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Salud observabilidad</div>
+        <div class="stat-card-value ${healthScore >= 80 ? "green" : healthScore >= 50 ? "accent" : "orange"}" style="font-size:18px">${_esc(_formatDecimal(healthScore, 1, "--"))}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Exito 24h</div>
+        <div class="stat-card-value" style="font-size:18px">${_esc(_formatPercent(successRate, 1, "--"))}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Cola operativa</div>
+        <div class="stat-card-value" style="font-size:18px">${_esc(_formatInt(queue))}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Incidentes resueltos</div>
+        <div class="stat-card-value green" style="font-size:18px">${_esc(_formatInt(incidents))}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">MTTR</div>
+        <div class="stat-card-value" style="font-size:18px">${_esc(`${_formatDecimal(mttr, 1, "0.0")} min`)}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+      <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Presupuesto y politicas</div>
+        <div style="font-size:12px;color:var(--text-primary);margin-bottom:6px">Gastado hoy: <strong>${_esc(_formatMoney(spent, "$0.00"))}</strong></div>
+        <div style="font-size:12px;color:var(--text-primary);margin-bottom:6px">Presupuesto diario: <strong>${_esc(_formatMoney(budget, "$0.00"))}</strong></div>
+        <div style="font-size:12px;color:var(--text-primary);margin-bottom:6px">Max costo por tarea: <strong>${_esc(_formatMoney(maxTaskCost, "$0.00"))}</strong></div>
+        <div style="font-size:11px;color:var(--text-muted)">
+          APIs externas: ${_esc(externalApisLabel)} | APIs de pago: ${_esc(paidApisLabel)}
+        </div>
+      </div>
+
+      <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Ruteo automatico por especialidad</div>
+        ${
+          routeRows.length
+            ? routeRows
+                .map(
+                  ([route, model]) =>
+                    `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-subtle)">
+                      <span style="font-size:12px;color:var(--text-muted)">${_esc(route)}</span>
+                      <span style="font-size:11px;color:var(--text-primary);font-family:var(--font-mono);text-align:right">${_esc(String(model || "--"))}</span>
+                    </div>`,
+                )
+                .join("")
+            : `<div style="font-size:12px;color:var(--text-muted)">Sin rutas registradas.</div>`
+        }
+      </div>
+
+      <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Telemetria reciente por modelo</div>
+        ${
+          telemetryRows.length
+            ? telemetryRows
+                .map(
+                  (row) =>
+                    `<div style="padding:7px 0;border-bottom:1px solid var(--border-subtle)">
+                      <div style="font-size:11px;color:var(--text-primary);font-family:var(--font-mono)">${_esc(row.id)}</div>
+                      <div style="font-size:11px;color:var(--text-muted)">
+                        req: ${_esc(_formatInt(row.requests, "0"))} | exito: ${_esc(_formatPercent(row.successRate, 1, "0.0%"))} | error: ${_esc(_formatPercent(row.errorRate, 1, "0.0%"))}
+                      </div>
+                      <div style="font-size:11px;color:var(--text-muted)">
+                        lat avg: ${_esc(`${_formatDecimal(row.latency, 1, "0.0")} ms`)} | costo: ${_esc(_formatMoney(row.cost, "$0.00"))}
+                      </div>
+                    </div>`,
+                )
+                .join("")
+            : `<div style="font-size:12px;color:var(--text-muted)">Aun no hay telemetria de inferencias.</div>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function _mergeActivityHistory(container, timelineRows) {
+  const incoming = Array.isArray(timelineRows) ? timelineRows : [];
+  const existing = Array.isArray(container?._cfgActivityHistory)
+    ? container._cfgActivityHistory
+    : [];
+  const merged = [];
+  const seen = new Set();
+
+  for (const row of [...incoming, ...existing]) {
+    const event = String(row?.event || row?.message || "").trim();
+    if (!event) continue;
+    const ts = row?.ts || row?.timestamp || "";
+    const key = `${ts}|${event}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({
+      ts,
+      event,
+      kind: String(row?.kind || "info"),
+      result: String(row?.result || "n/a"),
+    });
+  }
+
+  merged.sort((a, b) => _parseTsMs(b.ts) - _parseTsMs(a.ts));
+  const trimmed = merged.slice(0, ACTIVITY_HISTORY_LIMIT);
+  container._cfgActivityHistory = trimmed;
+  return trimmed;
+}
+
+function _renderLiveActivity(
+  container,
+  autonomyRaw,
+  aiStatusRaw,
+  observabilityRaw,
+  agentModelsRaw,
+) {
+  const el = container.querySelector("#cfg-activity");
+  if (!el) return;
+
+  const autonomy = _unwrapData(autonomyRaw);
+  const kpis = autonomy?.kpis || {};
+  const manager = autonomy?.manager || {};
+  const daemon = manager?.daemon || {};
+  const latest = manager?.latest || {};
+  const timelineRows = Array.isArray(autonomy?.timeline) ? autonomy.timeline : [];
+  const historyRows = _mergeActivityHistory(container, timelineRows);
+
+  const observability = _unwrapData(observabilityRaw);
+  const activeRequests = _safeNum(observability?.active_requests, 0);
+  const inProgress = _safeNum(kpis?.tasks_in_progress, 0);
+  const queue = _safeNum(kpis?.pending_queue_count, 0);
+  const autonomyLevel = _safeNum(autonomy?.level, 0);
+
+  const currentPhase = String(
+    daemon?.current_phase || latest?.current_phase || "idle",
+  ).toLowerCase();
+  const currentAction = String(
+    daemon?.current_action || latest?.current_action || "",
+  ).trim();
+  const currentSummary = String(latest?.summary || "").trim();
+  const currentTask =
+    currentAction ||
+    currentSummary ||
+    historyRows[0]?.event ||
+    "Monitoreo activo del sistema";
+
+  const aiStatus = _unwrapData(aiStatusRaw);
+  const providersRows = Array.isArray(_unwrapData(agentModelsRaw))
+    ? _unwrapData(agentModelsRaw)
+    : [];
+  const providersTotal = new Set(
+    providersRows
+      .map((row) => String(row?.provider || "").trim().toLowerCase())
+      .filter(Boolean),
+  ).size;
+  const providersUp = new Set(
+    providersRows
+      .filter((row) => row?.available)
+      .map((row) => String(row?.provider || "").trim().toLowerCase())
+      .filter(Boolean),
+  ).size;
+
+  const workingNow =
+    WORKING_PHASES.has(currentPhase) || inProgress > 0 || activeRequests > 0;
+  const statusText = workingNow ? "Trabajando" : "En espera";
+  const statusTone = workingNow ? "green" : "accent";
+  const nextRun = String(daemon?.next_run_at || "").trim();
+  const nextRunLabel = nextRun ? _formatTime(nextRun) : "--:--";
+
+  el.innerHTML = `
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Estado operativo en vivo</div>
+          <div style="font-size:17px;color:var(--text-primary);margin-top:4px">${_esc(currentTask)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="provider-dot ok"></div>
+          <div class="stat-card-value ${statusTone}" style="font-size:16px">${_esc(statusText)}</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px">
+        <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:8px;padding:10px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Fase actual</div>
+          <div style="font-size:13px;color:var(--text-primary)">${_esc(currentPhase || "idle")}</div>
+        </div>
+        <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:8px;padding:10px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Solicitudes activas</div>
+          <div style="font-size:13px;color:var(--text-primary)">${_esc(_formatInt(activeRequests, "0"))}</div>
+        </div>
+        <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:8px;padding:10px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Tareas en progreso</div>
+          <div style="font-size:13px;color:var(--text-primary)">${_esc(_formatInt(inProgress, "0"))}</div>
+        </div>
+        <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:8px;padding:10px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Cola total</div>
+          <div style="font-size:13px;color:var(--text-primary)">${_esc(_formatInt(queue, "0"))}</div>
+        </div>
+        <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:8px;padding:10px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Proveedores activos</div>
+          <div style="font-size:13px;color:var(--text-primary)">${_esc(`${providersUp}/${providersTotal || 0}`)}</div>
+        </div>
+        <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:8px;padding:10px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Nivel autonomia</div>
+          <div style="font-size:13px;color:var(--text-primary)">${_esc(_formatDecimal(autonomyLevel, 1, "--"))}</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;font-size:11px;color:var(--text-muted)">
+        Proxima corrida daemon: ${_esc(nextRunLabel)} | Router IA: ${aiStatus?.ok ? "activo" : "sin datos"} | Actualizado: ${_esc(_formatTime(Date.now()))}
+      </div>
+    </div>
+
+    <div style="background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px">
+      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Bitacora reciente de actividad</div>
+      ${
+        historyRows.length
+          ? historyRows
+              .map(
+                (row) =>
+                  `<div style="padding:8px 0;border-bottom:1px solid var(--border-subtle)">
+                    <div style="font-size:11px;color:var(--text-muted)">${_esc(_formatTime(row.ts))} | ${_esc(row.kind)} | ${_esc(row.result)}</div>
+                    <div style="font-size:12px;color:var(--text-primary);margin-top:2px">${_esc(row.event)}</div>
+                  </div>`,
+              )
+              .join("")
+          : `<div style="font-size:12px;color:var(--text-muted)">Sin eventos recientes en timeline.</div>`
+      }
+    </div>
+  `;
 }
 
 function _renderOllamaTable(container, models) {
@@ -661,6 +1219,14 @@ async function _saveConfig(container) {
   if (msg) msg.textContent = "Guardando...";
 
   const get = (selector) => container.querySelector(selector)?.value || "";
+  const parseFloatSafe = (value, fallback) => {
+    const n = Number.parseFloat(String(value ?? "").trim());
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const parseIntSafe = (value, fallback) => {
+    const n = Number.parseInt(String(value ?? "").trim(), 10);
+    return Number.isFinite(n) ? n : fallback;
+  };
   const mode = _normalizeMode(get("#cfg-ai-mode"));
   let provider = String(get("#cfg-provider") || "ollama").toLowerCase();
   let model = String(get("#cfg-brain-model") || "").trim();
@@ -684,9 +1250,18 @@ async function _saveConfig(container) {
     brain_model: model,
     code_model: codeModel,
     reasoning_model: reasoningModel,
-    temperature: parseFloat(get("#cfg-temperature") || "0.2"),
-    context_window: parseInt(get("#cfg-ctx-window") || "8192", 10),
+    temperature: parseFloatSafe(get("#cfg-temperature"), 0.2),
+    top_p: parseFloatSafe(get("#cfg-top-p"), 0.9),
+    top_k: parseIntSafe(get("#cfg-top-k"), 40),
+    max_tokens: parseIntSafe(get("#cfg-max-tokens"), 2048),
+    repeat_penalty: parseFloatSafe(get("#cfg-repeat-penalty"), 1.1),
+    context_window: parseIntSafe(get("#cfg-ctx-window"), 8192),
     memory_context: get("#cfg-ctx-type") || "long",
+    system_prompt: String(get("#cfg-system-prompt") || "").trim(),
+    ollama_url: String(get("#cfg-ollama-url") || "http://localhost:11434").trim(),
+    stream_response: _toBoolean(get("#cfg-stream-response"), false),
+    save_history: _toBoolean(get("#cfg-save-history"), true),
+    log_level: String(get("#cfg-log-level") || "info").toLowerCase(),
     specialists: {
       code: { enabled: true, model: codeModel },
       vision: { enabled: true, model: "qwen3-vl:30b" },
