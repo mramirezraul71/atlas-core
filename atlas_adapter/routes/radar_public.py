@@ -17,14 +17,29 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+
+from atlas_adapter.routes.radar_schemas import (
+    RadarCameraHealthPayload,
+    RadarCameraStatusPayload,
+    RadarDealerPayload,
+    RadarDecisionsRecentPayload,
+    RadarDecisionsStatsPayload,
+    RadarDiagnosticsPayload,
+    RadarFastPayload,
+    RadarPoliticalPayload,
+    RadarSearchResponse,
+    RadarStructuralPayload,
+    RadarSummaryPayload,
+)
 
 from atlas_adapter.routes.radar_quant_client import (
     fetch_quant_camera_health,
@@ -43,6 +58,14 @@ from atlas_adapter.routes.radar_quant_mapper import (
     build_structural,
 )
 
+logger = logging.getLogger("atlas.radar.public")
+
+_RADAR_JSON_RESPONSES_200 = {
+    200: {
+        "description": "JSON del radar (Quant vivo o stub; ver cabeceras X-Atlas-Radar-Source / X-Atlas-Radar-Stub).",
+    },
+}
+
 # Tiempo real (SSE): ajustable sin tocar código (segundos).
 _RADAR_SSE_HEARTBEAT_SEC = max(2, min(60, int(os.getenv("ATLAS_RADAR_SSE_HEARTBEAT_SEC", "5"))))
 _RADAR_SSE_SNAPSHOT_SEC = max(
@@ -51,36 +74,26 @@ _RADAR_SSE_SNAPSHOT_SEC = max(
 )
 
 
-def _json_radar(body: Any, *, live: bool) -> JSONResponse:
-    headers = {
-        "Cache-Control": "no-store, max-age=0, must-revalidate",
-        "Pragma": "no-cache",
-    }
+def _apply_radar_json_headers(response: Response, *, live: bool) -> None:
+    response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
     if live:
-        headers["X-Atlas-Radar-Source"] = "quant"
+        response.headers["X-Atlas-Radar-Source"] = "quant"
     else:
-        headers["X-Atlas-Radar-Stub"] = "1"
-    return JSONResponse(content=body, headers=headers)
+        response.headers["X-Atlas-Radar-Stub"] = "1"
 
 
-def _json_radar_symbols_search(body: Any, *, live: bool) -> JSONResponse:
-    """JSON de búsqueda de símbolos.
-
-    Cache-Control (TTL efectiva ~12 s en cliente + hasta 24 s SWR): respuestas por ``q``
-    no quedan pegadas en proxies; ``must-revalidate`` evita servir sin revalidar.
-    Errores transitorios (Quant caído) siguen siendo JSON ``ok: false`` con el mismo
-    esquema de caché corta para no mezclar con datos viejos de otro ``q``.
-    """
-    headers = {
-        "Cache-Control": "private, max-age=12, stale-while-revalidate=24, must-revalidate",
-        "Pragma": "no-cache",
-        "Vary": "Accept-Encoding",
-    }
+def _apply_radar_symbols_search_headers(response: Response, *, live: bool) -> None:
+    """Cabeceras de búsqueda de símbolos (TTL corta + SWR)."""
+    response.headers["Cache-Control"] = (
+        "private, max-age=12, stale-while-revalidate=24, must-revalidate"
+    )
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Vary"] = "Accept-Encoding"
     if live:
-        headers["X-Atlas-Radar-Source"] = "quant"
+        response.headers["X-Atlas-Radar-Source"] = "quant"
     else:
-        headers["X-Atlas-Radar-Stub"] = "1"
-    return JSONResponse(content=body, headers=headers)
+        response.headers["X-Atlas-Radar-Stub"] = "1"
 
 
 def _stream_headers(*, live: bool) -> dict[str, str]:
@@ -136,7 +149,7 @@ def _decorate_radar_camera_fields(inner: dict[str, Any]) -> dict[str, Any]:
         if pct is not None:
             lines.append(f"Disponibilidad estimada: {float(pct):.1f}%.")
     except (TypeError, ValueError):
-        pass
+        logger.debug("decorate_radar_camera: availability_pct no numérico (%r)", pct)
     mode = cam.get("mode_detected")
     if mode:
         be = cam.get("backend")
@@ -285,169 +298,223 @@ def build_radar_stub_api_router() -> APIRouter:
         body, live, _rep = await radar_build_dashboard_for_sse(symbol)
         return body, live
 
-    @router.get("/dashboard/summary")
-    async def dashboard_summary(symbol: str = "SPY") -> JSONResponse:
+    @router.get(
+        "/dashboard/summary",
+        response_model=RadarSummaryPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def dashboard_summary(response: Response, symbol: str = "SPY") -> Any:
         body, live = await _summary_payload(symbol)
-        return _json_radar(body, live=live)
+        _apply_radar_json_headers(response, live=live)
+        return body
 
-    @router.get("/summary")
-    async def summary_alias(symbol: str = "SPY") -> JSONResponse:
+    @router.get(
+        "/summary",
+        response_model=RadarSummaryPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def summary_alias(response: Response, symbol: str = "SPY") -> Any:
         """Alias del resumen (misma carga que ``/dashboard/summary``)."""
         body, live = await _summary_payload(symbol)
-        return _json_radar(body, live=live)
+        _apply_radar_json_headers(response, live=live)
+        return body
 
-    @router.get("/symbols/search")
-    async def symbols_search(q: str = "", limit: int = 25) -> JSONResponse:
+    @router.get(
+        "/symbols/search",
+        response_model=RadarSearchResponse,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def symbols_search(
+        response: Response,
+        q: str = "",
+        limit: int = 25,
+    ) -> Any:
         """Búsqueda de tickers sobre el universo del scanner Quant (fachada; API key solo en servidor)."""
         lim = max(1, min(int(limit or 25), 100))
         data = await fetch_universe_search(q, limit=lim)
         if data is not None:
-            return _json_radar_symbols_search(
+            _apply_radar_symbols_search_headers(response, live=True)
+            return {
+                "ok": True,
+                "source": "quant",
+                "message": None,
+                **data,
+            }
+        logger.warning(
+            "symbols_search: Quant no disponible o sin clave; devolviendo stub (q=%r limit=%s)",
+            q,
+            lim,
+        )
+        _apply_radar_symbols_search_headers(response, live=False)
+        return {
+            "ok": False,
+            "source": "unavailable",
+            "message": "Búsqueda no disponible: motor Quant no accesible o sin clave de API en el servidor.",
+            "query": q,
+            "matches": [],
+            "truncated": False,
+        }
+
+    @router.get(
+        "/diagnostics/providers",
+        response_model=RadarDiagnosticsPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def diagnostics_providers(response: Response) -> Any:
+        report = await _scanner_report_live()
+        if report is not None:
+            _apply_radar_json_headers(response, live=True)
+            return build_providers_payload(report)
+        logger.info("diagnostics_providers: sin reporte Quant; stub modo demostración")
+        _apply_radar_json_headers(response, live=False)
+        return {
+            "providers": [
                 {
-                    "ok": True,
-                    "source": "quant",
-                    "message": None,
-                    **data,
-                },
-                live=True,
-            )
-        return _json_radar_symbols_search(
-            {
-                "ok": False,
-                "source": "unavailable",
-                "message": "Búsqueda no disponible: motor Quant no accesible o sin clave de API en el servidor.",
-                "query": q,
-                "matches": [],
-                "truncated": False,
-            },
-            live=False,
-        )
-
-    @router.get("/diagnostics/providers")
-    async def diagnostics_providers() -> JSONResponse:
-        report = await _scanner_report_live()
-        if report is not None:
-            return _json_radar(build_providers_payload(report), live=True)
-        return _json_radar(
-            {
-                "providers": [
-                    {
-                        "provider": "atlas_scanner (no desplegado en este host)",
-                        "name": "atlas_scanner (no desplegado en este host)",
-                        "is_ready": False,
-                        "ready": False,
-                        "stale_indicator": False,
-                        "latency_ms": 0,
-                        "p95_latency_ms": 0,
-                        "active_fallback_indicator": False,
-                        "circuit_open_indicator": False,
-                        "consecutive_errors": 0,
-                        "availability_ratio": 0.0,
-                        "last_error_type": "modo_demostracion_sin_motor",
-                        "ui_status_hint": "modo_demostracion",
-                    }
-                ]
-            },
-            live=False,
-        )
-
-    @router.get("/decisions/recent")
-    async def decisions_recent(limit: int = 40) -> JSONResponse:
-        report = await _scanner_report_live()
-        if report is not None:
-            return _json_radar(build_decisions_recent(report, limit=max(1, min(limit, 200))), live=True)
-        return _json_radar({"recent": []}, live=False)
-
-    @router.get("/decisions/stats")
-    async def decisions_stats() -> JSONResponse:
-        report = await _scanner_report_live()
-        if report is not None:
-            return _json_radar(build_decisions_stats(report), live=True)
-        return _json_radar(
-            {
-                "stats": {
-                    "by_decision": {"accepted": 0, "rejected": 0},
-                    "avg_fast_pressure_score": None,
-                    "avg_structural_confidence_score": None,
+                    "provider": "atlas_scanner (no desplegado en este host)",
+                    "name": "atlas_scanner (no desplegado en este host)",
+                    "is_ready": False,
+                    "ready": False,
+                    "stale_indicator": False,
+                    "latency_ms": 0,
+                    "p95_latency_ms": 0,
+                    "active_fallback_indicator": False,
+                    "circuit_open_indicator": False,
+                    "consecutive_errors": 0,
+                    "availability_ratio": 0.0,
+                    "last_error_type": "modo_demostracion_sin_motor",
+                    "ui_status_hint": "modo_demostracion",
                 }
-            },
-            live=False,
-        )
+            ]
+        }
 
-    @router.get("/dealer/{symbol}")
-    async def dealer(symbol: str) -> JSONResponse:
+    @router.get(
+        "/decisions/recent",
+        response_model=RadarDecisionsRecentPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def decisions_recent(response: Response, limit: int = 40) -> Any:
         report = await _scanner_report_live()
         if report is not None:
-            return _json_radar(build_dealer(symbol, report), live=True)
-        return _json_radar(
-            {
-                "symbol": symbol,
-                "timestamp": _utc_iso(),
-                "gamma_flip_level": "-",
-                "dealer_skew_score": None,
-                "call_wall": "-",
-                "put_wall": "-",
-                "acceleration_zone_score": None,
-            },
-            live=False,
-        )
+            _apply_radar_json_headers(response, live=True)
+            return build_decisions_recent(report, limit=max(1, min(limit, 200)))
+        _apply_radar_json_headers(response, live=False)
+        return {"recent": []}
 
-    @router.get("/diagnostics/fast/{symbol}")
-    async def fast_diag(symbol: str) -> JSONResponse:
+    @router.get(
+        "/decisions/stats",
+        response_model=RadarDecisionsStatsPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def decisions_stats(response: Response = Response()) -> Any:
         report = await _scanner_report_live()
         if report is not None:
-            return _json_radar(build_fast(symbol, report), live=True)
-        return _json_radar(
-            {
-                "symbol": symbol,
-                "timestamp": _utc_iso(),
-                "fast_pressure_score": None,
-                "fast_risk_score": None,
-                "fast_directional_bias_score": None,
-            },
-            live=False,
-        )
+            _apply_radar_json_headers(response, live=True)
+            return build_decisions_stats(report)
+        _apply_radar_json_headers(response, live=False)
+        return {
+            "stats": {
+                "by_decision": {"accepted": 0, "rejected": 0},
+                "avg_fast_pressure_score": None,
+                "avg_structural_confidence_score": None,
+            }
+        }
 
-    @router.get("/diagnostics/structural/{symbol}")
-    async def structural_diag(symbol: str) -> JSONResponse:
+    @router.get(
+        "/dealer/{symbol}",
+        response_model=RadarDealerPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def dealer(symbol: str, response: Response) -> Any:
         report = await _scanner_report_live()
         if report is not None:
-            return _json_radar(build_structural(symbol, report), live=True)
-        return _json_radar(
-            {
-                "symbol": symbol,
-                "timestamp": _utc_iso(),
-                "structural_confidence_score": None,
-                "structural_bullish_score": None,
-                "structural_bearish_score": None,
-            },
-            live=False,
-        )
+            _apply_radar_json_headers(response, live=True)
+            return build_dealer(symbol, report)
+        _apply_radar_json_headers(response, live=False)
+        return {
+            "symbol": symbol,
+            "timestamp": _utc_iso(),
+            "gamma_flip_level": "-",
+            "dealer_skew_score": None,
+            "call_wall": "-",
+            "put_wall": "-",
+            "acceleration_zone_score": None,
+        }
 
-    @router.get("/political/{symbol}")
-    async def political(symbol: str) -> JSONResponse:
+    @router.get(
+        "/diagnostics/fast/{symbol}",
+        response_model=RadarFastPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def fast_diag(symbol: str, response: Response) -> Any:
         report = await _scanner_report_live()
         if report is not None:
-            return _json_radar(build_political(symbol, report), live=True)
-        return _json_radar(
-            {
-                "symbol": symbol,
-                "timestamp": _utc_iso(),
-                "aggregate_signal_score": None,
-            },
-            live=False,
-        )
+            _apply_radar_json_headers(response, live=True)
+            return build_fast(symbol, report)
+        _apply_radar_json_headers(response, live=False)
+        return {
+            "symbol": symbol,
+            "timestamp": _utc_iso(),
+            "fast_pressure_score": None,
+            "fast_risk_score": None,
+            "fast_directional_bias_score": None,
+        }
 
-    @router.get("/sensors/camera/health")
-    async def camera_health() -> JSONResponse:
+    @router.get(
+        "/diagnostics/structural/{symbol}",
+        response_model=RadarStructuralPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def structural_diag(symbol: str, response: Response) -> Any:
+        report = await _scanner_report_live()
+        if report is not None:
+            _apply_radar_json_headers(response, live=True)
+            return build_structural(symbol, report)
+        _apply_radar_json_headers(response, live=False)
+        return {
+            "symbol": symbol,
+            "timestamp": _utc_iso(),
+            "structural_confidence_score": None,
+            "structural_bullish_score": None,
+            "structural_bearish_score": None,
+        }
+
+    @router.get(
+        "/political/{symbol}",
+        response_model=RadarPoliticalPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def political(symbol: str, response: Response) -> Any:
+        report = await _scanner_report_live()
+        if report is not None:
+            _apply_radar_json_headers(response, live=True)
+            return build_political(symbol, report)
+        _apply_radar_json_headers(response, live=False)
+        return {
+            "symbol": symbol,
+            "timestamp": _utc_iso(),
+            "aggregate_signal_score": None,
+        }
+
+    @router.get(
+        "/sensors/camera/health",
+        response_model=RadarCameraHealthPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def camera_health(response: Response) -> Any:
         env, live = await build_live_camera_envelope()
-        return _json_radar({"camera": env["camera"]}, live=live)
+        _apply_radar_json_headers(response, live=live)
+        return {"camera": env["camera"]}
 
-    @router.get("/camera/status")
-    async def radar_camera_status() -> JSONResponse:
+    @router.get(
+        "/camera/status",
+        response_model=RadarCameraStatusPayload,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def radar_camera_status(response: Response) -> Any:
         """Alias canónico Bloque 3: mismo cuerpo que health con metadatos ``ok`` / ``source``."""
         env, live = await build_live_camera_envelope()
-        return _json_radar(env, live=live)
+        _apply_radar_json_headers(response, live=live)
+        return env
 
     @router.get("/stream")
     async def radar_stream(symbol: str = "SPY") -> StreamingResponse:
@@ -548,7 +615,10 @@ def build_radar_stub_api_router() -> APIRouter:
                             }
                             yield _sse_event_block(cam_env["sequence"], "camera_state_changed", cam_env)
                     except Exception:
-                        pass
+                        logger.debug(
+                            "radar_stream: error al construir envelope de cámara (no fata)",
+                            exc_info=True,
+                        )
 
                     if report is not None:
                         prov_body = build_providers_payload(report)

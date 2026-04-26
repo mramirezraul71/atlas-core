@@ -1,8 +1,11 @@
 """Transforma el reporte del OpportunityScanner (Quant) al contrato JSON del radar PUSH."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger("atlas.radar.mapper")
 
 
 def _utc_from_report(report: dict[str, Any]) -> str:
@@ -61,6 +64,19 @@ def build_dashboard_summary(symbol: str, report: dict[str, Any], *, quant_ms: fl
     cand = pick_candidate(sym, report)
     ts = _utc_from_report(report) or datetime.now(timezone.utc).isoformat()
     classification = _snapshot_classification(sym, report, cand)
+    if report.get("error"):
+        logger.warning(
+            "build_dashboard_summary: reporte con error de Quant (symbol=%s classification=%s err=%r)",
+            sym,
+            classification,
+            report.get("error"),
+        )
+    elif cand is None and (report.get("status") or {}).get("running"):
+        logger.info(
+            "build_dashboard_summary: motor en marcha pero sin candidato para %s (clasificación=%s)",
+            sym,
+            classification,
+        )
     fast_pressure = 0.0
     structural_conf = 0.0
     alignment = 0.0

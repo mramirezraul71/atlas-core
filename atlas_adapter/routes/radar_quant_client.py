@@ -14,9 +14,9 @@ from typing import Any
 
 import httpx
 
-_log = logging.getLogger(__name__)
-
 from atlas_adapter.services.trading_quant_bridge import get_quant_api_base, get_quant_api_key
+
+logger = logging.getLogger("atlas.radar.quant_client")
 
 _CACHE_LOCK = asyncio.Lock()
 _cache_mono: float = 0.0
@@ -102,17 +102,23 @@ async def fetch_scanner_report_cached(activity_limit: int = 60) -> dict[str, Any
                 body = raw
                 break
         except Exception as exc:
-            _log.debug("fetch_scanner_report_cached fallo base=%s: %s", base, exc, exc_info=True)
+            logger.warning(
+                "fetch_scanner_report_cached: fallo HTTP base=%s (%s)",
+                base,
+                exc,
+                exc_info=True,
+            )
             continue
     if body is None:
+        logger.warning("fetch_scanner_report_cached: sin respuesta válida de ninguna base Quant")
         async with _CACHE_LOCK:
             _cache_report = None
             _cache_mono = 0.0
         return None
 
     if not isinstance(body, dict) or not body.get("ok"):
-        _log.debug(
-            "fetch_scanner_report_cached respuesta no-ok: ok=%r keys=%s",
+        logger.warning(
+            "fetch_scanner_report_cached: respuesta no-ok ok=%r keys=%s",
             body.get("ok") if isinstance(body, dict) else None,
             list(body.keys())[:12] if isinstance(body, dict) else type(body),
         )
@@ -123,6 +129,7 @@ async def fetch_scanner_report_cached(activity_limit: int = 60) -> dict[str, Any
 
     data = body.get("data")
     if not isinstance(data, dict):
+        logger.warning("fetch_scanner_report_cached: campo data no es dict")
         async with _CACHE_LOCK:
             _cache_report = None
             _cache_mono = 0.0
@@ -176,12 +183,25 @@ async def fetch_universe_search(q: str, limit: int = 25) -> dict[str, Any] | Non
             if isinstance(raw, dict):
                 body = raw
                 break
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "fetch_universe_search: fallo HTTP base=%s q=%r (%s)",
+                base,
+                q,
+                exc,
+                exc_info=True,
+            )
             continue
     if body is None:
+        logger.warning("fetch_universe_search: sin respuesta de ninguna base Quant (q=%r)", q)
         return None
 
     if not isinstance(body, dict) or not body.get("ok"):
+        logger.warning(
+            "fetch_universe_search: cuerpo no-ok o inválido (q=%r ok=%r)",
+            q,
+            body.get("ok") if isinstance(body, dict) else None,
+        )
         return None
     data = body.get("data")
     if not isinstance(data, dict):
@@ -217,24 +237,39 @@ async def fetch_quant_camera_health() -> dict[str, Any] | None:
             if isinstance(raw, dict):
                 body = raw
                 break
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "fetch_quant_camera_health: fallo HTTP base=%s (%s)",
+                base,
+                exc,
+                exc_info=True,
+            )
             continue
     if body is None:
         async with _CAM_CACHE_LOCK:
             if _cam_cache_payload is not None and (time.monotonic() - _cam_cache_mono) < _CAM_CACHE_STALE_SEC:
+                logger.info("fetch_quant_camera_health: usando caché stale (Quant no respondió)")
                 return dict(_cam_cache_payload)
+        logger.warning("fetch_quant_camera_health: sin datos ni caché stale disponible")
         return None
 
     if not isinstance(body, dict) or not body.get("ok"):
         async with _CAM_CACHE_LOCK:
             if _cam_cache_payload is not None and (time.monotonic() - _cam_cache_mono) < _CAM_CACHE_STALE_SEC:
+                logger.info("fetch_quant_camera_health: respuesta no-ok; sirviendo caché stale")
                 return dict(_cam_cache_payload)
+        logger.warning(
+            "fetch_quant_camera_health: respuesta no-ok sin caché stale (ok=%r)",
+            body.get("ok") if isinstance(body, dict) else None,
+        )
         return None
     data = body.get("data")
     if not isinstance(data, dict):
         async with _CAM_CACHE_LOCK:
             if _cam_cache_payload is not None and (time.monotonic() - _cam_cache_mono) < _CAM_CACHE_STALE_SEC:
+                logger.info("fetch_quant_camera_health: data inválida; sirviendo caché stale")
                 return dict(_cam_cache_payload)
+        logger.warning("fetch_quant_camera_health: payload .data no es dict")
         return None
     async with _CAM_CACHE_LOCK:
         _cam_cache_payload = dict(data)
