@@ -1,4 +1,7 @@
 (function () {
+  /** Ventana de silencio SSE antes de marcar degradado (ms). Debe ser > varios latidos del servidor. */
+  const SSE_STALE_MS = 35000;
+
   const state = {
     activeTab: "principal",
     symbol: "SPY",
@@ -9,6 +12,8 @@
     lastHeartbeatMs: 0,
     lastEventAt: null,
     staleTimer: null,
+    sseReconnectTimer: null,
+    sseBackoffMs: 3000,
   };
 
   const endpoints = {
@@ -620,7 +625,7 @@
     state.staleTimer = setInterval(() => {
       if (!state.streamConnected || !state.lastHeartbeatMs) return;
       const age = Date.now() - state.lastHeartbeatMs;
-      if (age > 25000) {
+      if (age > SSE_STALE_MS) {
         setLiveStatus("Conexión degradada");
         teardownStream();
         setupAutoRefresh();
@@ -664,12 +669,17 @@
       setupAutoRefresh();
       return;
     }
+    if (state.sseReconnectTimer) {
+      clearTimeout(state.sseReconnectTimer);
+      state.sseReconnectTimer = null;
+    }
     teardownStream();
     try {
       const source = new EventSource(endpoints.stream);
       state.stream = source;
       source.onopen = () => {
         state.streamConnected = true;
+        state.sseBackoffMs = 3000;
         setLiveStatus("Transmisión en vivo (SSE)");
         markHeartbeat();
         if (state.timer) {
@@ -700,6 +710,15 @@
         teardownStream();
         setLiveStatus("Conexión degradada");
         setupAutoRefresh();
+        if (state.sseReconnectTimer) {
+          clearTimeout(state.sseReconnectTimer);
+        }
+        const delay = state.sseBackoffMs;
+        state.sseBackoffMs = Math.min(state.sseBackoffMs * 2, 60000);
+        state.sseReconnectTimer = setTimeout(() => {
+          state.sseReconnectTimer = null;
+          setupStreamingWithFallback();
+        }, delay);
       };
       ensureStreamHealthWatchdog();
     } catch (_error) {

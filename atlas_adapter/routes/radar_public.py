@@ -3,18 +3,32 @@
 El paquete histórico `atlas_scanner` no está presente en el árbol actual; este
 módulo sirve el dashboard y respuestas JSON mínimas para que la SPA cargue y
 haga polling sin 404. Sustituir por el router real cuando se restaure el motor.
+
+Tiempo real (SSE), configurable por entorno:
+- ``ATLAS_RADAR_SSE_HEARTBEAT_SEC`` (default 5): intervalo entre latidos ``heartbeat``.
+- ``ATLAS_RADAR_SSE_SNAPSHOT_SEC`` (default 12, mínimo = latido): entre envíos de
+  ``snapshot`` que disparan ``refreshAll()`` en el cliente.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+
+# Tiempo real (SSE): ajustable sin tocar código (segundos).
+_RADAR_SSE_HEARTBEAT_SEC = max(2, min(60, int(os.getenv("ATLAS_RADAR_SSE_HEARTBEAT_SEC", "5"))))
+_RADAR_SSE_SNAPSHOT_SEC = max(
+    _RADAR_SSE_HEARTBEAT_SEC,
+    min(120, int(os.getenv("ATLAS_RADAR_SSE_SNAPSHOT_SEC", "12"))),
+)
 
 # Evita que el navegador sirva JSON antiguo (p. ej. snapshot_classification ya corregida).
 _NOCACHE_JSON_HEADERS = {
@@ -54,6 +68,14 @@ def _stub_summary(symbol: str) -> dict[str, Any]:
     ts = _utc_iso()
     return {
         "symbol": symbol,
+        "last_update": ts,
+        "stream_available": True,
+        "transport": {
+            "sse": True,
+            "sse_heartbeat_sec": _RADAR_SSE_HEARTBEAT_SEC,
+            "sse_snapshot_sec": _RADAR_SSE_SNAPSHOT_SEC,
+            "stub": True,
+        },
         "radar": {
             "signal": {
                 "timestamp": ts,
@@ -73,6 +95,8 @@ def _stub_summary(symbol: str) -> dict[str, Any]:
         },
         "decision_gate": {"recent": [], "latest": None},
         "camera_context": _stub_camera()["camera"],
+        "degradations_active": [],
+        "provider_health_summary": {"providers_checked": 1, "degraded_count": 0},
     }
 
 
@@ -166,26 +190,31 @@ def build_radar_stub_api_router() -> APIRouter:
 
     @router.get("/stream")
     async def radar_stream() -> StreamingResponse:
-        """SSE mínimo: latidos en vivo + instantáneas periódicas para refrescar métricas en la UI."""
+        """SSE: latidos periódicos + instantáneas por tiempo (métricas al día en la UI)."""
 
         async def _events() -> AsyncIterator[str]:
-            n = 0
+            # Comentario inicial: proxies intermedios suelen liberar el buffer con la primera línea.
+            yield ": atlas-radar-sse\n\n"
+            # Primera vuelta: permitir snapshot enseguida tras el primer latido.
+            last_snap = time.monotonic() - _RADAR_SSE_SNAPSHOT_SEC
             while True:
-                hb = json.dumps({"type": "heartbeat", "payload": {}})
+                now = time.monotonic()
+                hb = json.dumps({"type": "heartbeat", "payload": {"ts": _utc_iso()}})
                 yield f"event: heartbeat\ndata: {hb}\n\n"
-                n += 1
-                if n % 3 == 0:
+                if now - last_snap >= _RADAR_SSE_SNAPSHOT_SEC:
                     snap = json.dumps({"type": "snapshot", "payload": {"symbol": "SPY"}})
                     yield f"event: snapshot\ndata: {snap}\n\n"
-                await asyncio.sleep(8)
+                    last_snap = now
+                await asyncio.sleep(_RADAR_SSE_HEARTBEAT_SEC)
 
         return StreamingResponse(
             _events(),
             media_type="text/event-stream",
             headers={
-                "Cache-Control": "no-cache",
+                "Cache-Control": "no-cache, no-store",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
+                "X-Atlas-Radar-Stub": "1",
             },
         )
 
