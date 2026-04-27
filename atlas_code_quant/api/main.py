@@ -154,6 +154,55 @@ from learning.strategy_evolver import StrategyEvolver
 from knowledge.knowledge_base import get_knowledge_base
 
 logger = logging.getLogger("quant.api")
+
+# ─── F3: Deprecación HTTP de endpoints scanner legacy (v1 + v2) ───────────────
+#
+# F3 marca como deprecated los 10 endpoints scanner (5 v1 + 5 v2) sin cambiar
+# status code ni cuerpo de respuesta. El cutover real (410 Gone, retirada de
+# handlers) llegará en una fase posterior cuando los consumidores hayan
+# migrado al Radar institucional.
+#
+# Ver:
+#   - docs/ATLAS_CODE_QUANT_F3_SCANNER_DEPRECATION.md
+#   - atlas_code_quant/legacy/README_SCANNER_FREEZE.md
+#   - atlas_code_quant/config/legacy_flags.py (SCANNER_IS_LEGACY,
+#     ATLAS_LEGACY_SCANNER_ENABLED)
+_SCANNER_DEPRECATION_SUNSET: str = "2026-12-31T23:59:59Z"
+_SCANNER_DEPRECATION_DOC_LINK: str = '</docs/scanner-legacy>; rel="deprecation"'
+_scanner_deprecation_logger = logging.getLogger("quant.api.deprecation.scanner")
+
+
+def _apply_scanner_deprecation_headers(
+    response: "Response",
+    *,
+    endpoint: str,
+    api_version: str,
+) -> None:
+    """Stamp standard deprecation headers on legacy scanner responses.
+
+    Esta función NO altera status code ni cuerpo. Sólo añade tres headers
+    HTTP estándar de deprecación y emite un WARNING estructurado.
+
+    Args:
+        response: ``fastapi.Response`` inyectado por el handler.
+        endpoint: ruta legacy (e.g. ``"/scanner/status"``).
+        api_version: ``"v1"`` o ``"v2"``.
+    """
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = _SCANNER_DEPRECATION_SUNSET
+    response.headers["Link"] = _SCANNER_DEPRECATION_DOC_LINK
+    _scanner_deprecation_logger.warning(
+        "deprecated scanner endpoint hit",
+        extra={
+            "event": "scanner_endpoint_deprecated",
+            "endpoint": endpoint,
+            "api_version": api_version,
+            "sunset": _SCANNER_DEPRECATION_SUNSET,
+            "replacement": "/api/radar/* (institutional Radar)",
+        },
+    )
+
+
 _NEW_YORK_TZ = ZoneInfo("America/New_York")
 _START_TIME = time.time()
 _ACCOUNT_MANAGER = AccountManager()
@@ -3353,9 +3402,26 @@ async def emergency_reset(x_api_key: str | None = Header(None)):
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
-@app.get("/scanner/status", response_model=StdResponse, tags=["Scanner"])
-async def scanner_status(x_api_key: str | None = Header(None)):
-    """Estado operativo del escáner permanente de oportunidades."""
+@app.get(
+    "/scanner/status",
+    response_model=StdResponse,
+    tags=["Scanner"],
+    deprecated=True,
+)
+async def scanner_status(
+    response: Response,
+    x_api_key: str | None = Header(None),
+):
+    """Estado operativo del escáner permanente de oportunidades.
+
+    .. deprecated:: F3
+        Use ``/api/radar/*`` (Radar institucional). El cutover real se planifica
+        para una fase posterior; este endpoint sigue devolviendo el mismo
+        contrato pero añade headers ``Deprecation``/``Sunset``/``Link``.
+    """
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/scanner/status", api_version="v1"
+    )
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
@@ -3366,12 +3432,26 @@ async def scanner_status(x_api_key: str | None = Header(None)):
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
-@app.get("/scanner/report", response_model=StdResponse, tags=["Scanner"])
+@app.get(
+    "/scanner/report",
+    response_model=StdResponse,
+    tags=["Scanner"],
+    deprecated=True,
+)
 async def scanner_report(
+    response: Response,
     x_api_key: str | None = Header(None),
     activity_limit: int = 60,
 ):
-    """Reporte completo del escáner: criterios, candidatos, rechazos y actividad."""
+    """Reporte completo del escáner: criterios, candidatos, rechazos y actividad.
+
+    .. deprecated:: F3
+        Use ``/api/radar/*`` (Radar institucional). Mismo contrato; añade
+        headers de deprecación.
+    """
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/scanner/report", api_version="v1"
+    )
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
@@ -3382,12 +3462,25 @@ async def scanner_report(
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
-@app.post("/scanner/config", response_model=StdResponse, tags=["Scanner"])
+@app.post(
+    "/scanner/config",
+    response_model=StdResponse,
+    tags=["Scanner"],
+    deprecated=True,
+)
 async def scanner_config(
     body: ScannerConfigPayload,
+    response: Response,
     x_api_key: str | None = Header(None),
 ):
-    """Actualiza la configuración del escáner."""
+    """Actualiza la configuración del escáner.
+
+    .. deprecated:: F3
+        Use ``/api/radar/*``. Mismo contrato; añade headers de deprecación.
+    """
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/scanner/config", api_version="v1"
+    )
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
@@ -3403,12 +3496,25 @@ async def scanner_config(
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
-@app.post("/scanner/control", response_model=StdResponse, tags=["Scanner"])
+@app.post(
+    "/scanner/control",
+    response_model=StdResponse,
+    tags=["Scanner"],
+    deprecated=True,
+)
 async def scanner_control(
     body: ScannerControlRequest,
+    response: Response,
     x_api_key: str | None = Header(None),
 ):
-    """Inicia, detiene o fuerza un ciclo del escáner."""
+    """Inicia, detiene o fuerza un ciclo del escáner.
+
+    .. deprecated:: F3
+        Use ``/api/radar/*``. Mismo contrato; añade headers de deprecación.
+    """
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/scanner/control", api_version="v1"
+    )
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
@@ -3442,13 +3548,27 @@ def _enrich_universe_search_rows(rows: list[dict[str, Any]]) -> list[dict[str, A
     return out
 
 
-@app.get("/scanner/universe/search", response_model=StdResponse, tags=["Scanner"])
+@app.get(
+    "/scanner/universe/search",
+    response_model=StdResponse,
+    tags=["Scanner"],
+    deprecated=True,
+)
 async def scanner_universe_search(
+    response: Response,
     q: str = "",
     limit: int = 25,
     x_api_key: str | None = Header(None),
 ):
-    """Búsqueda sobre el universo US del catálogo del scanner (NASDAQ Trader + other listed)."""
+    """Búsqueda sobre el universo US del catálogo del scanner (NASDAQ Trader + other listed).
+
+    .. deprecated:: F3
+        Use el universo del Radar institucional. Mismo contrato; añade headers
+        de deprecación.
+    """
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/scanner/universe/search", api_version="v1"
+    )
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
@@ -3674,42 +3794,98 @@ async def emergency_reset_v2(x_api_key: str | None = Header(None)):
     return await emergency_reset(x_api_key=x_api_key)
 
 
-@app.get("/api/v2/quant/scanner/status", response_model=StdResponse, tags=["V2"])
-async def scanner_status_v2(x_api_key: str | None = Header(None)):
-    return await scanner_status(x_api_key=x_api_key)
+@app.get(
+    "/api/v2/quant/scanner/status",
+    response_model=StdResponse,
+    tags=["V2"],
+    deprecated=True,
+)
+async def scanner_status_v2(
+    response: Response,
+    x_api_key: str | None = Header(None),
+):
+    """.. deprecated:: F3 alias v2 de ``/scanner/status``; usar Radar institucional."""
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/api/v2/quant/scanner/status", api_version="v2"
+    )
+    return await scanner_status(response=response, x_api_key=x_api_key)
 
 
-@app.get("/api/v2/quant/scanner/report", response_model=StdResponse, tags=["V2"])
+@app.get(
+    "/api/v2/quant/scanner/report",
+    response_model=StdResponse,
+    tags=["V2"],
+    deprecated=True,
+)
 async def scanner_report_v2(
+    response: Response,
     x_api_key: str | None = Header(None),
     activity_limit: int = 60,
 ):
-    return await scanner_report(x_api_key=x_api_key, activity_limit=activity_limit)
+    """.. deprecated:: F3 alias v2 de ``/scanner/report``; usar Radar institucional."""
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/api/v2/quant/scanner/report", api_version="v2"
+    )
+    return await scanner_report(
+        response=response, x_api_key=x_api_key, activity_limit=activity_limit
+    )
 
 
-@app.post("/api/v2/quant/scanner/config", response_model=StdResponse, tags=["V2"])
+@app.post(
+    "/api/v2/quant/scanner/config",
+    response_model=StdResponse,
+    tags=["V2"],
+    deprecated=True,
+)
 async def scanner_config_v2(
     body: ScannerConfigPayload,
+    response: Response,
     x_api_key: str | None = Header(None),
 ):
-    return await scanner_config(body=body, x_api_key=x_api_key)
+    """.. deprecated:: F3 alias v2 de ``/scanner/config``; usar Radar institucional."""
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/api/v2/quant/scanner/config", api_version="v2"
+    )
+    return await scanner_config(body=body, response=response, x_api_key=x_api_key)
 
 
-@app.post("/api/v2/quant/scanner/control", response_model=StdResponse, tags=["V2"])
+@app.post(
+    "/api/v2/quant/scanner/control",
+    response_model=StdResponse,
+    tags=["V2"],
+    deprecated=True,
+)
 async def scanner_control_v2(
     body: ScannerControlRequest,
+    response: Response,
     x_api_key: str | None = Header(None),
 ):
-    return await scanner_control(body=body, x_api_key=x_api_key)
+    """.. deprecated:: F3 alias v2 de ``/scanner/control``; usar Radar institucional."""
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/api/v2/quant/scanner/control", api_version="v2"
+    )
+    return await scanner_control(body=body, response=response, x_api_key=x_api_key)
 
 
-@app.get("/api/v2/quant/scanner/universe/search", response_model=StdResponse, tags=["V2"])
+@app.get(
+    "/api/v2/quant/scanner/universe/search",
+    response_model=StdResponse,
+    tags=["V2"],
+    deprecated=True,
+)
 async def scanner_universe_search_v2(
+    response: Response,
     q: str = "",
     limit: int = 25,
     x_api_key: str | None = Header(None),
 ):
-    return await scanner_universe_search(q=q, limit=limit, x_api_key=x_api_key)
+    """.. deprecated:: F3 alias v2 de ``/scanner/universe/search``; usar Radar institucional."""
+    _apply_scanner_deprecation_headers(
+        response, endpoint="/api/v2/quant/scanner/universe/search", api_version="v2"
+    )
+    return await scanner_universe_search(
+        response=response, q=q, limit=limit, x_api_key=x_api_key
+    )
 
 
 @app.post("/api/v2/quant/selector/proposal", response_model=StdResponse, tags=["V2"])
