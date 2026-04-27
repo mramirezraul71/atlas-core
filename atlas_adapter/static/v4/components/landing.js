@@ -199,6 +199,7 @@ export function render(container) {
         <div class="quick-chip quant-chip" data-action="atlas-quant-scanner" style="color:#00d4aa;border-color:rgba(0,212,170,0.25)">&#9670; Escaner Quant</div>
         <div class="quick-chip quant-chip" data-action="option-strat" style="color:#00d4aa;border-color:rgba(0,212,170,0.35);background:rgba(0,212,170,0.07)">&#9651; OptionStrat</div>
         <div class="quick-chip quant-chip quick-chip--institutional-radar" data-action="institutional-radar">${SVG.radar} Radar Institucional</div>
+        <div class="quick-chip quant-chip quick-chip--institutional-radar" data-action="atlas-code-predicciones">${SVG.radar} Atlas Code Predicciones</div>
         <div class="quick-chip quant-chip" data-action="grafana-quant" style="color:#f46800;border-color:rgba(244,104,0,0.35)">${SVG.grafana} Grafana</div>
         <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
@@ -261,6 +262,10 @@ export function render(container) {
         <div class="app-tile app-tile--institutional-radar" data-app="institutional-radar">
           <div class="app-tile-icon">${SVG.radar}</div>
           <div class="app-tile-label">Radar Institucional</div>
+        </div>
+        <div class="app-tile app-tile--institutional-radar" data-app="atlas-code-predicciones">
+          <div class="app-tile-icon">${SVG.radar}</div>
+          <div class="app-tile-label">Atlas Code Predicciones</div>
         </div>
         <div class="app-tile" data-app="grafana-quant" style="border-color:rgba(244,104,0,0.35)">
           <div class="app-tile-icon" style="color:#f46800">${SVG.grafana}</div>
@@ -412,7 +417,8 @@ export function render(container) {
 
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
-    'institutional-radar': { href: '/ui/radar', newTab: false },
+    'institutional-radar': { href: '/radar/dashboard', newTab: false },
+    'atlas-code-predicciones': { href: '/ui/radar', newTab: false },
     workspace: { href: '/workspace', newTab: true },
     bitacora:  { hash: '/bitacora' },
     'rauli-vision': { hash: '/apps/vision' },
@@ -458,7 +464,8 @@ export function render(container) {
 
   const TILE_ROUTES = {
     'assistant':    { hash: '/chat' },
-    'institutional-radar': { href: '/ui/radar', newTab: false },
+    'institutional-radar': { href: '/radar/dashboard', newTab: false },
+    'atlas-code-predicciones': { href: '/ui/radar', newTab: false },
     'workspace-ext':{ href: '/workspace', newTab: true },
     'governance':   { hash: '/autonomy' },
     'approvals':    { hash: '/approvals' },
