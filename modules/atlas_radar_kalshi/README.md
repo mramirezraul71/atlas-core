@@ -102,3 +102,55 @@ pip install -r modules/atlas_radar_kalshi/requirements.txt
   * eventos JSON en el WebSocket `/api/radar/stream`,
   * endpoints REST `/api/radar/*`,
   * archivos de log compartidos (`<log_dir>/atlas.log`).
+
+---
+
+## Hardening v2 (rama `feat/atlas-radar-kalshi-autonomous-professional`)
+
+PR #14 entregó la versión inicial (4 capas). Esta rama añade **operación
+autónoma e institucional** sobre la misma base, sin romper la API:
+
+```
+modules/atlas_radar_kalshi/
+├── calibration.py     # Platt + Isotonic con fallback identidad
+├── signals.py         # SignalEnsemble (micro+markov+llm+momentum)
+├── gating.py          # filtros, cooldown, edge_net (fees+slippage)
+├── risk_engine.py     # Kelly fraccionario + caps + breakers + kill
+├── exit_manager.py    # TP / SL / time-stop / forced-exit
+├── executor_v2.py     # idempotency + retries + reconcile + métricas
+├── orchestrator.py    # loop end-to-end con watchdog
+├── metrics.py         # PnL/PF/hit-rate/DD + Prometheus text
+├── backtest.py        # baseline vs candidate, semilla 42
+└── state/journal.py   # JSONL append-only por dominio
+```
+
+Activación por env (defaults seguros, nada cambia si está apagado):
+
+```env
+ATLAS_ENABLE_RADAR_KALSHI=1
+ATLAS_RADAR_LIVE=0
+```
+
+Endpoints añadidos:
+
+```
+GET  /api/radar/risk
+GET  /api/radar/health
+GET  /api/radar/prometheus
+POST /api/radar/kill
+POST /api/radar/resume
+```
+
+Reportes y runbook:
+
+- `reports/radar_kalshi_experiment_report.md`
+- `reports/radar_kalshi_risk_controls_audit.md`
+- `reports/radar_kalshi_go_live_checklist.md`
+- `docs/atlas_radar_kalshi/RUNBOOK.md`
+
+Tests:
+
+```
+PYTHONPATH=. pytest tests/unit/test_radar_kalshi_*.py tests/integration/test_radar_kalshi_*.py
+# 65 passed
+```
