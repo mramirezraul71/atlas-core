@@ -1,5 +1,21 @@
 """
-backtest/lean_simulator.py — ATLAS-Quant LEAN Simulator v1.0
+backtest/lean_simulator.py — Atlas Code Quant *INTERNAL GBM* Simulator v1.0
+
+.. warning::
+
+    **ESTO NO ES LEAN / QUANTCONNECT REAL.**
+
+    A pesar del nombre histórico ``LeanSimulator`` y del fichero
+    ``lean_simulator.py``, este módulo es un **simulador GBM sintético interno**
+    que combina Geometric Brownian Motion + régimen Markov para producir
+    datasets de entrenamiento. No invoca runtime LEAN, no depende de
+    QuantConnect, ni se conecta a un motor externo.
+
+    Renombre físico planificado para **F2** (a ``internal_gbm_simulator.py``
+    con wrapper de compatibilidad). En F1 sólo se etiqueta el fichero y se
+    añade alias en ``atlas_code_quant/backtest/internal_gbm_simulator.py``.
+
+    No llamar "LEAN" a este simulador en documentación pública nueva.
 
 Motor de backtesting interno. Genera datos OHLCV sintéticos realistas y
 replica el pipeline completo de LiveLoop para producir datasets de entrenamiento
