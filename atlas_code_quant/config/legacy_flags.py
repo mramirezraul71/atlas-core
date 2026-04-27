@@ -214,6 +214,44 @@ ATLAS_RADAR_INTAKE_ENABLED: bool = False
 #       explícito de cutover y aprobación humana.
 ATLAS_RADAR_FILTER_SHADOW_ENABLED: bool = False
 
+# ---------------------------------------------------------------------------
+# F8 — Code Quant scanner→Radar shadow runtime consumer.
+# ---------------------------------------------------------------------------
+#
+# Anuncia el consumer runtime-safe introducido en F8:
+#
+#     atlas_code_quant.monitoring.scanner_radar_shadow
+#         run_scanner_radar_shadow(scanner_candidates, *, radar_client=None,
+#                                  min_score=70.0, emit_logs=True)
+#             -> ScannerRadarShadowReport
+#
+# A diferencia de la flag F7 (puramente doc-only), esta flag está
+# pensada para que una fase posterior pueda activar un *hook* de
+# observación. F8 NO introduce todavía ese hook en runtime.
+#
+# Estado en F8:
+#     * Default = ``False``: el consumer existe y está testeado pero
+#       NO se invoca desde ningún loop de producción. F8 es estrictamente
+#       observacional y la herramienta queda disponible para inyección
+#       explícita (tests, scripts internos, futuras fases).
+#     * Cuando una fase posterior introduzca el hook (probable F9), esta
+#       flag puede consultarse en runtime SOLO para habilitarlo. El hook
+#       debe seguir siendo observacional: nunca cambia el set efectivo
+#       que reciben las estrategias ni introduce decisiones.
+#     * El *enforcement* real (Radar como gate duro) requerirá una flag
+#       distinta (provisional ``ATLAS_RADAR_FILTER_ENFORCED``) y un
+#       documento de cutover dedicado en F10+.
+#
+# Reglas duras:
+#     * F8 NO consulta esta flag en runtime: ningún módulo de F8 la lee
+#       como condicional.
+#     * Cualquier uso futuro de la flag debe limitarse a habilitar
+#       observación / logging / journal interno; nunca a alterar el
+#       output del scanner.
+#     * Cambiar default a ``True`` requiere el hook ya implementado y
+#       tests de no-regresión verdes.
+ATLAS_RADAR_FILTER_SHADOW_RUNTIME_ENABLED: bool = False
+
 __all__ = [
     "SCANNER_IS_LEGACY",
     "LEAN_SIMULATOR_IS_INTERNAL_GBM",
@@ -223,4 +261,5 @@ __all__ = [
     "ATLAS_RADAR_MULTI_SYMBOL_ENABLED",
     "ATLAS_RADAR_INTAKE_ENABLED",
     "ATLAS_RADAR_FILTER_SHADOW_ENABLED",
+    "ATLAS_RADAR_FILTER_SHADOW_RUNTIME_ENABLED",
 ]
