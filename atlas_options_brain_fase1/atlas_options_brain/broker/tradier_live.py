@@ -1,6 +1,30 @@
 """
 Esqueleto de órdenes live estilo Tradier (tipos, builder y sink sin red).
 
+.. legacy:: F4 PHASE1
+    Este módulo pertenece al **stack legacy/PHASE1** de Atlas Options Brain
+    (``atlas_options_brain_fase1``). **NO** es la implementación Tradier
+    canónica de Atlas Code Quant.
+
+    Stack canónico (runtime):
+        * ``atlas_code_quant.execution.tradier_execution``
+        * ``atlas_code_quant.execution.tradier_controls``
+        * ``atlas_code_quant.execution.tradier_pdt_ledger``
+
+    Este archivo se conserva como referencia histórica y para los tests
+    congelados de phase1 (``tests/test_tradier_live.py``). NO importar desde
+    código de producción de ``atlas_code_quant``.
+
+    F4 marca este módulo como LEGACY/PHASE1 sin cambiar firmas ni lógica
+    interna.
+
+    Ver:
+        * ``docs/ATLAS_CODE_QUANT_F4_TRADIER_CANONICALIZATION.md``
+        * ``atlas_code_quant/execution/README_TRADIER.md``
+        * ``atlas_code_quant/config/legacy_flags.py``
+
+Descripción original (sin cambios funcionales):
+
 Este archivo **no** abre sockets; las llamadas HTTP al sandbox están en
 ``tradier_executor.TradierOrderExecutor``. Flujo:
 

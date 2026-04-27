@@ -1,4 +1,42 @@
-"""Tradier order routing for Atlas Code-Quant."""
+"""Tradier order routing for Atlas Code-Quant.
+
+.. canonical:: F4
+    Esta es la implementación **CANÓNICA** de Tradier para Atlas Code Quant.
+
+    Stack: ``atlas_code_quant.execution`` (este módulo + ``tradier_controls`` +
+    ``tradier_pdt_ledger``).
+
+    Responsabilidades reales en runtime:
+        * Routing de órdenes equity / option / multileg / combo a Tradier.
+        * Locks de seguridad (``paper_only``, ``full_live_globally_locked``,
+            ``ATLAS_FORCE_LIVE_PREVIEW``, dry-run defaults).
+        * Resolución de cuenta y PDT vía ``execution.tradier_controls``.
+        * Ledger PDT local (``execution.tradier_pdt_ledger``).
+        * Reconciliación por polling/stream tras timeouts.
+
+    Consumidores en runtime (NO modificar en F4):
+        * ``atlas_code_quant/execution/broker_router.py``
+        * ``atlas_code_quant/execution/signal_executor.py``
+        * ``atlas_code_quant/api/main.py``
+        * ``atlas_code_quant/api/decorators.py``
+        * ``atlas_code_quant/operations/operation_center.py``
+        * ``atlas_code_quant/operations/auton_executor.py``
+        * ``atlas_code_quant/production/live_activation.py``
+        * ``atlas_code_quant/start_paper_trading.py``
+
+    Implementación paralela legacy (NO usar para routing de producción,
+    sólo training/PHASE1):
+        * ``atlas_options_brain_fase1.atlas_options_brain.broker.tradier_executor``
+        * ``atlas_options_brain_fase1.atlas_options_brain.broker.tradier_live``
+
+    Ver:
+        * ``docs/ATLAS_CODE_QUANT_F4_TRADIER_CANONICALIZATION.md``
+        * ``atlas_code_quant/execution/README_TRADIER.md``
+        * ``atlas_code_quant/config/legacy_flags.py`` (``ATLAS_TRADIER_CANONICAL_STACK``,
+            ``ATLAS_TRADIER_PHASE1_LEGACY_STACK``)
+
+    F4 NO cambia firmas, lógica de envio de órdenes, locks ni routing efectivo.
+"""
 from __future__ import annotations
 
 import logging

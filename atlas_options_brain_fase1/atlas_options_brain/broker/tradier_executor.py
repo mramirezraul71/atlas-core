@@ -1,6 +1,35 @@
 """
 Ejecutor HTTP para órdenes multi-leg Tradier (sandbox por defecto).
 
+.. legacy:: F4 PHASE1
+    Este módulo pertenece al **stack legacy/PHASE1** de Atlas Options Brain
+    (``atlas_options_brain_fase1``). **NO** es la implementación Tradier
+    canónica de Atlas Code Quant.
+
+    * Stack canónico (runtime): ``atlas_code_quant.execution.tradier_execution``
+        (+ ``tradier_controls``, ``tradier_pdt_ledger``).
+    * Este archivo se conserva como referencia histórica de la API multileg
+        de Tradier y para soportar tests congelados de phase1
+        (``atlas_options_brain_fase1/atlas_options_brain/tests/test_tradier_executor.py``).
+    * Su único consumidor en el repo principal es
+        ``atlas/core/options_live.py``, que opera estrictamente sobre sandbox.
+    * NO está integrado con los locks de seguridad de
+        ``atlas_code_quant.config.settings``, ni con el ledger PDT, ni con la
+        reconciliación post-timeout del stack canónico.
+    * NO importar desde código de producción de ``atlas_code_quant``.
+    * F4 marca este módulo como LEGACY/PHASE1 sin cambiar firmas ni lógica
+        interna. Cualquier futura migración de routing pasará por una fase
+        posterior con plan explícito de paridad y rollback.
+
+    Ver:
+        * ``docs/ATLAS_CODE_QUANT_F4_TRADIER_CANONICALIZATION.md``
+        * ``atlas_code_quant/execution/README_TRADIER.md``
+        * ``atlas_code_quant/config/legacy_flags.py``
+            (``ATLAS_TRADIER_CANONICAL_STACK``,
+             ``ATLAS_TRADIER_PHASE1_LEGACY_STACK``)
+
+Descripción original (sin cambios funcionales):
+
 - Traduce ``LiveOrder`` → formulario ``application/x-www-form-urlencoded``.
 - ``dry_run=True``: no abre socket; devuelve el cuerpo que se enviaría.
 - ``preview=True`` (con ``dry_run=False``): POST al sandbox con ``preview=true`` (validación sin ejecutar, según docs Tradier).

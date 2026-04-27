@@ -13,7 +13,9 @@ Ver:
     - docs/ATLAS_CODE_QUANT_REORG_VERIFICATION.md (F0)
     - docs/ATLAS_CODE_QUANT_F1_REORG.md (F1)
     - docs/ATLAS_CODE_QUANT_F3_SCANNER_DEPRECATION.md (F3)
+    - docs/ATLAS_CODE_QUANT_F4_TRADIER_CANONICALIZATION.md (F4)
     - atlas_code_quant/legacy/README_SCANNER_FREEZE.md
+    - atlas_code_quant/execution/README_TRADIER.md
 """
 
 from __future__ import annotations
@@ -59,8 +61,47 @@ LEAN_SIMULATOR_IS_INTERNAL_GBM: bool = True
 #     * NO interpretar su presencia como permiso para borrar endpoints.
 ATLAS_LEGACY_SCANNER_ENABLED: bool = True
 
+# ---------------------------------------------------------------------------
+# F4 — Canonicalización del stack Tradier.
+# ---------------------------------------------------------------------------
+#
+# Atlas tiene actualmente DOS implementaciones Tradier coexistiendo:
+#
+#   1. CANÓNICA (runtime real):
+#        ``atlas_code_quant.execution.tradier_execution``
+#        (+ ``tradier_controls``, ``tradier_pdt_ledger``).
+#      Único stack al que llegan rutas reales de órdenes (BrokerRouter,
+#      SignalExecutor, /orders, OperationCenter, AutonExecutor,
+#      LiveActivation, start_paper_trading) y que integra los locks
+#      ``paper_only`` / ``full_live_globally_locked`` / dry-run defaults,
+#      el ledger PDT y la reconciliación post-timeout.
+#
+#   2. LEGACY/PHASE1 (no es ruta de producción):
+#        ``atlas_options_brain_fase1.atlas_options_brain.broker.tradier_executor``
+#        ``atlas_options_brain_fase1.atlas_options_brain.broker.tradier_live``
+#        ``atlas_options_brain_fase1.atlas_options_brain.providers.tradier_provider``
+#      Snapshot de la fase de entrenamiento de Atlas Options Brain. Se
+#      mantiene sólo para tests congelados de phase1 y como referencia
+#      histórica de la API multileg de Tradier.
+#
+# Estas dos flags son **puramente documentales** en F4: ningún código de
+# runtime las consulta. Sirven como contrato público para herramientas de
+# auditoría y para fases posteriores que puedan unificar (con plan explícito
+# de paridad y rollback).
+#
+# Reglas duras:
+#     * NO importar el stack PHASE1 desde código de producción de
+#       ``atlas_code_quant``.
+#     * NO usar estas flags como condicionales de ruta en F4.
+#     * NO cambiar sus valores sin coordinación explicita con la fase de
+#       unificación.
+ATLAS_TRADIER_CANONICAL_STACK: str = "atlas_code_quant"
+ATLAS_TRADIER_PHASE1_LEGACY_STACK: str = "atlas_options_brain_fase1"
+
 __all__ = [
     "SCANNER_IS_LEGACY",
     "LEAN_SIMULATOR_IS_INTERNAL_GBM",
     "ATLAS_LEGACY_SCANNER_ENABLED",
+    "ATLAS_TRADIER_CANONICAL_STACK",
+    "ATLAS_TRADIER_PHASE1_LEGACY_STACK",
 ]

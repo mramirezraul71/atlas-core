@@ -2,6 +2,15 @@
 Proveedor Tradier  –  $10/mes + ejecución como broker.
 RECOMENDADO para Atlas porque unifica datos + órdenes en un solo API.
 
+.. legacy:: F4 PHASE1
+    Cliente de **datos** Tradier perteneciente al stack legacy/PHASE1
+    (``atlas_options_brain_fase1``). NO es la ruta canónica de envio de
+    órdenes. La lógica de routing/ejecución canónica vive en
+    ``atlas_code_quant.execution.tradier_execution``.
+
+    F4 sólo etiqueta este módulo; no cambia firmas ni lógica.
+    Ver ``docs/ATLAS_CODE_QUANT_F4_TRADIER_CANONICALIZATION.md``.
+
 Docs: https://documentation.tradier.com/brokerage-api
 Endpoint sandbox: https://sandbox.tradier.com/v1
 Endpoint live:    https://api.tradier.com/v1
