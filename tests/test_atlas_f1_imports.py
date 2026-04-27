@@ -5,7 +5,10 @@ from atlas_code_quant.telemetry import InMemoryCounter
 
 
 def test_f1_import_scaffold_modules():
-    assert RadarOpportunityClient(enabled=False).fetch_once() == []
+    client = RadarOpportunityClient(opportunities_url="http://localhost:0", enabled=False)
+    result = client.fetch_opportunities()
+    assert result.ok is False
+    assert result.batch.items == []
     assert LeanConfig().enabled in {True, False}
     assert LeanLauncher().plan_backtest("AnyAlgo").command
     assert QuantAutonomyOrchestrator().state == QuantAutonomyState.BOOTING
