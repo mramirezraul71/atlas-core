@@ -175,6 +175,45 @@ ATLAS_RADAR_MULTI_SYMBOL_ENABLED: bool = False
 #         - aprobación humana explícita.
 ATLAS_RADAR_INTAKE_ENABLED: bool = False
 
+# ---------------------------------------------------------------------------
+# F7 — Code Quant scanner→Radar shadow filter.
+# ---------------------------------------------------------------------------
+#
+# Anuncia la existencia del filtro shadow scanner→Radar introducido en F7:
+#
+#     atlas_code_quant.intake.scanner_radar_filter
+#         filter_scanner_candidates_with_radar(
+#             scanner_candidates, radar_client=None, *, min_score=70.0
+#         ) -> ScannerRadarFilterResult
+#
+# Objetivo de negocio (referencia):
+#     scanner = generador amplio (recall),
+#     Radar   = filtro estricto (precision),
+#     y eventualmente: nada llega a estrategias sin pasar por Radar.
+#
+# Estado en F7 (shadow only):
+#     * Default = ``False``: el filtro existe, está testeado y es
+#       puramente observacional. NO está conectado a:
+#         - ``api/main.py`` (endpoints públicos),
+#         - scanner (motor / endpoints heredados),
+#         - operations (loops live / paper),
+#         - execution (Tradier, broker_router, signal_executor),
+#         - autonomy / risk / vision / locks.
+#     * **Esta flag NO se consulta todavía** en runtime: ningún módulo de
+#       F7 la lee como condicional. Sirve como contrato público para
+#       herramientas de auditoría y para fases futuras.
+#     * Una fase posterior (provisional ``ATLAS_RADAR_FILTER_ENFORCED``)
+#       introduciría el gate duro: estrategias dependen de la aprobación
+#       del Radar, no sólo del scanner. Eso requiere su propio plan de
+#       cutover, paridad y rollback — NO es parte de F7.
+#
+# Reglas duras:
+#     * NO usar esta flag para enrutar tráfico real al filtro en F7.
+#     * NO interpretar su valor como autorización para gate duro.
+#     * NO conectar el filtro a estrategias / ejecución sin un plan
+#       explícito de cutover y aprobación humana.
+ATLAS_RADAR_FILTER_SHADOW_ENABLED: bool = False
+
 __all__ = [
     "SCANNER_IS_LEGACY",
     "LEAN_SIMULATOR_IS_INTERNAL_GBM",
@@ -183,4 +222,5 @@ __all__ = [
     "ATLAS_TRADIER_PHASE1_LEGACY_STACK",
     "ATLAS_RADAR_MULTI_SYMBOL_ENABLED",
     "ATLAS_RADAR_INTAKE_ENABLED",
+    "ATLAS_RADAR_FILTER_SHADOW_ENABLED",
 ]
