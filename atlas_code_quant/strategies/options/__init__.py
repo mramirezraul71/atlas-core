@@ -1,13 +1,19 @@
-"""Estrategias de opciones (F1 scaffold)."""
+"""Estrategias de opciones — contratos esqueleto F5.
 
-from .vertical_spread import VerticalSpreadStrategy
-from .iron_condor import IronCondorStrategy
+Cada estrategia implementa ``build_plan(opportunity, config) -> StrategyPlan``
+sobre un mismo contrato Pydantic ``StrategyPlan`` con ``legs`` tipadas. Las
+estrategias devuelven planes coherentes pero **no** seleccionan strikes reales
+(se hará en F5 fitness/F8 orchestrator).
+"""
+
 from .iron_butterfly import IronButterflyStrategy
+from .iron_condor import IronCondorStrategy
 from .straddle_strangle import StraddleStrangleStrategy
+from .vertical_spread import VerticalSpreadStrategy
 
 __all__ = [
-    "VerticalSpreadStrategy",
-    "IronCondorStrategy",
     "IronButterflyStrategy",
+    "IronCondorStrategy",
     "StraddleStrangleStrategy",
+    "VerticalSpreadStrategy",
 ]
