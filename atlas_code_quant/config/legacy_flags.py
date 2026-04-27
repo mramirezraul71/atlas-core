@@ -22,8 +22,9 @@ from __future__ import annotations
 # ni el comportamiento de operation_center.
 SCANNER_IS_LEGACY: bool = True
 
-# El simulador GBM interno NO es LEAN real. F1 sólo lo etiqueta.
-# El renombre físico de `atlas_code_quant/backtest/lean_simulator.py` ocurre en F2.
+# El simulador GBM interno NO es LEAN real. Renombrado físicamente en F2 a
+# `atlas_code_quant.backtest.internal_gbm_simulator`. El path antiguo
+# `atlas_code_quant.backtest.lean_simulator` queda como wrapper deprecated.
 LEAN_SIMULATOR_IS_INTERNAL_GBM: bool = True
 
 __all__ = [

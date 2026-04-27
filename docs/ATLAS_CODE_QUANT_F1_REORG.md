@@ -104,11 +104,12 @@ Ningún módulo productivo importa estos contratos en F1. Se introducen para que
 
 Ningún módulo runtime consulta estas constantes en F1.
 
-**`atlas_code_quant/backtest/internal_gbm_simulator.py`** — ~35 líneas:
+**`atlas_code_quant/backtest/internal_gbm_simulator.py`** (F1 — superseded por F2):
 
-- Re-export: `from atlas_code_quant.backtest.lean_simulator import LeanSimulator as InternalGBMSimulator, SimConfig, TradeRecord`.
-- Garantía verificable: `InternalGBMSimulator is LeanSimulator → True`.
-- Imports antiguos `from atlas_code_quant.backtest.lean_simulator import ...` siguen funcionando idénticamente.
+- En F1 era un alias re-export de 35 líneas hacia `lean_simulator.py`.
+- **En F2 se consolidó:** el contenido real (1224 LOC) vive en
+  `internal_gbm_simulator.py`, y `lean_simulator.py` pasó a ser wrapper
+  deprecated. Ver `docs/ATLAS_CODE_QUANT_F2_INTERNAL_SIMULATOR_RENAME.md`.
 
 ---
 
