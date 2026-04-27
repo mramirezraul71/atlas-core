@@ -403,24 +403,30 @@ class AutonomyOrchestrator:
                 gates=gates,
             )
         if not vision.ok:
-            # block / force_exit → EXITING; delay → quedar en PAPER_READY
-            if "force_exit" in vision.reason:
+            # F18 mapping de VisionTimingGate al orquestador:
+            #   * vision_force_exit·→ EXITING
+            #   * vision_block      → STRATEGY_BUILDING (revaluar estrategia)
+            #   * vision_delay      → permanecer en PAPER_READY
+            reason = vision.reason or ""
+            if "force_exit" in reason:
                 return self._safe_transition(
                     AutonomyState.EXITING,
-                    reason=vision.reason,
+                    reason=reason,
                     gates=gates,
                 )
-            if "block" in vision.reason:
+            if "block" in reason:
                 return self._safe_transition(
                     AutonomyState.STRATEGY_BUILDING,
-                    reason=vision.reason,
+                    reason=reason,
                     gates=gates,
                 )
+            # delay (incluido vision_delay simulated) → espera
             return OrchestratorTickResult(
                 src=self._state,
                 dst=self._state,
-                reason=f"vision_delay:{vision.reason}",
+                reason=f"vision_delay:{reason}",
                 gates=gates,
+                degraded=any(g.degraded for g in gates),
             )
         if not broker.ok:
             return self._safe_transition(
