@@ -1,9 +1,11 @@
-"""Capa de intake para consumir oportunidades externas (Radar).
-
-F1: scaffolding seguro. No activa consumo en runtime por defecto.
-"""
+"""Capa de intake para consumo de oportunidades Radar (F3)."""
 
 from .opportunity import RadarOpportunity, RadarOpportunityBatch
-from .radar_client import RadarOpportunityClient
+from .radar_client import RadarClientResult, RadarOpportunityClient
 
-__all__ = ["RadarOpportunity", "RadarOpportunityBatch", "RadarOpportunityClient"]
+__all__ = [
+    "RadarOpportunity",
+    "RadarOpportunityBatch",
+    "RadarClientResult",
+    "RadarOpportunityClient",
+]

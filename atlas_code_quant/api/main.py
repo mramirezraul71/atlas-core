@@ -55,7 +55,7 @@ for _path in (str(_REPO_ROOT), str(_QUANT_ROOT)):
 
 from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.websockets import WebSocketState
@@ -73,6 +73,8 @@ from api.schemas import (
     StatusEnum, SignalEnum,
     LoopStartRequest, VisionProviderRequest,
 )
+from atlas_code_quant.config.feature_flags import AtlasFeatureFlags
+from atlas_code_quant.intake import RadarOpportunityClient
 from backtesting.winning_probability import SUPPORTED_STRATEGIES, get_winning_probability
 from config.settings import settings
 from execution.account_manager import AccountManager
@@ -116,9 +118,6 @@ from operations.startup_visual_connect import (
     apply_startup_visual_connections,
 )
 from operations.vision_calibration import VisionCalibrationService
-from scanner.opportunity_scanner import OpportunityScannerService
-from scanner.universe_catalog import ScannerUniverseCatalog
-from scanner.asset_classifier import classify_asset
 from selector.strategy_selector import StrategySelectorService
 from atlas_code_quant.options.paper_runtime_loop import (
     build_default_options_runtime_loop,
@@ -155,6 +154,156 @@ from knowledge.knowledge_base import get_knowledge_base
 
 logger = logging.getLogger("quant.api")
 _NEW_YORK_TZ = ZoneInfo("America/New_York")
+_FLAGS = AtlasFeatureFlags()
+
+
+def _legacy_scanner_enabled() -> bool:
+    return bool(_FLAGS.legacy_scanner_enabled)
+
+
+def _radar_intake_enabled() -> bool:
+    return bool(_FLAGS.radar_intake_enabled)
+
+
+class RadarScannerAdapter:
+    """Adapter para mantener contrato scanner interno usando intake Radar."""
+
+    def __init__(self, client: RadarOpportunityClient) -> None:
+        self._client = client
+        self._running = False
+        self._last_error = ""
+        self._last_trace_id = ""
+        self._last_report: dict[str, Any] = {
+            "generated_at": datetime.utcnow().isoformat(),
+            "status": {"running": False, "cycle_count": 0, "last_error": ""},
+            "summary": {"candidate_count": 0, "source": "radar_intake"},
+            "candidates": [],
+            "rejections": [],
+            "activity": [],
+            "order_flow_system": {"provider_ready": False},
+        }
+
+    async def start(self) -> None:
+        self._running = True
+
+    async def stop(self) -> None:
+        self._running = False
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "running": self._running and _radar_intake_enabled(),
+            "mode": "radar_intake",
+            "legacy_enabled": _legacy_scanner_enabled(),
+            "radar_intake_enabled": _radar_intake_enabled(),
+            "last_error": self._last_error,
+            "last_trace_id": self._last_trace_id,
+            "candidate_count": int((self._last_report.get("summary") or {}).get("candidate_count") or 0),
+            "source": "radar",
+        }
+
+    def update_config(self, _cfg: dict[str, Any]) -> None:
+        # F3: el control fino va por Radar; se mantiene método para compatibilidad.
+        return
+
+    async def control(self, action: str) -> dict[str, Any]:
+        a = str(action or "").strip().lower()
+        if a == "start":
+            await self.start()
+        elif a == "stop":
+            await self.stop()
+        elif a in {"cycle", "refresh"}:
+            self.report(activity_limit=24)
+        return self.report(activity_limit=24)
+
+    @staticmethod
+    def _to_candidate(row: dict[str, Any]) -> dict[str, Any]:
+        score = row.get("score")
+        try:
+            selection_score = float(score)
+        except (TypeError, ValueError):
+            selection_score = 0.0
+        horizon_min = row.get("horizon_min")
+        try:
+            hmin = int(horizon_min)
+        except (TypeError, ValueError):
+            hmin = 60
+        timeframe = "1d" if hmin >= 720 else "1h" if hmin >= 60 else "15m" if hmin >= 15 else "5m"
+        return {
+            "symbol": str(row.get("symbol") or "").strip().upper(),
+            "strategy_type": str(row.get("classification") or "radar_intake"),
+            "selection_score": selection_score,
+            "ml_score": None,
+            "local_win_rate_pct": min(100.0, max(0.0, selection_score)),
+            "timeframe": timeframe,
+            "direction": str(row.get("direction") or "neutral"),
+            "signal_strength_pct": selection_score,
+            "has_options": True,
+            "source": str(row.get("source") or "stub"),
+            "trace_id": str(row.get("trace_id") or ""),
+            "asset_class": str(row.get("asset_class") or "unknown"),
+            "timestamp": str(row.get("timestamp") or datetime.utcnow().isoformat()),
+            "snapshot_classification": str(row.get("classification") or "watchlist"),
+            "degradations_active": list(row.get("degradations_active") or []),
+        }
+
+    def report(self, activity_limit: int = 24) -> dict[str, Any]:
+        if not _radar_intake_enabled():
+            self._last_error = "radar_intake_disabled"
+            self._last_report = {
+                "generated_at": datetime.utcnow().isoformat(),
+                "status": {"running": False, "cycle_count": 0, "last_error": self._last_error},
+                "summary": {"candidate_count": 0, "source": "radar_intake_disabled"},
+                "candidates": [],
+                "rejections": [],
+                "activity": [{"timestamp": datetime.utcnow().isoformat(), "level": "warn", "message": self._last_error}],
+                "order_flow_system": {"provider_ready": False},
+            }
+            return self._last_report
+        res = self._client.fetch_opportunities(
+            limit=max(1, int(activity_limit or _FLAGS.radar_intake_limit)),
+            min_score=float(_FLAGS.radar_min_score),
+        )
+        self._last_trace_id = res.trace_id or self._last_trace_id
+        candidates = [self._to_candidate(o.__dict__) for o in res.batch.items]
+        self._last_error = str(res.error or "")
+        self._last_report = {
+            "generated_at": datetime.utcnow().isoformat(),
+            "status": {
+                "running": self._running,
+                "cycle_count": int((self._last_report.get("status") or {}).get("cycle_count") or 0) + 1,
+                "last_error": self._last_error,
+                "source": "radar",
+                "trace_id": self._last_trace_id,
+            },
+            "summary": {
+                "candidate_count": len(candidates),
+                "source": "radar_intake",
+                "truncated": bool(res.batch.truncated),
+                "universe_size": int(res.batch.universe_size),
+                "degraded_globally": bool(res.batch.degraded_globally),
+            },
+            "candidates": candidates,
+            "rejections": [],
+            "activity": [
+                {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "level": "warn" if res.degraded else "info",
+                    "message": (res.error or "radar_intake_ok"),
+                }
+            ],
+            "order_flow_system": {"provider_ready": bool(res.ok)},
+        }
+        return self._last_report
+
+
+_RADAR_CLIENT = RadarOpportunityClient(
+    opportunities_url=_FLAGS.radar_opportunities_url,
+    stream_url=_FLAGS.radar_stream_url,
+    enabled=bool(_FLAGS.radar_intake_enabled),
+    timeout_sec=float(_FLAGS.radar_intake_timeout_sec),
+    default_limit=int(_FLAGS.radar_intake_limit),
+    default_min_score=float(_FLAGS.radar_min_score),
+)
 _START_TIME = time.time()
 _ACCOUNT_MANAGER = AccountManager()
 _BRAIN_BRIDGE = QuantBrainBridge()
@@ -166,11 +315,7 @@ _JOURNAL_SYNC = JournalSyncService(_JOURNAL)
 _VISION = SensorVisionService()
 _AUTON_EXECUTOR = AutonExecutorService()
 _JOURNAL_PRO = JournalProService(_JOURNAL)
-_SCANNER = OpportunityScannerService(_ADAPTIVE_LEARNING)
-_UNIVERSE_CATALOG = ScannerUniverseCatalog(
-    cache_path=settings.scanner_universe_cache_path,
-    cache_ttl_sec=settings.scanner_universe_cache_ttl_sec,
-)
+_SCANNER = RadarScannerAdapter(_RADAR_CLIENT)
 _VISION_CALIBRATION = VisionCalibrationService()
 _SELECTOR = StrategySelectorService(_STRATEGY_TRACKER, _ADAPTIVE_LEARNING)
 _GRAFANA_METRICS = GrafanaDashboard() if _PROM_EXPORT_OK else None
@@ -503,12 +648,14 @@ async def _start_background_services() -> None:
                 await _JOURNAL_SYNC.start()
             else:
                 logger.info("Journal sync omitido en lightweight por QUANT_STARTUP_JOURNAL_SYNC_ENABLED=false")
-            if settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
+            if _radar_intake_enabled() and settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
                 if settings.startup_scanner_delay_sec > 0:
                     _mark_startup_background("lightweight_waiting_scanner")
                     await asyncio.sleep(settings.startup_scanner_delay_sec)
                 _mark_startup_background("lightweight_starting_scanner")
                 await _SCANNER.start()
+            elif not _radar_intake_enabled():
+                logger.info("Radar intake omitido en lightweight por ATLAS_RADAR_INTAKE_ENABLED=false")
             elif not settings.startup_scanner_enabled:
                 logger.info("Scanner omitido en lightweight por QUANT_STARTUP_SCANNER_ENABLED=false")
             if settings.startup_snapshot_prewarm_enabled:
@@ -573,12 +720,14 @@ async def _start_background_services() -> None:
         else:
             logger.info("Journal sync omitido por QUANT_STARTUP_JOURNAL_SYNC_ENABLED=false")
 
-        if settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
+        if _radar_intake_enabled() and settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
             if settings.startup_scanner_delay_sec > 0:
                 _mark_startup_background("waiting_scanner")
                 await asyncio.sleep(settings.startup_scanner_delay_sec)
             _mark_startup_background("starting_scanner")
             await _SCANNER.start()
+        elif not _radar_intake_enabled():
+            logger.info("Radar intake omitido por ATLAS_RADAR_INTAKE_ENABLED=false")
         elif not settings.startup_scanner_enabled:
             logger.info("Scanner omitido por QUANT_STARTUP_SCANNER_ENABLED=false")
 
@@ -902,10 +1051,12 @@ def _auto_cycle_inactive_reasons(config: dict[str, Any] | None = None) -> list[s
         reasons.append("lightweight_startup_enabled")
     if not bool(settings.autocycle_auto_start):
         reasons.append("autocycle_auto_start_disabled")
+    if not _radar_intake_enabled():
+        reasons.append("radar_intake_disabled")
     if not bool(settings.scanner_enabled):
-        reasons.append("scanner_disabled")
+        reasons.append("legacy_scanner_setting_disabled")
     elif not bool(settings.scanner_auto_start):
-        reasons.append("scanner_auto_start_disabled")
+        reasons.append("legacy_scanner_auto_start_disabled")
     op_config = config or _OPERATION_CENTER.get_config()
     if not _auton_mode_requires_loop(op_config):
         reasons.append("auton_mode_off")
@@ -1058,6 +1209,21 @@ def _ensure_auto_cycle_running() -> bool:
 def _auth(x_api_key: str | None) -> None:
     if x_api_key != settings.api_key:
         raise HTTPException(status_code=401, detail="API key inválida")
+
+
+def _legacy_scanner_gone_response(*, ms: float) -> JSONResponse:
+    payload = StdResponse(
+        ok=False,
+        data={
+            "ok": False,
+            "deprecated": True,
+            "message": "Legacy scanner disabled; use /api/radar/opportunities",
+            "replacement_endpoint": "/api/radar/opportunities",
+        },
+        error="legacy_scanner_disabled",
+        ms=round(ms, 2),
+    )
+    return JSONResponse(status_code=410, content=payload.model_dump())
 
 
 def _now_ms() -> float:
@@ -3358,6 +3524,8 @@ async def scanner_status(x_api_key: str | None = Header(None)):
     """Estado operativo del escáner permanente de oportunidades."""
     _auth(x_api_key)
     t0 = time.perf_counter()
+    if not _legacy_scanner_enabled():
+        return _legacy_scanner_gone_response(ms=(time.perf_counter() - t0) * 1000)
     try:
         payload = ScannerStatusPayload.model_validate(_SCANNER.status())
         return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -3374,6 +3542,8 @@ async def scanner_report(
     """Reporte completo del escáner: criterios, candidatos, rechazos y actividad."""
     _auth(x_api_key)
     t0 = time.perf_counter()
+    if not _legacy_scanner_enabled():
+        return _legacy_scanner_gone_response(ms=(time.perf_counter() - t0) * 1000)
     try:
         payload = ScannerReportPayload.model_validate(_SCANNER.report(activity_limit=activity_limit))
         return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -3390,6 +3560,8 @@ async def scanner_config(
     """Actualiza la configuración del escáner."""
     _auth(x_api_key)
     t0 = time.perf_counter()
+    if not _legacy_scanner_enabled():
+        return _legacy_scanner_gone_response(ms=(time.perf_counter() - t0) * 1000)
     try:
         _SCANNER.update_config(body.model_dump(exclude_none=True))
         if body.enabled:
@@ -3411,6 +3583,8 @@ async def scanner_control(
     """Inicia, detiene o fuerza un ciclo del escáner."""
     _auth(x_api_key)
     t0 = time.perf_counter()
+    if not _legacy_scanner_enabled():
+        return _legacy_scanner_gone_response(ms=(time.perf_counter() - t0) * 1000)
     try:
         payload = ScannerReportPayload.model_validate(await _SCANNER.control(body.action))
         return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -3420,7 +3594,7 @@ async def scanner_control(
 
 
 def _enrich_universe_search_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Añade ``asset_class`` e ``is_optionable`` (misma heurística que el scanner)."""
+    """Normaliza filas de búsqueda en modo compat (legacy)."""
     out: list[dict[str, Any]] = []
     for entry in rows:
         if not isinstance(entry, dict):
@@ -3428,15 +3602,14 @@ def _enrich_universe_search_rows(rows: list[dict[str, Any]]) -> list[dict[str, A
         sym = str(entry.get("symbol") or "").strip().upper()
         if not sym:
             continue
-        prof = classify_asset(sym)
         out.append(
             {
                 "symbol": sym,
-                "name": str(entry.get("security_name") or ""),
+                "name": str(entry.get("security_name") or entry.get("name") or ""),
                 "exchange": str(entry.get("exchange") or ""),
-                "is_etf": bool(entry.get("is_etf")),
-                "asset_class": prof.asset_class.value,
-                "is_optionable": bool(prof.has_options),
+                "is_etf": bool(entry.get("is_etf") or str(entry.get("asset_class") or "") == "equity_etf"),
+                "asset_class": str(entry.get("asset_class") or "unknown"),
+                "is_optionable": bool(entry.get("is_optionable", True)),
             }
         )
     return out
@@ -3451,8 +3624,29 @@ async def scanner_universe_search(
     """Búsqueda sobre el universo US del catálogo del scanner (NASDAQ Trader + other listed)."""
     _auth(x_api_key)
     t0 = time.perf_counter()
+    if not _legacy_scanner_enabled():
+        return _legacy_scanner_gone_response(ms=(time.perf_counter() - t0) * 1000)
     try:
-        raw = _UNIVERSE_CATALOG.search_us_equities(q, limit=max(1, min(int(limit), 100)))
+        lim = max(1, min(int(limit), 100))
+        intake = _RADAR_CLIENT.fetch_opportunities(limit=max(lim, _FLAGS.radar_intake_limit), min_score=0.0)
+        matches = []
+        needle = str(q or "").strip().upper()
+        for opp in intake.batch.items:
+            if needle and needle not in opp.symbol:
+                continue
+            matches.append(
+                {
+                    "symbol": opp.symbol,
+                    "name": opp.asset_class,
+                    "exchange": "",
+                    "is_etf": opp.asset_class == "equity_etf",
+                    "asset_class": opp.asset_class,
+                    "is_optionable": True,
+                }
+            )
+            if len(matches) >= lim:
+                break
+        raw = {"query": q, "truncated": len(matches) >= lim, "matches": matches}
         enriched_matches = _enrich_universe_search_rows(list(raw.get("matches") or []))
         payload = {
             **{k: v for k, v in raw.items() if k != "matches"},
