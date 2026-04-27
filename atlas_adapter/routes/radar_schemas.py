@@ -264,3 +264,115 @@ class RadarSseEnvelope(BaseModel):
     source: str
     sequence: int
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+# --- F5 — Radar multi-símbolo: oportunidades ---------------------------------
+#
+# Contratos introducidos en F5 para el barrido multi-símbolo del Radar. Son
+# **aditivos**: no modifican los modelos previos ni los endpoints existentes.
+# Mantienen ``extra="allow"`` para permitir que el motor real (Quant) añada
+# campos sin romper consumidores. Ver:
+#     docs/ATLAS_RADAR_F5_MULTI_SYMBOL_OPPORTUNITIES.md
+
+
+RadarOpportunityClassification = Literal["high_conviction", "watchlist", "reject"]
+RadarOpportunityDirection = Literal["long", "short", "neutral"]
+RadarOpportunitySource = Literal["quant", "stub"]
+
+
+class RadarOpportunitySnapshot(BaseModel):
+    """Subconjunto canónico del snapshot por símbolo embebido en una oportunidad.
+
+    Es una vista **mínima** y estable derivada del summary del Radar. El
+    motor real puede añadir campos adicionales gracias a ``extra="allow"``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    timestamp: str
+    snapshot_classification: str
+    fast_pressure_score: float = 0.0
+    structural_confidence_score: float = 0.0
+    fast_structural_alignment: float = 0.0
+    fast_structural_divergence_score: float = 0.0
+    horizon_conflict: bool = False
+    cross_horizon_alignment: str = "-"
+    bias: str = "neutral"
+
+
+class RadarOpportunity(BaseModel):
+    """Oportunidad multi-símbolo emitida por el batch engine del Radar (F5).
+
+    El score es 0..100 (compuesto), la clasificación se deriva por umbrales
+    documentados en el batch engine. ``source`` distingue motor vivo (quant)
+    de stub honesto.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    symbol: str
+    asset_class: str
+    sector: str | None = None
+    optionable: bool = True
+    score: float = 0.0
+    classification: RadarOpportunityClassification = "reject"
+    direction: RadarOpportunityDirection = "neutral"
+    timestamp: str
+    horizon_min: int | None = None
+    snapshot: RadarOpportunitySnapshot
+    degradations_active: list[RadarDegradationEntry] = Field(default_factory=list)
+    source: RadarOpportunitySource = "stub"
+    trace_id: str
+
+
+class RadarOpportunitiesResponse(BaseModel):
+    """Cuerpo de ``GET /api/radar/opportunities``.
+
+    Mantiene contadores de evaluación, recortes aplicados y degradaciones
+    globales del batch (independientes de las degradaciones por símbolo).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool = True
+    source: RadarOpportunitySource = "stub"
+    timestamp: str
+    universe_size: int
+    evaluated: int
+    succeeded: int
+    failed: int
+    returned: int
+    limit: int
+    min_score: float
+    filters: dict[str, Any] = Field(default_factory=dict)
+    items: list[RadarOpportunity] = Field(default_factory=list)
+    degradations_active: list[RadarDegradationEntry] = Field(default_factory=list)
+    trace_id: str
+
+
+class RadarOpportunityStreamEvent(BaseModel):
+    """Envelope canónico de eventos SSE para el stream multi-símbolo.
+
+    Reusa los 6 campos canónicos del envelope SSE existente
+    (``type, timestamp, symbol, source, sequence, data``). Los tipos válidos
+    para F5 son: ``opportunity_added``, ``opportunity_updated``,
+    ``opportunity_removed``, ``universe_snapshot``, ``heartbeat``.
+
+    Cuando ``type == "universe_snapshot"`` o ``"heartbeat"``, ``symbol`` es
+    ``"*"`` (multi-símbolo), respetando la forma del envelope.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal[
+        "opportunity_added",
+        "opportunity_updated",
+        "opportunity_removed",
+        "universe_snapshot",
+        "heartbeat",
+    ]
+    timestamp: str
+    symbol: str
+    source: RadarOpportunitySource
+    sequence: int
+    data: dict[str, Any] = Field(default_factory=dict)

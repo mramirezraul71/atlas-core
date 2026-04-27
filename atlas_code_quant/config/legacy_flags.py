@@ -98,10 +98,45 @@ ATLAS_LEGACY_SCANNER_ENABLED: bool = True
 ATLAS_TRADIER_CANONICAL_STACK: str = "atlas_code_quant"
 ATLAS_TRADIER_PHASE1_LEGACY_STACK: str = "atlas_options_brain_fase1"
 
+# ---------------------------------------------------------------------------
+# F5 — Radar multi-símbolo (oportunidades).
+# ---------------------------------------------------------------------------
+#
+# Anuncia la existencia de los nuevos endpoints multi-símbolo del Radar:
+#
+#     GET /api/radar/opportunities
+#     GET /api/radar/opportunities/{symbol}
+#     GET /api/radar/stream/opportunities  (SSE)
+#
+# implementados en F5 sobre ``atlas_adapter`` (universe_provider +
+# radar_batch_engine + contratos pydantic). Coexisten con el Radar
+# single-symbol existente (summary/dealer/diagnostics/camera/stream) sin
+# cambiar su contrato.
+#
+# Estado en F5:
+#     * Default = ``False``: los endpoints YA ESTÁN expuestos por el router,
+#       pero esta flag se mantiene como **doc-only**: documenta que el
+#       “modo multi-símbolo” todavía no está conectado al Code Quant intake
+#       real (sin cliente HTTP en ``atlas_code_quant/intake/``) y que los
+#       summaries por símbolo dependen de la pipeline existente
+#       (``radar_build_dashboard_for_sse``), honestamente degradada cuando
+#       Quant no está alcanzable.
+#     * **Esta flag NO se consulta todavía** en runtime (radar_public.py
+#       NO la lee como condicional en F5).
+#
+# Reglas duras:
+#     * NO usar esta flag para deshabilitar lógica en F5.
+#     * NO interpretar su valor como autorización para conectar Code Quant
+#       intake (eso queda fuera del alcance F5).
+#     * NO tocar los endpoints single-symbol al activar funcionalidades
+#       futuras: deben mantenerse retrocompatibles.
+ATLAS_RADAR_MULTI_SYMBOL_ENABLED: bool = False
+
 __all__ = [
     "SCANNER_IS_LEGACY",
     "LEAN_SIMULATOR_IS_INTERNAL_GBM",
     "ATLAS_LEGACY_SCANNER_ENABLED",
     "ATLAS_TRADIER_CANONICAL_STACK",
     "ATLAS_TRADIER_PHASE1_LEGACY_STACK",
+    "ATLAS_RADAR_MULTI_SYMBOL_ENABLED",
 ]

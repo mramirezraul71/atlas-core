@@ -35,11 +35,14 @@ from atlas_adapter.routes.radar_schemas import (
     RadarDecisionsStatsPayload,
     RadarDiagnosticsPayload,
     RadarFastPayload,
+    RadarOpportunitiesResponse,
+    RadarOpportunity,
     RadarPoliticalPayload,
     RadarSearchResponse,
     RadarStructuralPayload,
     RadarSummaryPayload,
 )
+from atlas_adapter.services.radar_batch_engine import RadarBatchEngine
 
 from atlas_adapter.routes.radar_quant_client import (
     fetch_quant_camera_health,
@@ -526,6 +529,216 @@ def build_radar_stub_api_router() -> APIRouter:
         env, live = await build_live_camera_envelope()
         _apply_radar_json_headers(response, live=live)
         return env
+
+    # ------------------------------------------------------------------
+    # F5 — Multi-symbol opportunities (HTTP + SSE).
+    #
+    # Estos handlers son ADITIVOS: NO modifican summary/dealer/diagnostics/
+    # camera/stream(single-symbol). Reutilizan ``radar_build_dashboard_for_sse``
+    # vía ``RadarBatchEngine`` para no duplicar lógica de mapping. La flag
+    # ``ATLAS_RADAR_MULTI_SYMBOL_ENABLED`` es documental y NO se consulta
+    # como condicional aquí (ver atlas_code_quant/config/legacy_flags.py).
+    # ------------------------------------------------------------------
+
+    _radar_batch_engine = RadarBatchEngine()
+
+    def _opps_response_envelope(
+        result: Any, *, returned_items: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        items = returned_items if returned_items is not None else result.items
+        return {
+            "ok": True,
+            "source": result.source,
+            "timestamp": result.timestamp,
+            "universe_size": result.universe_size,
+            "evaluated": result.evaluated,
+            "succeeded": result.succeeded,
+            "failed": result.failed,
+            "returned": len(items),
+            "limit": result.limit,
+            "min_score": result.min_score,
+            "filters": result.filters,
+            "items": items,
+            "degradations_active": result.global_degradations,
+            "trace_id": result.trace_id,
+        }
+
+    @router.get(
+        "/opportunities",
+        response_model=RadarOpportunitiesResponse,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def radar_opportunities(
+        response: Response,
+        limit: int = 50,
+        min_score: float = 0.0,
+        asset_class: str | None = None,
+        sector: str | None = None,
+        optionable: bool | None = None,
+    ) -> Any:
+        """Listado multi-símbolo de oportunidades del Radar (F5).
+
+        Filtros: ``limit``, ``min_score`` (0..100), ``asset_class``, ``sector``,
+        ``optionable``. Tolerante a fallo parcial por símbolo.
+        """
+        result = await _radar_batch_engine.compute_opportunities(
+            limit=limit,
+            min_score=min_score,
+            asset_class=asset_class,
+            sector=sector,
+            optionable=optionable,
+        )
+        _apply_radar_json_headers(response, live=result.any_live)
+        return _opps_response_envelope(result)
+
+    @router.get(
+        "/opportunities/{symbol}",
+        response_model=RadarOpportunity,
+        responses=_RADAR_JSON_RESPONSES_200,
+    )
+    async def radar_opportunity_by_symbol(symbol: str, response: Response) -> Any:
+        """Oportunidad individual para ``symbol`` (debe estar en el universo).
+
+        404 si el símbolo no pertenece al universo curado.
+        """
+        opp = await _radar_batch_engine.compute_opportunity_for(symbol)
+        if opp is None:
+            raise HTTPException(status_code=404, detail="symbol_not_in_universe")
+        live = bool(opp.get("source") == "quant")
+        _apply_radar_json_headers(response, live=live)
+        return opp
+
+    @router.get("/stream/opportunities")
+    async def radar_stream_opportunities(
+        limit: int = 50,
+        min_score: float = 0.0,
+        asset_class: str | None = None,
+        sector: str | None = None,
+        optionable: bool | None = None,
+    ) -> StreamingResponse:
+        """SSE multi-símbolo de oportunidades (F5).
+
+        Eventos canónicos: ``universe_snapshot``, ``opportunity_added``,
+        ``opportunity_updated``, ``opportunity_removed``, ``heartbeat``.
+        Envelope idéntico al canónico (6 campos). ``symbol`` = ``"*"`` para
+        eventos no asociados a un único ticker.
+        """
+        live_initial = radar_quant_http_enabled()
+
+        async def _events() -> AsyncIterator[str]:
+            yield ": atlas-radar-opportunities-sse\n\n"
+            yield "retry: 3000\n\n"
+            seq = 0
+            last_snap_t = time.monotonic() - _RADAR_SSE_SNAPSHOT_SEC
+            last_state: dict[str, dict[str, Any]] = {}
+            last_source = "quant" if live_initial else "stub"
+
+            def _next_seq() -> int:
+                nonlocal seq
+                seq += 1
+                return seq
+
+            while True:
+                now = time.monotonic()
+                ts = _utc_iso()
+                hb = {
+                    "type": "heartbeat",
+                    "timestamp": ts,
+                    "symbol": "*",
+                    "source": last_source,
+                    "sequence": _next_seq(),
+                    "data": {
+                        "heartbeat_interval_sec": _RADAR_SSE_HEARTBEAT_SEC,
+                        "snapshot_interval_sec": _RADAR_SSE_SNAPSHOT_SEC,
+                        "tracked_symbols": len(last_state),
+                    },
+                }
+                yield _sse_event_block(hb["sequence"], "heartbeat", hb)
+
+                if now - last_snap_t >= _RADAR_SSE_SNAPSHOT_SEC:
+                    last_snap_t = now
+                    try:
+                        result = await _radar_batch_engine.compute_opportunities(
+                            limit=limit,
+                            min_score=min_score,
+                            asset_class=asset_class,
+                            sector=sector,
+                            optionable=optionable,
+                        )
+                    except Exception:
+                        logger.exception("radar_stream_opportunities: batch falló completo")
+                        await asyncio.sleep(_RADAR_SSE_HEARTBEAT_SEC)
+                        continue
+                    last_source = result.source
+                    new_state = {it["symbol"]: it for it in result.items}
+
+                    snap_env = {
+                        "type": "universe_snapshot",
+                        "timestamp": _utc_iso(),
+                        "symbol": "*",
+                        "source": last_source,
+                        "sequence": _next_seq(),
+                        "data": {
+                            "universe_size": result.universe_size,
+                            "returned": result.returned,
+                            "items": result.items,
+                            "trace_id": result.trace_id,
+                            "degradations_active": result.global_degradations,
+                        },
+                    }
+                    yield _sse_event_block(snap_env["sequence"], "universe_snapshot", snap_env)
+
+                    # Diff: removed / added / updated.
+                    for sym in last_state.keys() - new_state.keys():
+                        rm_env = {
+                            "type": "opportunity_removed",
+                            "timestamp": _utc_iso(),
+                            "symbol": sym,
+                            "source": last_source,
+                            "sequence": _next_seq(),
+                            "data": {"trace_id": result.trace_id},
+                        }
+                        yield _sse_event_block(rm_env["sequence"], "opportunity_removed", rm_env)
+                    for sym, item in new_state.items():
+                        prev = last_state.get(sym)
+                        if prev is None:
+                            ad_env = {
+                                "type": "opportunity_added",
+                                "timestamp": _utc_iso(),
+                                "symbol": sym,
+                                "source": last_source,
+                                "sequence": _next_seq(),
+                                "data": {"opportunity": item},
+                            }
+                            yield _sse_event_block(
+                                ad_env["sequence"], "opportunity_added", ad_env
+                            )
+                        else:
+                            prev_sig = _radar_json_sig(
+                                {"s": prev.get("score"), "c": prev.get("classification")}
+                            )
+                            cur_sig = _radar_json_sig(
+                                {"s": item.get("score"), "c": item.get("classification")}
+                            )
+                            if prev_sig != cur_sig:
+                                up_env = {
+                                    "type": "opportunity_updated",
+                                    "timestamp": _utc_iso(),
+                                    "symbol": sym,
+                                    "source": last_source,
+                                    "sequence": _next_seq(),
+                                    "data": {"opportunity": item},
+                                }
+                                yield _sse_event_block(
+                                    up_env["sequence"], "opportunity_updated", up_env
+                                )
+                    last_state = new_state
+
+                await asyncio.sleep(_RADAR_SSE_HEARTBEAT_SEC)
+
+        hdrs = dict(_stream_headers(live=live_initial))
+        hdrs["Content-Type"] = "text/event-stream; charset=utf-8"
+        return StreamingResponse(_events(), media_type="text/event-stream", headers=hdrs)
 
     @router.get("/stream")
     async def radar_stream(symbol: str = "SPY") -> StreamingResponse:
