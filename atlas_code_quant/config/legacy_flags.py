@@ -252,6 +252,53 @@ ATLAS_RADAR_FILTER_SHADOW_ENABLED: bool = False
 #       tests de no-regresión verdes.
 ATLAS_RADAR_FILTER_SHADOW_RUNTIME_ENABLED: bool = False
 
+# ---------------------------------------------------------------------------
+# F9 — Code Quant scanner→Radar enforcement gate (preparación, doc-only).
+# ---------------------------------------------------------------------------
+#
+# Anuncia la futura flag de **gate duro** scanner→Radar. F9 SOLO declara la
+# flag y documenta su contrato. F9 **NO** la consulta en runtime: ningún
+# módulo introducido en F9 (incluido
+# ``atlas_code_quant.monitoring.scanner_radar_shadow_hook``) la lee como
+# condicional.
+#
+# Diferencia respecto a las flags shadow precedentes:
+#
+#     * ``ATLAS_RADAR_INTAKE_ENABLED``                 (F6, doc-only)
+#     * ``ATLAS_RADAR_FILTER_SHADOW_ENABLED``          (F7, doc-only)
+#     * ``ATLAS_RADAR_FILTER_SHADOW_RUNTIME_ENABLED``  (F8 doc, F9 runtime —
+#       habilita SOLO observación shadow vía hook).
+#     * ``ATLAS_RADAR_FILTER_ENFORCED``                (F9, doc-only) →
+#       reservada para el cutover futuro: cuando se pase a ``True``,
+#       Radar se vuelve **gate duro** y el output del scanner que no pase
+#       por Radar deja de alimentar estrategias / ejecución.
+#
+# Estado en F9:
+#     * Default = ``False``: ningún consumer cambia su comportamiento
+#       por su valor.
+#     * **NO se consulta en runtime**. Cualquier introducción de un
+#       condicional sobre esta flag exige una fase dedicada (F10+) con
+#       documento de cutover, paridad shadow-vs-real verde, plan de
+#       rollback y aprobación humana explícita.
+#
+# Roadmap (NO implementado en F9):
+#     * F10+ podría introducir un wrapper alrededor del punto de corte
+#       scanner→strategies (documentado en
+#       ``docs/ATLAS_CODE_QUANT_F9_SCANNER_RADAR_SHADOW_HOOK_AND_GATE_PREP.md``)
+#       que, cuando esta flag sea ``True``, exija aprobación del Radar
+#       como precondición de entrada a estrategias.
+#     * El gate exige además: tests de paridad scanner-vs-Radar verdes,
+#       métricas de divergencia estables, y un kill-switch coherente
+#       con ``paper_only`` / ``full_live_globally_locked``.
+#
+# Reglas duras:
+#     * NO consultar esta flag desde código de runtime en F9.
+#     * NO interpretar su presencia como autorización para cortocircuitar
+#       al scanner sin un plan de cutover.
+#     * NO cambiar su default a ``True`` sin la fase de enforcement
+#       formal (F10+).
+ATLAS_RADAR_FILTER_ENFORCED: bool = False
+
 __all__ = [
     "SCANNER_IS_LEGACY",
     "LEAN_SIMULATOR_IS_INTERNAL_GBM",
@@ -262,4 +309,5 @@ __all__ = [
     "ATLAS_RADAR_INTAKE_ENABLED",
     "ATLAS_RADAR_FILTER_SHADOW_ENABLED",
     "ATLAS_RADAR_FILTER_SHADOW_RUNTIME_ENABLED",
+    "ATLAS_RADAR_FILTER_ENFORCED",
 ]
