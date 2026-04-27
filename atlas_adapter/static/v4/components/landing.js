@@ -412,7 +412,7 @@ export function render(container) {
 
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
-    'institutional-radar': { href: '/radar/dashboard', newTab: false },
+    'institutional-radar': { href: '/ui/radar', newTab: false },
     workspace: { href: '/workspace', newTab: true },
     bitacora:  { hash: '/bitacora' },
     'rauli-vision': { hash: '/apps/vision' },
@@ -458,7 +458,7 @@ export function render(container) {
 
   const TILE_ROUTES = {
     'assistant':    { hash: '/chat' },
-    'institutional-radar': { href: '/radar/dashboard', newTab: false },
+    'institutional-radar': { href: '/ui/radar', newTab: false },
     'workspace-ext':{ href: '/workspace', newTab: true },
     'governance':   { hash: '/autonomy' },
     'approvals':    { hash: '/approvals' },

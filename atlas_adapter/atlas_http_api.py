@@ -6311,6 +6311,12 @@ def modules():
             {"name": "voice", "enabled": False},
             {"name": "agent_router", "enabled": False},
             {"name": "telegram", "enabled": True},
+            {
+                "name": "atlas_radar_kalshi",
+                "enabled": os.getenv("ATLAS_ENABLE_RADAR_KALSHI", "0") == "1",
+                "ui": "/ui/radar",
+                "api": "/api/radar/status",
+            },
         ],
     }
 
