@@ -1,0 +1,563 @@
+{
+  "started_at": 1777260993.236419,
+  "finished_at": 1777261074.1146598,
+  "duration_sec": 80.88,
+  "endpoints": [
+    "/api/radar/opportunities?limit=5",
+    "/api/system/metrics",
+    "/api/radar/dashboard/summary?symbol=SPY"
+  ],
+  "samples": [
+    {
+      "sample_idx": 0,
+      "ts": 1777260993.2364323,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 813.9,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 1.9,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 36.0,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    },
+    {
+      "sample_idx": 1,
+      "ts": 1777261003.236544,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 873.2,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 3.5,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 61.8,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    },
+    {
+      "sample_idx": 2,
+      "ts": 1777261013.2367082,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 784.3,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 6.0,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 34.9,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    },
+    {
+      "sample_idx": 3,
+      "ts": 1777261023.236866,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 839.4,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 2.0,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 39.0,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    },
+    {
+      "sample_idx": 4,
+      "ts": 1777261033.2369757,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 1113.4,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 1.9,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 37.1,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    },
+    {
+      "sample_idx": 5,
+      "ts": 1777261043.2371671,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 813.5,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 1.9,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 38.7,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    },
+    {
+      "sample_idx": 6,
+      "ts": 1777261053.2372942,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 808.6,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 1.9,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 42.6,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    },
+    {
+      "sample_idx": 7,
+      "ts": 1777261063.2374802,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 801.7,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 2.1,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 34.5,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    },
+    {
+      "sample_idx": 8,
+      "ts": 1777261073.2376313,
+      "probes": {
+        "radar_opportunities": {
+          "status_code": 200,
+          "latency_ms": 832.5,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ok",
+              "opportunities",
+              "truncated",
+              "universe_evaluated",
+              "min_score",
+              "trace_id",
+              "degraded_globally",
+              "global_degradations"
+            ]
+          },
+          "raw_size_bytes": 653
+        },
+        "system_metrics": {
+          "status_code": 200,
+          "latency_ms": 8.3,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "ts",
+              "radar",
+              "strategy",
+              "execution",
+              "risk",
+              "journal"
+            ]
+          },
+          "raw_size_bytes": 646
+        },
+        "dashboard_summary_spy": {
+          "status_code": 200,
+          "latency_ms": 36.1,
+          "ok": true,
+          "data_sample": {
+            "keys": [
+              "symbol",
+              "last_update",
+              "stream_available",
+              "transport",
+              "radar",
+              "decision_gate",
+              "camera_context",
+              "degradations_active"
+            ]
+          },
+          "raw_size_bytes": 1682
+        }
+      }
+    }
+  ],
+  "summary_per_endpoint": {
+    "radar_opportunities": {
+      "samples": 9,
+      "ok_count": 9,
+      "fail_count": 0,
+      "ok_rate_pct": 100.0,
+      "latency_min_ms": 784.3,
+      "latency_max_ms": 1113.4,
+      "latency_avg_ms": 853.4
+    },
+    "system_metrics": {
+      "samples": 9,
+      "ok_count": 9,
+      "fail_count": 0,
+      "ok_rate_pct": 100.0,
+      "latency_min_ms": 1.9,
+      "latency_max_ms": 8.3,
+      "latency_avg_ms": 3.3
+    },
+    "dashboard_summary_spy": {
+      "samples": 9,
+      "ok_count": 9,
+      "fail_count": 0,
+      "ok_rate_pct": 100.0,
+      "latency_min_ms": 34.5,
+      "latency_max_ms": 61.8,
+      "latency_avg_ms": 40.1
+    }
+  }
+}

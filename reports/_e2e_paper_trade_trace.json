@@ -1,0 +1,287 @@
+{
+  "trace_id": "e2e_paper_trade_20260427_001",
+  "started_at": 1777260923.7883008,
+  "finished_at": 1777260923.7893536,
+  "duration_sec": 0.0010528564453125,
+  "winner_strategy": "iron_condor",
+  "winner_fitness": 0.0,
+  "winner_accepted": false,
+  "winner_justification": "No candidate met acceptance policy. Best fail: iron_condor on SPY (max_drawdown_high dd=0.34 max=0.08)",
+  "realized_pnl_usd": 400.0,
+  "complete_cycle": true,
+  "timeline": [
+    {
+      "event": "step_01_radar_universe",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7883008,
+      "universe_size": 22,
+      "symbols_sample": [
+        "DIA",
+        "GLD",
+        "IWM",
+        "QQQ",
+        "SPY",
+        "TLT",
+        "VXX",
+        "XLE",
+        "XLF",
+        "XLK",
+        "AAPL",
+        "AMZN",
+        "GOOGL",
+        "META",
+        "MSFT"
+      ]
+    },
+    {
+      "event": "step_02_opportunity_selected",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7883673,
+      "symbol": "SPY",
+      "score": 82.0,
+      "direction": "neutral"
+    },
+    {
+      "event": "step_03_candidates_built",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7884796,
+      "candidate_count": 3,
+      "strategies": [
+        "iron_condor",
+        "iron_butterfly",
+        "straddle_strangle.straddle"
+      ]
+    },
+    {
+      "event": "step_04_backtest_comparative",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7891095,
+      "results": [
+        {
+          "strategy": "iron_condor",
+          "trades_count": 60,
+          "profit_factor": 1.6,
+          "win_rate": 0.8,
+          "sharpe": 0.212,
+          "max_drawdown": 0.3447,
+          "expectancy": 25.04,
+          "total_pnl": 1502.63,
+          "source": "stub",
+          "rejected": false
+        },
+        {
+          "strategy": "iron_butterfly",
+          "trades_count": 60,
+          "profit_factor": 1.454,
+          "win_rate": 0.633,
+          "sharpe": 0.186,
+          "max_drawdown": 0.5552,
+          "expectancy": 29.46,
+          "total_pnl": 1767.48,
+          "source": "stub",
+          "rejected": false
+        },
+        {
+          "strategy": "straddle_strangle.straddle",
+          "trades_count": 60,
+          "profit_factor": 1.216,
+          "win_rate": 0.567,
+          "sharpe": 0.097,
+          "max_drawdown": 0.4203,
+          "expectancy": 10.24,
+          "total_pnl": 614.46,
+          "source": "stub",
+          "rejected": false
+        }
+      ]
+    },
+    {
+      "event": "step_05_ranking",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7891881,
+      "outcomes": [
+        {
+          "strategy": "iron_condor",
+          "accepted": false,
+          "fitness": 0.0,
+          "rejection_reasons": [
+            "max_drawdown_high dd=0.34 max=0.08"
+          ]
+        },
+        {
+          "strategy": "iron_butterfly",
+          "accepted": false,
+          "fitness": 0.0,
+          "rejection_reasons": [
+            "max_drawdown_high dd=0.56 max=0.08"
+          ]
+        },
+        {
+          "strategy": "straddle_strangle.straddle",
+          "accepted": false,
+          "fitness": 0.0,
+          "rejection_reasons": [
+            "max_drawdown_high dd=0.42 max=0.08"
+          ]
+        }
+      ],
+      "winner_strategy": null,
+      "justification": "No candidate met acceptance policy. Best fail: iron_condor on SPY (max_drawdown_high dd=0.34 max=0.08)"
+    },
+    {
+      "event": "step_06_winner",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7892098,
+      "strategy": "iron_condor",
+      "fitness": 0.0,
+      "accepted": false,
+      "reason": "fallback_best_fitness_no_acceptance"
+    },
+    {
+      "event": "step_07_paper_open",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7892761,
+      "position_id": "POS-d1e00290e0",
+      "symbol": "SPY",
+      "strategy": "iron_condor",
+      "entry_price": 2.0,
+      "take_profit_price": 3.0,
+      "stop_loss_price": 0.0,
+      "qty": 4
+    },
+    {
+      "event": "step_08_monitoring_ticks",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7892997,
+      "ticks": [
+        {
+          "tick_price": 2.05,
+          "action": "hold",
+          "reason": "hold"
+        },
+        {
+          "tick_price": 2.15,
+          "action": "hold",
+          "reason": "hold"
+        },
+        {
+          "tick_price": 2.35,
+          "action": "hold",
+          "reason": "hold"
+        },
+        {
+          "tick_price": 2.65,
+          "action": "hold",
+          "reason": "hold"
+        },
+        {
+          "tick_price": 2.95,
+          "action": "hold",
+          "reason": "hold"
+        },
+        {
+          "tick_price": 3.05,
+          "action": "close",
+          "reason": "take_profit"
+        }
+      ],
+      "final_action": "close",
+      "final_reason": "take_profit"
+    },
+    {
+      "event": "step_09_paper_close",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.78933,
+      "position_id": "POS-d1e00290e0",
+      "exit_price": 3.0,
+      "exit_reason": "take_profit",
+      "realized_pnl_usd": 400.0,
+      "status": "closed"
+    },
+    {
+      "event": "step_10_journal_verification",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7893414,
+      "complete_cycle": true,
+      "entries_count": 2,
+      "events": [
+        "trade_open",
+        "trade_close"
+      ]
+    },
+    {
+      "event": "step_11_runtime_snapshot",
+      "trace_id": "e2e_paper_trade_20260427_001",
+      "ts": 1777260923.7893536,
+      "cash_usd": 100400.0,
+      "positions_open": 0,
+      "positions_closed": 1,
+      "realized_pnl_total": 400.0,
+      "journal_total_entries": 2
+    }
+  ],
+  "backtest_table": [
+    {
+      "strategy": "iron_condor",
+      "trades_count": 60,
+      "profit_factor": 1.6,
+      "win_rate": 0.8,
+      "sharpe": 0.212,
+      "max_drawdown": 0.3447,
+      "expectancy": 25.04,
+      "total_pnl": 1502.63,
+      "source": "stub",
+      "rejected": false
+    },
+    {
+      "strategy": "iron_butterfly",
+      "trades_count": 60,
+      "profit_factor": 1.454,
+      "win_rate": 0.633,
+      "sharpe": 0.186,
+      "max_drawdown": 0.5552,
+      "expectancy": 29.46,
+      "total_pnl": 1767.48,
+      "source": "stub",
+      "rejected": false
+    },
+    {
+      "strategy": "straddle_strangle.straddle",
+      "trades_count": 60,
+      "profit_factor": 1.216,
+      "win_rate": 0.567,
+      "sharpe": 0.097,
+      "max_drawdown": 0.4203,
+      "expectancy": 10.24,
+      "total_pnl": 614.46,
+      "source": "stub",
+      "rejected": false
+    }
+  ],
+  "ranking_table": [
+    {
+      "strategy": "iron_condor",
+      "accepted": false,
+      "fitness": 0.0,
+      "rejection_reasons": [
+        "max_drawdown_high dd=0.34 max=0.08"
+      ]
+    },
+    {
+      "strategy": "iron_butterfly",
+      "accepted": false,
+      "fitness": 0.0,
+      "rejection_reasons": [
+        "max_drawdown_high dd=0.56 max=0.08"
+      ]
+    },
+    {
+      "strategy": "straddle_strangle.straddle",
+      "accepted": false,
+      "fitness": 0.0,
+      "rejection_reasons": [
+        "max_drawdown_high dd=0.42 max=0.08"
+      ]
+    }
+  ]
+}
