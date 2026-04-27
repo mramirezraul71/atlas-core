@@ -117,6 +117,13 @@ from operations.startup_visual_connect import (
 )
 from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
+# F10 — "scanner propone, Radar decide". Adapter API-level que aplica el
+# gate Radar al payload de /scanner/report, gobernado por
+# ATLAS_RADAR_FILTER_ENFORCED en config/legacy_flags.py (default False:
+# modo compat sin cambio semántico para la lista oficial).
+from atlas_code_quant.intake.scanner_radar_view import (
+    build_scanner_report_via_radar,
+)
 from scanner.universe_catalog import ScannerUniverseCatalog
 from scanner.asset_classifier import classify_asset
 from selector.strategy_selector import StrategySelectorService
@@ -3455,8 +3462,31 @@ async def scanner_report(
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        payload = ScannerReportPayload.model_validate(_SCANNER.report(activity_limit=activity_limit))
-        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+        # F10 — "scanner propone, Radar decide".
+        # 1) Tomamos la salida del scanner legacy (igual que antes).
+        # 2) La pasamos por el adapter Radar; en modo compat la lista
+        #    oficial ``data.candidates`` se conserva sin cambios y
+        #    sumamos campos Radar al payload. En modo enforced
+        #    (ATLAS_RADAR_FILTER_ENFORCED=True) la lista oficial pasa
+        #    a ser sólo lo aprobado por Radar.
+        scanner_raw = _SCANNER.report(activity_limit=activity_limit)
+        gated = build_scanner_report_via_radar(scanner_raw)
+        payload = ScannerReportPayload.model_validate(gated)
+        data = payload.model_dump()
+        # Inyectamos los campos extra de F10 que el modelo Pydantic no
+        # declara (no destructivo: ScannerReportPayload no es
+        # ``extra=forbid``). Esto preserva el shape básico y añade
+        # información Radar honesta para el cliente.
+        for extra_key in (
+            "radar_filtered_candidates",
+            "radar_rejected",
+            "radar_degradations",
+            "radar_meta",
+            "scanner_raw_candidates",
+        ):
+            if extra_key in gated:
+                data[extra_key] = gated[extra_key]
+        return StdResponse(ok=True, data=data, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error reading scanner report")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
