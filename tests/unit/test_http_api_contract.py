@@ -188,7 +188,14 @@ def test_modules_shape_literal(client):
     body = r.json()
     assert set(body.keys()) == {"ok", "modules"}
     assert body["ok"] is True
-    assert body["modules"] == [
+    # Los módulos opcionales (p.ej. ``atlas_radar_kalshi``) pueden montarse
+    # de forma no invasiva (opt-in vía env). Los filtramos para mantener
+    # estable el contrato literal de los módulos core.
+    core = [m for m in body["modules"]
+            if m.get("name") in {"vision", "voice", "agent_router", "telegram"}]
+    # Comparamos sólo el subset (name, enabled) de los módulos core.
+    core_compact = [{"name": m["name"], "enabled": m["enabled"]} for m in core]
+    assert core_compact == [
         {"name": "vision", "enabled": False},
         {"name": "voice", "enabled": False},
         {"name": "agent_router", "enabled": False},
