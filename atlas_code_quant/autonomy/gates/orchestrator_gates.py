@@ -134,17 +134,89 @@ class StrategyGate(Gate):
 
 
 class RiskGate(Gate):
-    """Stub F17 — F19 conectará con ``risk/limits`` y circuit breaker."""
+    """Risk gate del orquestador (F19).
+
+    Combina ``risk.limits.check_all_limits`` con un
+    ``CircuitBreaker`` opcional para tripear el sistema cuando se
+    acumulan violaciones consecutivas.
+
+    El contexto admite:
+        ``risk_violation``: bool override (test).
+        ``realized_pnl_usd``: float P&L acumulado del día.
+        ``notional_usd``: float notional de la posición a abrir.
+        ``orders_in_last_minute``: int.
+        ``risk_config``: ``RiskLimitsConfig`` opcional.
+    """
 
     name = "risk"
+
+    def __init__(
+        self, *, breaker: Any | None = None, config: Any | None = None
+    ) -> None:
+        self._breaker = breaker  # CircuitBreaker | None
+        self._config = config  # RiskLimitsConfig | None
 
     def evaluate(self, ctx: Mapping[str, Any] | None = None) -> GateResult:
         ctx = ctx or {}
         if ctx.get("risk_violation") is True:
+            if self._breaker is not None:
+                try:
+                    self._breaker.record_failure()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("RiskGate breaker.record_failure: %s", exc)
             return GateResult(
                 ok=False, reason="risk_violation_simulated", degraded=False
             )
-        return GateResult(ok=True, reason="risk_ok_stub_f17")
+
+        # Breaker abierto bloquea sin re-checar límites.
+        if self._breaker is not None:
+            try:
+                allow = self._breaker.allow_request()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("RiskGate breaker.allow_request: %s", exc)
+                allow = True
+            if not allow:
+                return GateResult(
+                    ok=False,
+                    reason="risk_circuit_breaker_open",
+                    degraded=False,
+                )
+
+        # Sin override ni datos: comportamiento permisivo (únicamente
+        # rechazamos cuando alguno de los inputs viola).
+        try:
+            from atlas_code_quant.risk.limits import (
+                RiskLimitsConfig,
+                check_all_limits,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return GateResult(
+                ok=True,
+                reason=f"risk_limits_unavailable:{exc}",
+                degraded=True,
+            )
+        cfg = ctx.get("risk_config") or self._config
+        if cfg is not None and not isinstance(cfg, RiskLimitsConfig):
+            cfg = None
+        result = check_all_limits(
+            realized_pnl_usd=float(ctx.get("realized_pnl_usd", 0.0) or 0.0),
+            notional_usd=float(ctx.get("notional_usd", 0.0) or 0.0),
+            orders_in_last_minute=int(
+                ctx.get("orders_in_last_minute", 0) or 0
+            ),
+            config=cfg,
+        )
+        if not result.ok and self._breaker is not None:
+            try:
+                self._breaker.record_failure()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("RiskGate breaker.record_failure: %s", exc)
+        elif result.ok and self._breaker is not None:
+            try:
+                self._breaker.record_success()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("RiskGate breaker.record_success: %s", exc)
+        return result
 
 
 class VisionGate(Gate):
@@ -318,15 +390,68 @@ class LiveGate(Gate):
 
 
 class KillSwitchGate(Gate):
-    """Stub F17 — F19 lo conectará a ``ATLAS_KILLSWITCH_FILE``."""
+    """Kill switch real (F19) basado en ``ATLAS_KILLSWITCH_FILE``.
+
+    El gate prefiere el override explícito ``ctx['killswitch']`` (útil
+    en tests del orquestador) sobre la lectura de fichero. Si no hay
+    override, consulta ``FileKillSwitch.is_activated()``. La lectura
+    es defensiva: errores de E/S se traducen a ``ok=True`` para no
+    bloquear el pipeline paper por permisos locales.
+    """
 
     name = "killswitch"
 
+    def __init__(self, *, switch: Any | None = None) -> None:
+        if switch is None:
+            try:
+                from atlas_code_quant.risk.kill_switch import FileKillSwitch
+
+                switch = FileKillSwitch()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "KillSwitchGate: no se pudo construir FileKillSwitch: %s",
+                    exc,
+                )
+                switch = None
+        self._switch = switch
+
     def evaluate(self, ctx: Mapping[str, Any] | None = None) -> GateResult:
         ctx = ctx or {}
-        if ctx.get("killswitch") is True:
-            return GateResult(ok=False, reason="killswitch_triggered")
-        return GateResult(ok=True, reason="killswitch_clear_stub_f17")
+        # Override explícito tiene prioridad (tests / runtime forzado).
+        if "killswitch" in ctx:
+            triggered = bool(ctx.get("killswitch"))
+            if triggered:
+                return GateResult(
+                    ok=False, reason="killswitch_ctx_override"
+                )
+            return GateResult(
+                ok=True, reason="killswitch_clear_ctx_override"
+            )
+        if self._switch is None:
+            return GateResult(
+                ok=True,
+                reason="killswitch_clear_no_engine",
+                degraded=True,
+            )
+        try:
+            status = self._switch.status()
+        except Exception as exc:  # noqa: BLE001
+            return GateResult(
+                ok=True,
+                reason=f"killswitch_status_raised:{exc}",
+                degraded=True,
+            )
+        if status.activated:
+            return GateResult(
+                ok=False,
+                reason="killswitch_file_present",
+                evidence={"path": status.path, "marker": status.raw_marker or ""},
+            )
+        return GateResult(
+            ok=True,
+            reason=status.reason,
+            evidence={"path": status.path},
+        )
 
 
 __all__ = [
