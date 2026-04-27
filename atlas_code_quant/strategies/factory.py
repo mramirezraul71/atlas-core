@@ -12,6 +12,11 @@ try:  # compat con import absoluto/relativo existente en repo
 except Exception:  # pragma: no cover
     from strategies.base import BaseStrategy  # type: ignore
 
+from atlas_code_quant.strategies.contracts import (
+    StrategyConfig,
+    StrategyOpportunityRef,
+    StrategyPlan,
+)
 from atlas_code_quant.strategies.options import (
     IronButterflyStrategy,
     IronCondorStrategy,
@@ -89,3 +94,50 @@ class StrategyFactory:
             "legacy": sorted(cls._registry),
             "options": sorted(cls._options_registry),
         }
+
+    # ── F9.2 candidatas multi-estrategia ──────────────────────────────────
+    @classmethod
+    def build_candidates(
+        cls,
+        opportunity: StrategyOpportunityRef | dict,
+        config: StrategyConfig | None = None,
+    ) -> list[StrategyPlan]:
+        """Construye 4 ``StrategyPlan`` (uno por estrategia de opciones) para
+        una oportunidad dada y devuelve solo los que terminaron en
+        ``status == 'planned'`` (descarta rejected).
+
+        Garantiza ≥1 candidato por símbolo si la dirección es válida; con
+        bias direccional emite vertical_spread; con bias neutral emite
+        iron_condor + iron_butterfly + straddle_strangle.
+        """
+        opp = (
+            opportunity
+            if isinstance(opportunity, StrategyOpportunityRef)
+            else StrategyOpportunityRef.from_dict(opportunity)
+        )
+        cfg = config or StrategyConfig()
+        plans: list[StrategyPlan] = []
+        for key in (
+            "options.vertical_spread",
+            "options.iron_condor",
+            "options.iron_butterfly",
+            "options.straddle_strangle",
+        ):
+            try:
+                strat = cls.create_option(key)
+                plan = strat.build_plan(opp, cfg)
+                if plan.is_actionable():
+                    plans.append(plan)
+            except Exception as exc:  # pragma: no cover - safety net
+                # Mantener el flujo si una estrategia rompe; no contamina las demás.
+                plans.append(
+                    StrategyPlan(
+                        strategy=key.split(".", 1)[-1],
+                        symbol=opp.symbol,
+                        direction=opp.direction,
+                        status="rejected",
+                        rationale=f"build_failed: {exc.__class__.__name__}",
+                        trace_id=opp.trace_id,
+                    )
+                )
+        return [p for p in plans if p.status == "planned"]
