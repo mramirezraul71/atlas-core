@@ -35,6 +35,7 @@ from atlas_adapter.routes.status_observability import (
     build_router as build_status_observability_router,
 )
 from atlas_adapter.routes.radar_opportunities import build_radar_opportunities_router
+from atlas_adapter.routes.vision_confirm import build_vision_confirm_router
 from atlas_adapter.routes.radar_public import (
     build_radar_stub_api_router,
     build_radar_ui_router,
@@ -111,6 +112,7 @@ app.include_router(build_trading_quant_router())
 app.include_router(build_radar_stub_api_router())
 app.include_router(build_radar_opportunities_router())
 app.include_router(build_radar_ui_router())
+app.include_router(build_vision_confirm_router())  # F7 Vision Timing Gate (paper-default)
 
 # Módulo opcional: Radar Kalshi (UI /ui/radar + API /api/radar/*).
 # Se monta sólo cuando ATLAS_ENABLE_RADAR_KALSHI=1 para no interferir con
