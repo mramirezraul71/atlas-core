@@ -5753,6 +5753,17 @@ except Exception as e:
     import logging
     logging.getLogger(__name__).warning("Autonomous module not loaded: %s", e)
 
+# Radar Kalshi: /ui/radar + /api/radar/* (predicciones). ATLAS_ENABLE_RADAR_KALSHI=1
+if os.getenv("ATLAS_ENABLE_RADAR_KALSHI", "0") == "1":
+    try:
+        from modules.atlas_radar_kalshi.main import register as _register_radar_kalshi
+
+        _register_radar_kalshi(app)
+    except Exception as _rad_exc:
+        import logging
+
+        logging.getLogger(__name__).warning("atlas_radar_kalshi no montado: %s", _rad_exc)
+
 
 @app.get("/autonomous/dashboard", response_class=HTMLResponse)
 async def autonomous_dashboard():
