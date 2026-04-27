@@ -84,11 +84,11 @@ class RadarSettings(BaseModel):
         description="Endpoint HTTP del servidor local de Ollama.",
     )
     ollama_model: str = Field(
-        default="qwen3:8b",
+        default="qwen2.5-coder:7b",
         description="Modelo por defecto para sentimiento/razonamiento.",
     )
     ollama_timeout_seconds: float = Field(
-        default=3.0,
+        default=20.0,
         ge=0.5,
         le=120.0,
         description="Timeout de petición a Ollama por evaluación.",
@@ -263,8 +263,8 @@ def get_settings() -> RadarSettings:
         kalshi_base_url=os.getenv("KALSHI_BASE_URL") or None,
         kalshi_ws_url=os.getenv("KALSHI_WS_URL") or None,
         ollama_endpoint=os.getenv("OLLAMA_ENDPOINT", "http://127.0.0.1:11434"),
-        ollama_model=os.getenv("OLLAMA_MODEL", "qwen3:8b"),
-        ollama_timeout_seconds=float(os.getenv("RADAR_OLLAMA_TIMEOUT_S", "3")),
+        ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
+        ollama_timeout_seconds=float(os.getenv("RADAR_OLLAMA_TIMEOUT_S", "20")),
         ollama_backoff_seconds=int(os.getenv("RADAR_OLLAMA_BACKOFF_S", "120")),
         atlas_dashboard_url=os.getenv("ATLAS_DASHBOARD_URL", "http://127.0.0.1:8791"),
         edge_threshold=float(os.getenv("RADAR_EDGE_THRESHOLD", "0.05")),

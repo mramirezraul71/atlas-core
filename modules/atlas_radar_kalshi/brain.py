@@ -34,8 +34,7 @@ import asyncio
 import json
 import math
 import time
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Dict, List, Optional
 
 import httpx
 import numpy as np
@@ -80,6 +79,11 @@ class RadarBrain:
     """Coordina LLM + Markov + Monte Carlo."""
 
     BUCKET_SIZE = 5  # cents
+    FALLBACK_MODELS = (
+        "qwen2.5-coder:7b",
+        "llama3.1:8b",
+        "llama3.1:latest",
+    )
 
     def __init__(self, settings: Optional[RadarSettings] = None) -> None:
         self.settings = settings or get_settings()
@@ -87,6 +91,7 @@ class RadarBrain:
                               self.settings.log_level)
         self._market_meta: Dict[str, dict] = {}
         self._ollama_backoff_until: float = 0.0
+        self._active_ollama_model: str = self.settings.ollama_model
 
     # ------------------------------------------------------------------
     # Entrada de eventos del scanner
@@ -170,27 +175,45 @@ class RadarBrain:
             )
 
         prompt = self._build_prompt(ticker, meta, news, book, history)
-        payload = {
-            "model": self.settings.ollama_model,
-            "prompt": prompt,
-            "format": "json",
-            "stream": False,
-            "options": {"temperature": 0.2, "num_ctx": 8192},
-        }
-        url = f"{self.settings.ollama_endpoint}/api/generate"
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.ollama_timeout_seconds
             ) as client:
-                r = await client.post(url, json=payload)
-                r.raise_for_status()
-                raw = r.json().get("response", "{}")
-            data = json.loads(raw)
+                base_url = self.settings.ollama_endpoint.rstrip("/")
+                installed = await self._fetch_installed_models(client, base_url)
+                candidates = self._candidate_ollama_models(installed)
+                data = {}
+                last_error: Optional[str] = None
+                for model in candidates:
+                    try:
+                        data = await self._call_ollama_with_fallback(
+                            client=client,
+                            base_url=base_url,
+                            model=model,
+                            prompt=prompt,
+                        )
+                        self._active_ollama_model = model
+                        break
+                    except httpx.HTTPStatusError as exc:
+                        body = (exc.response.text or "").lower()
+                        if exc.response.status_code == 404 and "model" in body:
+                            last_error = (
+                                f"model_not_found:{model}"
+                            )
+                            continue
+                        raise
+                    except Exception as exc:
+                        last_error = str(exc)
+                        continue
+                if not data:
+                    raise RuntimeError(
+                        f"sin_respuesta_ollama; ultimo_error={last_error or 'n/a'}"
+                    )
             self._ollama_backoff_until = 0.0
             return LLMReading(
                 p_yes=float(data.get("p_yes", 0.5)),
                 confidence=float(data.get("confidence", 0.3)),
-                rationale=str(data.get("rationale", "")),
+                rationale=str(data.get("rationale", f"model={self._active_ollama_model}")),
             )
         except Exception as exc:
             self._ollama_backoff_until = (
@@ -198,6 +221,89 @@ class RadarBrain:
             )
             self.log.warning("Ollama no disponible (%s); usando prior 0.5", exc)
             return LLMReading(p_yes=0.5, confidence=0.1, rationale=str(exc))
+
+    def _candidate_ollama_models(self, installed: List[str]) -> List[str]:
+        seen = set()
+        ordered: List[str] = []
+        base = [self._active_ollama_model, self.settings.ollama_model, *self.FALLBACK_MODELS]
+        installed_set = set(installed)
+        for model in base:
+            name = (model or "").strip()
+            if not name or name in seen:
+                continue
+            if installed and name not in installed_set:
+                continue
+            seen.add(name)
+            ordered.append(name)
+        if ordered:
+            return ordered
+        return installed[:3] if installed else [self.settings.ollama_model]
+
+    async def _fetch_installed_models(
+        self, client: httpx.AsyncClient, base_url: str
+    ) -> List[str]:
+        try:
+            r = await client.get(f"{base_url}/api/tags")
+            r.raise_for_status()
+            models = r.json().get("models", [])
+            names = [str(m.get("name", "")).strip() for m in models if m.get("name")]
+            return [n for n in names if n]
+        except Exception as exc:
+            self.log.debug("No se pudo leer /api/tags de Ollama (%s)", exc)
+            return []
+
+    async def _call_ollama_with_fallback(
+        self,
+        client: httpx.AsyncClient,
+        base_url: str,
+        model: str,
+        prompt: str,
+    ) -> Dict[str, float | str]:
+        generate_payload = {
+            "model": model,
+            "prompt": prompt,
+            "format": "json",
+            "stream": False,
+            "keep_alive": "30m",
+            "options": {"temperature": 0.2, "num_ctx": 2048, "num_predict": 120},
+        }
+        r = await client.post(f"{base_url}/api/generate", json=generate_payload)
+        if r.status_code != 404:
+            r.raise_for_status()
+            return self._extract_json_payload(r.json().get("response", "{}"))
+
+        # Compatibilidad con builds que exponen /api/chat pero no /api/generate.
+        chat_payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "format": "json",
+            "stream": False,
+            "keep_alive": "30m",
+            "options": {"temperature": 0.2, "num_ctx": 2048, "num_predict": 120},
+        }
+        rc = await client.post(f"{base_url}/api/chat", json=chat_payload)
+        rc.raise_for_status()
+        msg = (rc.json().get("message") or {})
+        raw = msg.get("content", "{}")
+        return self._extract_json_payload(raw)
+
+    @staticmethod
+    def _extract_json_payload(raw: str) -> Dict[str, float | str]:
+        text = (raw or "{}").strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            text = text[start : end + 1]
+        data = json.loads(text)
+        return {
+            "p_yes": float(data.get("p_yes", 0.5)),
+            "confidence": float(data.get("confidence", 0.3)),
+            "rationale": str(data.get("rationale", "")),
+        }
 
     @staticmethod
     def _build_prompt(ticker: str, meta: dict, news: str,
