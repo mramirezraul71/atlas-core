@@ -27,13 +27,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections import deque
 from pathlib import Path
 from typing import Any, Deque, Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from ..config import RadarSettings, get_settings
 from ..brain import BrainDecision
@@ -43,7 +44,7 @@ from ..state.journal import Journal
 from ..metrics import compute as compute_perf, prometheus_text
 
 # Visible en /ui/radar: si no coincide tras pull, reiniciar proceso :8791.
-RADAR_UI_BUILD = "20260427-public-rest-v2"
+RADAR_UI_BUILD = "20260428-edge-labels-v2"
 
 
 # ===========================================================================
@@ -102,6 +103,19 @@ class RadarRuntimeConfigBody(BaseModel):
     api_key_id: Optional[str] = None
     private_key_path: Optional[str] = None
     persist_env: bool = True
+    # Opcionales: si vienen en el JSON, se aplican en caliente (+ .env si persist_env)
+    edge_threshold: Optional[float] = Field(
+        default=None,
+        description="Edge mínimo (0.05 = 5 pts prob.) para brain / señales.",
+    )
+    kelly_fraction: Optional[float] = Field(
+        default=None,
+        description="Fracción de Kelly en riesgo (0.25 = 25%).",
+    )
+    edge_net_min: Optional[float] = Field(
+        default=None,
+        description="Edge neto mínimo tras costos (gating), p. ej. 0.03 = 3%.",
+    )
 
     @field_validator("environment")
     @classmethod
@@ -125,6 +139,33 @@ class RadarRuntimeConfigBody(BaseModel):
         if value <= 0:
             raise ValueError("paper_balance_usd debe ser mayor a 0")
         return value
+
+    @field_validator("edge_threshold")
+    @classmethod
+    def _v_edge_thr(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        if not 0.0005 <= v <= 0.95:
+            raise ValueError("edge_threshold debe estar entre 0.0005 y 0.95")
+        return v
+
+    @field_validator("kelly_fraction")
+    @classmethod
+    def _v_kelly(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        if not 0.01 <= v <= 1.0:
+            raise ValueError("kelly_fraction debe estar entre 0.01 y 1.0")
+        return v
+
+    @field_validator("edge_net_min")
+    @classmethod
+    def _v_enm(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        if not 0.0 <= v <= 0.5:
+            raise ValueError("edge_net_min debe estar entre 0.0 y 0.5")
+        return v
 
 
 def _repo_root_from_router() -> Path:
@@ -232,6 +273,13 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
             },
         },
         "radar_ui_build": RADAR_UI_BUILD,
+        "edge_threshold": state.settings.edge_threshold,
+        "kelly_fraction": state.settings.kelly_fraction,
+        "edge_net_min": (
+            float(orch.gating.cfg.edge_net_min)
+            if orch is not None and getattr(orch, "gating", None) is not None
+            else float(os.getenv("RADAR_EDGE_NET_MIN", "0.03"))
+        ),
     }
 
 
@@ -284,8 +332,9 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "orders_logged": len(state.orders),
             "queue_depth": int(getattr(state, "queue_depth", 0)),
             "queue_dropped": int(getattr(state, "queue_dropped", 0)),
-            "edge_threshold": state.settings.edge_threshold,
-            "kelly_fraction": state.settings.kelly_fraction,
+            "edge_threshold": runtime["edge_threshold"],
+            "kelly_fraction": runtime["kelly_fraction"],
+            "edge_net_min": runtime["edge_net_min"],
             "api_ready": runtime["api_ready"],
             "market_data_ok": runtime["market_data_ok"],
             "kalshi_public_feed": runtime["kalshi_public_feed"],
@@ -377,6 +426,21 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 orch.risk.update_balance(applied_paper_cents)
                 state.balance_cents = orch.risk.state.balance_cents
 
+        # Umbrales opcionales: brain (settings) + gating (edge neto) + risk (Kelly)
+        if payload.edge_threshold is not None:
+            state.settings.edge_threshold = payload.edge_threshold
+        if payload.kelly_fraction is not None:
+            state.settings.kelly_fraction = payload.kelly_fraction
+            if orch is not None:
+                orch.risk.limits = orch.risk.limits.model_copy(
+                    update={"kelly_fraction": payload.kelly_fraction}
+                )
+        if payload.edge_net_min is not None:
+            if orch is not None:
+                orch.gating.cfg = orch.gating.cfg.model_copy(
+                    update={"edge_net_min": payload.edge_net_min}
+                )
+
         if payload.persist_env:
             updates = {
                 "ATLAS_ENABLE_RADAR_KALSHI": "1",
@@ -389,6 +453,12 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 "KALSHI_API_KEY": api_key_id,
                 "KALSHI_PRIVATE_KEY_PATH": str(private_key_path),
             }
+            if payload.edge_threshold is not None:
+                updates["RADAR_EDGE_THRESHOLD"] = str(payload.edge_threshold)
+            if payload.kelly_fraction is not None:
+                updates["RADAR_KELLY_FRACTION"] = str(payload.kelly_fraction)
+            if payload.edge_net_min is not None:
+                updates["RADAR_EDGE_NET_MIN"] = str(payload.edge_net_min)
             try:
                 for env_path in _env_file_paths():
                     _persist_env_updates(env_path, updates)
@@ -637,6 +707,19 @@ _RADAR_HTML = r"""<!doctype html>
   @media (min-width:1200px){
     #rt_metrics_section{grid-template-columns:repeat(4,1fr) !important}
   }
+  .threshold-box{
+    margin-top:12px;padding:12px 14px;border-radius:8px;
+    border:1px solid rgba(88,166,255,.4);
+    background:linear-gradient(180deg, rgba(15,24,40,.95), rgba(8,12,20,.9));
+    box-shadow:0 0 0 1px rgba(0,0,0,.2) inset;
+  }
+  .threshold-box .threshold-title{
+    font-size:12px;font-weight:600;color:#9cd1ff;letter-spacing:.03em;
+    margin-bottom:2px;
+  }
+  .threshold-box .mut-hint{font-size:11px;color:var(--muted);font-weight:400}
+  .threshold-box .ctrl{gap:10px}
+  .threshold-box input{min-width:4.5em}
 </style>
 </head>
 <body>
@@ -648,7 +731,7 @@ _RADAR_HTML = r"""<!doctype html>
     <span class="pill" id="feed_pill" title="Cotizaciones / mercado">DATOS: …</span>
     <span class="pill" id="order_pill" title="Simulado vs real">ÓRDENES: …</span>
     <span class="pill" id="ws">WS: …</span>
-    <span class="mut" id="radar_ui_build" style="font-size:11px;margin-left:6px" title="Build del panel; si no ves public-rest-v2, reinicia :8791">—</span>
+    <span class="mut" id="radar_ui_build" style="font-size:11px;margin-left:6px" title="Build del panel; si no coincide tras pull, reinicia :8791">—</span>
   </div>
   <nav>
     <a href="/ui">Volver a 8791/ui</a>
@@ -683,6 +766,19 @@ _RADAR_HTML = r"""<!doctype html>
       <input id="cfg_pem" type="text" readonly value="-" />
       <button class="btn" onclick="applyConfig()">Aplicar</button>
     </div>
+    <div class="threshold-box" role="group" aria-label="Umbrales editables">
+      <div class="threshold-title">Umbrales configurables
+        <span class="mut-hint">· Aplicar = fila superior · abajo: edge <em>bruto</em> (brain) vs <em>neto</em> (tras costos, gating)</span>
+      </div>
+      <div class="ctrl" style="margin-top:6px;align-items:flex-end">
+        <label for="cfg_edge_thr" title="Edge en puntos de probabilidad (p_model − p_mercado), antes de costos. Filtra la señal del brain.">Brain: edge bruto mín. %</label>
+        <input id="cfg_edge_thr" type="number" min="0" max="95" step="0.1" value="5" inputmode="decimal" />
+        <label for="cfg_edge_net" title="Edge neto estimado tras fees/slippage; el gating exige al menos esto para operar.">Gating: edge neto mín. %</label>
+        <input id="cfg_edge_net" type="number" min="0" max="50" step="0.1" value="3" inputmode="decimal" />
+        <label for="cfg_kelly" title="Fracción de Kelly (riesgo)">Kelly %</label>
+        <input id="cfg_kelly" type="number" min="1" max="100" step="1" value="25" inputmode="numeric" />
+      </div>
+    </div>
     <div class="mut" id="cfg_msg" style="margin-top:8px"></div>
   </div>
 </section>
@@ -710,7 +806,8 @@ _RADAR_HTML = r"""<!doctype html>
   <div class="tile sm"><h3>Latencia p50</h3><div class="v" id="p50">0 ms</div></div>
   <div class="tile sm"><h3>Slippage (ejec / libro)</h3><div class="v" id="slip_b">0 / 0 ¢</div></div>
   <div class="tile sm"><h3>Drawdown actual</h3><div class="v" id="dd_cur">$0.00</div></div>
-  <div class="tile sm"><h3>Umbral edge / Kelly</h3><div class="v" id="cfg_thr">— / —</div></div>
+  <div class="tile sm"><h3>Brain bruto / Kelly / neto gating <span class="mut" style="font-weight:400">(lectura)</span></h3><div class="v" id="cfg_thr" style="font-size:15px">—</div>
+    <div class="sub mut" id="cfg_thr_hint">Valores en vivo; edita arriba (Umbrales) y Aplicar</div></div>
   <div class="tile sm" style="grid-column:span 2"><h3>Breakers (riesgo)</h3><div class="v smtxt" id="brk_line">—</div></div>
   <div class="tile sm"><h3>Última decisión / orden</h3><div class="v smtxt" id="age_do">—</div></div>
   <div class="tile sm"><h3>Exec intentos / errores</h3><div class="v" id="x_ae">0 / 0</div></div>
@@ -842,6 +939,14 @@ async function loadConfig(){
     $('#api_state').className = (credOk || marketOk) ? 'msg-ok' : 'msg-ko';
     const ub = $('#radar_ui_build');
     if (ub) ub.textContent = cfg.radar_ui_build || '—';
+    if ($('#cfg_edge_thr')) {
+      const et = (cfg.edge_threshold != null) ? Number(cfg.edge_threshold) : 0.05;
+      const en = (cfg.edge_net_min != null) ? Number(cfg.edge_net_min) : 0.03;
+      const kf = (cfg.kelly_fraction != null) ? Number(cfg.kelly_fraction) : 0.25;
+      $('#cfg_edge_thr').value = (et * 100).toFixed(2);
+      $('#cfg_edge_net').value = (en * 100).toFixed(2);
+      $('#cfg_kelly').value = String(Math.round(kf * 100));
+    }
     updateModeSelectClass();
     updateExecBanner(cfg);
   }catch(err){
@@ -863,6 +968,9 @@ async function applyConfig(){
     execution_mode: $('#cfg_mode').value,
     paper_balance_usd: Number($('#cfg_paper').value || 0),
     private_key_path: $('#cfg_pem').value || null,
+    edge_threshold: Number($('#cfg_edge_thr').value || 5) / 100,
+    edge_net_min: Number($('#cfg_edge_net').value || 3) / 100,
+    kelly_fraction: Number($('#cfg_kelly').value || 25) / 100,
     persist_env: true,
   };
   setCfgMsg('Aplicando configuración...', true);
@@ -935,7 +1043,11 @@ async function refresh(){
     if($('#p50')) $('#p50').textContent = (x.p50_ms ?? 0).toFixed(0) + ' ms';
     if($('#slip_b')) $('#slip_b').textContent = (x.avg_slippage_cents ?? 0).toFixed(1) + ' / ' + (p.avg_slippage_cents ?? 0).toFixed(1) + ' ¢';
     if($('#dd_cur')){ const cd = p.current_drawdown_cents ?? 0; const el=$('#dd_cur'); el.textContent=fmtUSD(-cd/100); el.className='v '+(cd>0?'neg':'pos'); }
-    if($('#cfg_thr')) $('#cfg_thr').textContent = fmtPct(s.edge_threshold ?? 0) + ' / ' + fmtPct(s.kelly_fraction ?? 0);
+    if($('#cfg_thr')) {
+      const en = s.edge_net_min;
+      const enT = (en != null && Number.isFinite(Number(en))) ? fmtPct(Number(en)) : '—';
+      $('#cfg_thr').textContent = fmtPct(s.edge_threshold ?? 0) + ' / ' + fmtPct(s.kelly_fraction ?? 0) + ' / net≥' + enT;
+    }
     if($('#brk_line')) $('#brk_line').textContent = (breakers.length ? breakers.slice(-4).join(' · ') : 'ninguno');
     if($('#age_do')) $('#age_do').textContent = 'dec ' + fmtRel(hh.last_decision_ts) + ' · ord ' + fmtRel(hh.last_order_ts);
     if($('#x_ae')) $('#x_ae').textContent = (x.attempts??0) + ' / ' + (x.errors??0);
