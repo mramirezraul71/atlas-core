@@ -1,9 +1,15 @@
 """
-backtest/lean_simulator.py — ATLAS-Quant LEAN Simulator v1.0
+backtest/lean_simulator.py — ATLAS-Quant internal GBM simulator (compat shim path)
+
+DEPRECATION (F1): este módulo mantiene la implementación histórica por
+compatibilidad de imports. El nombre canónico nuevo es
+`atlas_code_quant.backtest.internal_gbm_simulator`.
 
 Motor de backtesting interno. Genera datos OHLCV sintéticos realistas y
 replica el pipeline completo de LiveLoop para producir datasets de entrenamiento
 sin dependencias externas (no TA-lib, no yfinance, no Tradier).
+
+IMPORTANTE: este módulo NO implementa QuantConnect LEAN.
 
 Arquitectura:
     LeanSimulator
