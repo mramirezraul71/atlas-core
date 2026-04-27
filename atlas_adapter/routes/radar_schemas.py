@@ -264,3 +264,77 @@ class RadarSseEnvelope(BaseModel):
     source: str
     sequence: int
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+# --- Oportunidades multi-símbolo (F2) -----------------------------------------
+
+
+class RadarOpportunity(BaseModel):
+    """Una fila del ranking multi-símbolo (REST / SSE ``data``)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    symbol: str
+    asset_class: str
+    score: float
+    classification: str
+    timestamp: str = ""
+    horizon_min: int = 0
+    direction: str = "neutral"
+    snapshot: dict[str, Any] = Field(default_factory=dict)
+    degradations_active: list[dict[str, Any]] = Field(default_factory=list)
+    source: Literal["quant", "stub"] = "stub"
+    trace_id: str = ""
+
+
+class RadarOpportunitiesResponse(BaseModel):
+    """``GET /api/radar/opportunities``."""
+
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool = True
+    opportunities: list[RadarOpportunity] = Field(default_factory=list)
+    truncated: bool = False
+    universe_evaluated: int = 0
+    min_score: float = 0.0
+    trace_id: str = ""
+    degraded_globally: bool = False
+    global_degradations: list[dict[str, Any]] = Field(default_factory=list)
+    message: str | None = None
+
+
+class RadarOpportunityDetailResponse(BaseModel):
+    """``GET /api/radar/opportunities/{symbol}``."""
+
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool
+    opportunity: RadarOpportunity | None = None
+    message: str | None = None
+
+
+class RadarSseUniverseSnapshotData(BaseModel):
+    """Cuerpo típico de ``data`` para ``type=universe_snapshot`` (F2)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    symbols: list[str] = Field(default_factory=list)
+    count: int = 0
+    truncated: bool = False
+    trace_id: str = ""
+
+
+class RadarSseOpportunityEventData(BaseModel):
+    """Cuerpo típico de ``data`` para ``opportunity_*`` (F2)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    opportunity: RadarOpportunity | None = None
+
+
+class RadarSseHeartbeatData(BaseModel):
+    """Heartbeat F2 (``data`` puede ir vacío o con contadores)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    batch_trace_id: str | None = None

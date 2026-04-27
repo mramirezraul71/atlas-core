@@ -47,6 +47,7 @@ from atlas_adapter.routes.radar_quant_client import (
     fetch_universe_search,
     radar_quant_http_enabled,
 )
+from atlas_code_quant.config.feature_flags import AtlasFeatureFlags
 from atlas_adapter.routes.radar_quant_mapper import (
     build_dashboard_summary,
     build_decisions_recent,
@@ -356,6 +357,28 @@ def build_radar_stub_api_router() -> APIRouter:
             q,
             lim,
         )
+        # F2: si multi-símbolo está habilitado, ofrecer búsqueda local sobre universo curado
+        # (no sustituye al motor Quant; mejora UX offline del Radar).
+        if AtlasFeatureFlags().radar_multi_symbol_enabled:
+            try:
+                from atlas_adapter.services.universe_provider import UniverseProvider
+
+                matches = [
+                    {"symbol": e.symbol, "score": None, "asset_class": e.asset_class, "sector": e.sector}
+                    for e in UniverseProvider().search(q, limit=lim)
+                ]
+                _apply_radar_symbols_search_headers(response, live=False)
+                return {
+                    "ok": True,
+                    "source": "universe_curated",
+                    "message": "Catálogo curado local (Quant no disponible).",
+                    "query": q,
+                    "matches": matches,
+                    "truncated": len(matches) >= lim,
+                }
+            except Exception as exc:
+                logger.debug("symbols_search: fallback universo F2 no disponible (%s)", exc)
+
         _apply_radar_symbols_search_headers(response, live=False)
         return {
             "ok": False,

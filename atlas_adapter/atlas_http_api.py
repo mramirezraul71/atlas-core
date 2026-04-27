@@ -34,6 +34,7 @@ from atlas_adapter.routes.nexus_runtime import build_router as build_nexus_runti
 from atlas_adapter.routes.status_observability import (
     build_router as build_status_observability_router,
 )
+from atlas_adapter.routes.radar_opportunities import build_radar_opportunities_router
 from atlas_adapter.routes.radar_public import (
     build_radar_stub_api_router,
     build_radar_ui_router,
@@ -108,7 +109,21 @@ app.include_router(
 app.include_router(build_nexus_runtime_router(repo_root=BASE_DIR, env_path=ENV_PATH))
 app.include_router(build_trading_quant_router())
 app.include_router(build_radar_stub_api_router())
+app.include_router(build_radar_opportunities_router())
 app.include_router(build_radar_ui_router())
+
+# Módulo opcional: Radar Kalshi (UI /ui/radar + API /api/radar/*).
+# Se monta sólo cuando ATLAS_ENABLE_RADAR_KALSHI=1 para no interferir con
+# despliegues que no tengan la configuración Kalshi preparada.
+if os.getenv("ATLAS_ENABLE_RADAR_KALSHI", "0") == "1":
+    try:
+        from modules.atlas_radar_kalshi.main import register as _register_radar_kalshi
+
+        _register_radar_kalshi(app)
+    except Exception as _exc:  # pragma: no cover - montaje opcional
+        logging.getLogger("atlas.adapter").warning(
+            "atlas_radar_kalshi no se pudo montar: %s", _exc
+        )
 
 app.add_middleware(
     CORSMiddleware,
