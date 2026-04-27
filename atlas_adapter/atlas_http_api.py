@@ -16,6 +16,20 @@ from atlas_push.intents import IntentRouter
 
 app = FastAPI(title="ATLAS Adapter", version="1.0.0")
 
+# --- atlas_radar_kalshi (módulo opcional, montaje perezoso) ---------------
+# Se activa con la variable de entorno ATLAS_ENABLE_RADAR_KALSHI=1 para no
+# romper despliegues que aún no tienen Kalshi configurado.
+import os as _os
+if _os.getenv("ATLAS_ENABLE_RADAR_KALSHI", "0") == "1":
+    try:
+        from modules.atlas_radar_kalshi.main import register as _register_radar
+        _register_radar(app)
+    except Exception as _exc:  # pragma: no cover - opcional
+        import logging
+        logging.getLogger("atlas.adapter").warning(
+            "atlas_radar_kalshi no se pudo montar: %s", _exc,
+        )
+
 # Instancia única a nivel de módulo: IntentRouter es stateless, se
 # puede reutilizar entre requests. Ver docs/atlas_push/PLAN_STEP_B.md.
 _intent_router = IntentRouter()
@@ -72,6 +86,12 @@ def modules():
             {"name": "voice", "enabled": False},
             {"name": "agent_router", "enabled": False},
             {"name": "telegram", "enabled": True},
+            {
+                "name": "atlas_radar_kalshi",
+                "enabled": _os.getenv("ATLAS_ENABLE_RADAR_KALSHI", "0") == "1",
+                "ui": "/ui/radar",
+                "api": "/api/radar/status",
+            },
         ]
     }
 
