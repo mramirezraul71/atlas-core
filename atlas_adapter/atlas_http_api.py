@@ -3660,7 +3660,7 @@ _aggr_last_user_active_log = 0.0
 _autodiag_kick_lock = threading.RLock()
 _autodiag_last_kick_ts = 0.0
 _aggr_config = {
-    "enabled": (os.getenv("AUTONOMY_AGGRESSIVE_ENABLED") or "true").strip().lower()
+    "enabled": (os.getenv("AUTONOMY_AGGRESSIVE_ENABLED") or "false").strip().lower()
     in ("1", "true", "yes", "on"),
     "idle_sec": max(
         5, int((os.getenv("AUTONOMY_USER_IDLE_SEC") or "25").strip() or "25")

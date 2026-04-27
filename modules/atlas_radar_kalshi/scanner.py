@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import AsyncIterator, Awaitable, Callable, Dict, Optional
@@ -142,10 +143,17 @@ class KalshiScanner:
         self._signer: Optional[KalshiSigner] = None
         self._books: Dict[str, _LocalOrderBook] = {}
         self._tickers: set[str] = set()
-        self._queue: asyncio.Queue[MarketEvent] = asyncio.Queue(maxsize=10_000)
+        self._queue: asyncio.Queue[MarketEvent] = asyncio.Queue(
+            maxsize=int(self.settings.event_queue_maxsize)
+        )
         # Histórico ligero por ticker para Markov / Monte Carlo
         self._history: Dict[str, pd.DataFrame] = {}
         self._active_ws = None
+        self._last_book_emit_ts: Dict[str, float] = {}
+        self._last_ticker_emit_ts: Dict[str, float] = {}
+        self._dropped_events: int = 0
+        self._new_market_events_emitted: int = 0
+        self._discover_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -164,33 +172,69 @@ class KalshiScanner:
             columns=["ts", "yes_mid", "yes_bid", "yes_ask"]
         ))
 
+    def _enqueue_event(self, event: MarketEvent) -> bool:
+        """Encola evento sin bloquear el loop WS; si hay presión, recorta cola."""
+        try:
+            self._queue.put_nowait(event)
+            return True
+        except asyncio.QueueFull:
+            try:
+                self._queue.get_nowait()  # descarta el más viejo
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                self._queue.put_nowait(event)
+                self._dropped_events += 1
+                if self._dropped_events == 1 or self._dropped_events % 200 == 0:
+                    self.log.warning(
+                        "Queue pressure: eventos recortados=%d (max=%d)",
+                        self._dropped_events,
+                        self._queue.maxsize,
+                    )
+                return True
+            except asyncio.QueueFull:
+                self._dropped_events += 1
+                if self._dropped_events == 1 or self._dropped_events % 200 == 0:
+                    self.log.warning(
+                        "Queue full: evento descartado (recortados=%d, max=%d)",
+                        self._dropped_events,
+                        self._queue.maxsize,
+                    )
+                return False
+
     # ------------------------------------------------------------------
     # REST: descubrimiento de mercados
     # ------------------------------------------------------------------
     async def discover_markets(self) -> list[str]:
         """Sondea ``GET /markets`` y devuelve tickers nuevos."""
-        url = f"{self.settings.base_url}/markets"
-        params = {"limit": 200, "status": self.settings.market_status_filter}
-        signer = self._signer_or_init()
-        headers, _ = signer.headers("GET", "/trade-api/v2/markets")
+        async with self._discover_lock:
+            url = f"{self.settings.base_url}/markets"
+            params = {
+                "limit": int(self.settings.market_discovery_limit),
+                "status": self.settings.market_status_filter,
+            }
+            signer = self._signer_or_init()
+            headers, _ = signer.headers("GET", "/trade-api/v2/markets")
 
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(url, headers=headers, params=params)
-            r.raise_for_status()
-            data = r.json()
+            async with httpx.AsyncClient(timeout=20) as client:
+                r = await client.get(url, headers=headers, params=params)
+                r.raise_for_status()
+                data = r.json()
 
-        new = []
-        for m in data.get("markets", []):
-            t = m.get("ticker")
-            if t and t not in self._tickers:
-                self._tickers.add(t)
-                new.append(t)
-                await self._queue.put(MarketEvent(
-                    kind="new_market", market_ticker=t, payload=m
-                ))
-        if new:
-            self.log.info("Nuevos mercados detectados: %s", new[:5])
-        return new
+            new = []
+            for m in data.get("markets", []):
+                t = m.get("ticker")
+                if t and t not in self._tickers:
+                    self._tickers.add(t)
+                    new.append(t)
+                    if self._new_market_events_emitted < int(self.settings.new_market_events_max):
+                        self._enqueue_event(MarketEvent(
+                            kind="new_market", market_ticker=t, payload=m
+                        ))
+                        self._new_market_events_emitted += 1
+            if new:
+                self.log.info("Nuevos mercados detectados: %s", new[:5])
+            return new
 
     async def _rest_polling_loop(self) -> None:
         """Loop de descubrimiento periódico."""
@@ -227,17 +271,27 @@ class KalshiScanner:
         ) as ws:
             self._active_ws = ws
             # Suscripción inicial
-            tickers = list(self._tickers) or await self.discover_markets()
+            tickers = list(self._tickers)
+            if not tickers:
+                await self.discover_markets()
+                tickers = list(self._tickers)
+            max_tickers = int(self.settings.ws_max_tickers)
+            selected = tickers[:max_tickers]
+            if not selected:
+                self.log.warning(
+                    "Sin tickers para suscribir; esperando siguiente ciclo de descubrimiento."
+                )
+                return
             sub = {
                 "id": 1,
                 "cmd": "subscribe",
                 "params": {
                     "channels": ["orderbook_delta", "ticker"],
-                    "market_tickers": tickers[:200],
+                    "market_tickers": selected,
                 },
             }
             await ws.send(json.dumps(sub))
-            self.log.info("Suscrito a %d tickers", len(tickers[:200]))
+            self.log.info("Suscrito a %d tickers", len(selected))
 
             try:
                 async for raw in ws:
@@ -265,13 +319,18 @@ class KalshiScanner:
             await self._emit_book(book)
 
         elif msg_type == "ticker" and ticker:
-            await self._queue.put(MarketEvent(
-                kind="ticker", market_ticker=ticker, payload=body
-            ))
-            self._record_history(ticker, body)
+            now = time.time()
+            min_gap = max(0.0, float(self.settings.ticker_emit_min_ms) / 1000.0)
+            last = self._last_ticker_emit_ts.get(ticker, 0.0)
+            if now - last >= min_gap:
+                self._last_ticker_emit_ts[ticker] = now
+                self._enqueue_event(MarketEvent(
+                    kind="ticker", market_ticker=ticker, payload=body
+                ))
+                self._record_history(ticker, body)
 
         elif msg_type == "trade" and ticker:
-            await self._queue.put(MarketEvent(
+            self._enqueue_event(MarketEvent(
                 kind="trade", market_ticker=ticker, payload=body
             ))
 
@@ -281,20 +340,49 @@ class KalshiScanner:
             self.log.warning("WS ERROR: %s", msg)
 
     async def _emit_book(self, book: _LocalOrderBook) -> None:
+        now = time.time()
+        min_gap = max(0.0, float(self.settings.book_emit_min_ms) / 1000.0)
+        last = self._last_book_emit_ts.get(book.market_ticker, 0.0)
+        if now - last < min_gap:
+            return
+        self._last_book_emit_ts[book.market_ticker] = now
         snap = book.to_snapshot()
-        await self._queue.put(MarketEvent(
+        self._enqueue_event(MarketEvent(
             kind="orderbook",
             market_ticker=book.market_ticker,
             payload=snap.model_dump(mode="json"),
         ))
 
+    @staticmethod
+    def _as_cents(value: object) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            v = float(value)
+        except Exception:
+            return None
+        cents = int(round(v * 100)) if abs(v) <= 1.0 else int(round(v))
+        return max(0, min(99, cents))
+
     def _record_history(self, ticker: str, body: dict) -> None:
         df = self._history.get(ticker)
+        bid = self._as_cents(body.get("yes_bid"))
+        if bid is None:
+            bid = self._as_cents(body.get("yes_bid_dollars"))
+        ask = self._as_cents(body.get("yes_ask"))
+        if ask is None:
+            ask = self._as_cents(body.get("yes_ask_dollars"))
+        if bid is None and ask is None:
+            return
+        if bid is None:
+            bid = max(1, int(ask or 50) - 1)
+        if ask is None:
+            ask = min(99, int(bid) + 1)
         row = {
             "ts": datetime.now(timezone.utc),
-            "yes_mid": (body.get("yes_bid", 0) + body.get("yes_ask", 0)) / 200.0,
-            "yes_bid": body.get("yes_bid"),
-            "yes_ask": body.get("yes_ask"),
+            "yes_mid": (bid + ask) / 200.0,
+            "yes_bid": bid,
+            "yes_ask": ask,
         }
         new_df = pd.DataFrame([row])
         self._history[ticker] = (

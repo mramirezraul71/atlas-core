@@ -87,6 +87,18 @@ class RadarSettings(BaseModel):
         default="qwen3:8b",
         description="Modelo por defecto para sentimiento/razonamiento.",
     )
+    ollama_timeout_seconds: float = Field(
+        default=3.0,
+        ge=0.5,
+        le=120.0,
+        description="Timeout de petición a Ollama por evaluación.",
+    )
+    ollama_backoff_seconds: int = Field(
+        default=120,
+        ge=5,
+        le=3600,
+        description="Backoff tras error de Ollama para evitar tormenta de reintentos.",
+    )
 
     # --- Dashboard / Atlas Core -------------------------------------------
     atlas_dashboard_url: str = Field(
@@ -135,6 +147,48 @@ class RadarSettings(BaseModel):
         default=30,
         ge=5,
         description="Cadencia del sondeo REST para detectar nuevos mercados.",
+    )
+    market_discovery_limit: int = Field(
+        default=120,
+        ge=20,
+        le=500,
+        description="Límite de mercados por polling REST en /markets.",
+    )
+    new_market_events_max: int = Field(
+        default=400,
+        ge=0,
+        le=10_000,
+        description="Máximo total de eventos 'new_market' emitidos al bus interno.",
+    )
+    ws_max_tickers: int = Field(
+        default=80,
+        ge=10,
+        le=500,
+        description="Máximo de tickers a suscribir por conexión WebSocket.",
+    )
+    ticker_emit_min_ms: int = Field(
+        default=250,
+        ge=0,
+        le=60_000,
+        description="Intervalo mínimo entre eventos ticker emitidos por ticker.",
+    )
+    book_emit_min_ms: int = Field(
+        default=500,
+        ge=0,
+        le=60_000,
+        description="Intervalo mínimo entre eventos orderbook emitidos por ticker.",
+    )
+    event_queue_maxsize: int = Field(
+        default=5_000,
+        ge=100,
+        le=50_000,
+        description="Máximo de eventos en cola interna del scanner.",
+    )
+    decision_workers: int = Field(
+        default=4,
+        ge=1,
+        le=16,
+        description="Workers concurrentes para procesar eventos en orquestador.",
     )
 
     # --- Logging ----------------------------------------------------------
@@ -210,13 +264,22 @@ def get_settings() -> RadarSettings:
         kalshi_ws_url=os.getenv("KALSHI_WS_URL") or None,
         ollama_endpoint=os.getenv("OLLAMA_ENDPOINT", "http://127.0.0.1:11434"),
         ollama_model=os.getenv("OLLAMA_MODEL", "qwen3:8b"),
+        ollama_timeout_seconds=float(os.getenv("RADAR_OLLAMA_TIMEOUT_S", "3")),
+        ollama_backoff_seconds=int(os.getenv("RADAR_OLLAMA_BACKOFF_S", "120")),
         atlas_dashboard_url=os.getenv("ATLAS_DASHBOARD_URL", "http://127.0.0.1:8791"),
         edge_threshold=float(os.getenv("RADAR_EDGE_THRESHOLD", "0.05")),
         kelly_fraction=float(os.getenv("RADAR_KELLY_FRACTION", "0.25")),
         max_position_pct=float(os.getenv("RADAR_MAX_POSITION_PCT", "0.05")),
-        monte_carlo_iters=int(os.getenv("RADAR_MC_ITERS", "10000")),
+        monte_carlo_iters=int(os.getenv("RADAR_MC_ITERS", "2000")),
         market_status_filter=os.getenv("RADAR_MARKET_STATUS", "open"),
         poll_interval_seconds=int(os.getenv("RADAR_POLL_SECONDS", "30")),
+        market_discovery_limit=int(os.getenv("RADAR_MARKET_DISCOVERY_LIMIT", "120")),
+        new_market_events_max=int(os.getenv("RADAR_NEW_MARKET_EVENTS_MAX", "400")),
+        ws_max_tickers=int(os.getenv("RADAR_WS_MAX_TICKERS", "80")),
+        ticker_emit_min_ms=int(os.getenv("RADAR_TICKER_EMIT_MIN_MS", "250")),
+        book_emit_min_ms=int(os.getenv("RADAR_BOOK_EMIT_MIN_MS", "500")),
+        event_queue_maxsize=int(os.getenv("RADAR_EVENT_QUEUE_MAXSIZE", "5000")),
+        decision_workers=int(os.getenv("RADAR_DECISION_WORKERS", "4")),
         log_dir=Path(os.getenv("ATLAS_LOG_DIR", r"C:\ATLAS\logs")),
         log_level=os.getenv("RADAR_LOG_LEVEL", "INFO"),
     )

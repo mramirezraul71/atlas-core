@@ -30,8 +30,10 @@ La salida final es :class:`BrainDecision` con:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import math
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -84,6 +86,7 @@ class RadarBrain:
         self.log = get_logger("brain", self.settings.log_dir,
                               self.settings.log_level)
         self._market_meta: Dict[str, dict] = {}
+        self._ollama_backoff_until: float = 0.0
 
     # ------------------------------------------------------------------
     # Entrada de eventos del scanner
@@ -108,16 +111,16 @@ class RadarBrain:
         # 1) LLM
         llm = await self._ask_ollama(ticker, meta, news_context, book, history)
 
-        # 2) Markov
-        p_markov = self._markov_p_yes(history)
+        # 2) Markov (offload CPU para no bloquear el event loop principal)
+        p_markov = await asyncio.to_thread(self._markov_p_yes, history)
 
         # 3) Mix ponderado por confianza del LLM
         w_llm = 0.4 + 0.6 * llm.confidence  # 0.4..1.0
         p_mix = w_llm * llm.p_yes + (1 - w_llm) * p_markov
         p_mix = float(np.clip(p_mix, 0.001, 0.999))
 
-        # 4) Monte Carlo
-        winrate = self._monte_carlo(p_mix, history)
+        # 4) Monte Carlo (offload CPU para mantener responsivo /health,/ui)
+        winrate = await asyncio.to_thread(self._monte_carlo, p_mix, history)
 
         # 5) Edge vs mercado
         p_market = book.yes_mid if book.yes_mid is not None else 0.5
@@ -140,9 +143,13 @@ class RadarBrain:
             mc_winrate=winrate,
             rationale=llm.rationale[:500],
         )
-        self.log.info(
+        log_fn = self.log.info if decision.side else self.log.debug
+        log_fn(
             "Decision %s | p_model=%.3f p_mkt=%.3f edge=%+.3f side=%s",
-            ticker, decision.p_model, decision.p_market, decision.edge,
+            ticker,
+            decision.p_model,
+            decision.p_market,
+            decision.edge,
             decision.side,
         )
         return decision
@@ -154,6 +161,14 @@ class RadarBrain:
         self, ticker: str, meta: dict, news: str,
         book: OrderBookSnapshot, history: pd.DataFrame,
     ) -> LLMReading:
+        now = time.time()
+        if now < self._ollama_backoff_until:
+            return LLMReading(
+                p_yes=0.5,
+                confidence=0.1,
+                rationale="ollama_backoff_active",
+            )
+
         prompt = self._build_prompt(ticker, meta, news, book, history)
         payload = {
             "model": self.settings.ollama_model,
@@ -164,17 +179,23 @@ class RadarBrain:
         }
         url = f"{self.settings.ollama_endpoint}/api/generate"
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(
+                timeout=self.settings.ollama_timeout_seconds
+            ) as client:
                 r = await client.post(url, json=payload)
                 r.raise_for_status()
                 raw = r.json().get("response", "{}")
             data = json.loads(raw)
+            self._ollama_backoff_until = 0.0
             return LLMReading(
                 p_yes=float(data.get("p_yes", 0.5)),
                 confidence=float(data.get("confidence", 0.3)),
                 rationale=str(data.get("rationale", "")),
             )
         except Exception as exc:
+            self._ollama_backoff_until = (
+                time.time() + float(self.settings.ollama_backoff_seconds)
+            )
             self.log.warning("Ollama no disponible (%s); usando prior 0.5", exc)
             return LLMReading(p_yes=0.5, confidence=0.1, rationale=str(exc))
 

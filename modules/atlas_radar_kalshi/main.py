@@ -32,6 +32,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
+import os
+from pathlib import Path
 from typing import Optional
 
 from .brain import RadarBrain
@@ -41,6 +44,74 @@ from .executor import KalshiExecutor
 from .risk import KellyRiskManager
 from .scanner import KalshiScanner, MarketEvent
 from .utils.logger import get_logger
+
+
+# Runtime lock para evitar doble orquestador cuando hay procesos duplicados
+# del adapter en Windows (uno con puerto y otro "zombie" sin bind).
+_RUNTIME_LOCK_PATH: Optional[Path] = None
+_RUNTIME_LOCK_OWNED: bool = False
+
+
+def _acquire_runtime_lock(lock_path: Path) -> bool:
+    global _RUNTIME_LOCK_PATH, _RUNTIME_LOCK_OWNED
+    if _RUNTIME_LOCK_OWNED:
+        return True
+
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Reclamación de lock stale (archivo con PID inexistente).
+    if lock_path.exists():
+        try:
+            existing_pid = int(lock_path.read_text(encoding="utf-8").strip() or "0")
+        except Exception:
+            existing_pid = 0
+        stale = True
+        if existing_pid > 0:
+            try:
+                os.kill(existing_pid, 0)
+                stale = False
+            except Exception:
+                stale = True
+        if stale:
+            try:
+                lock_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except FileExistsError:
+        return False
+    except Exception:
+        return False
+
+    _RUNTIME_LOCK_PATH = lock_path
+    _RUNTIME_LOCK_OWNED = True
+    return True
+
+
+def _release_runtime_lock() -> None:
+    global _RUNTIME_LOCK_PATH, _RUNTIME_LOCK_OWNED
+    if not _RUNTIME_LOCK_OWNED:
+        return
+
+    lock_path = _RUNTIME_LOCK_PATH
+    _RUNTIME_LOCK_PATH = None
+    _RUNTIME_LOCK_OWNED = False
+    if lock_path is None:
+        return
+    try:
+        if lock_path.exists():
+            pid_txt = lock_path.read_text(encoding="utf-8").strip()
+            if pid_txt == str(os.getpid()):
+                lock_path.unlink(missing_ok=True)
+    except Exception:
+        try:
+            lock_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 # ===========================================================================
@@ -170,6 +241,16 @@ def register(app, state: Optional[RadarState] = None,
     if use_v2:
         from .orchestrator import Orchestrator
         orch = Orchestrator(state=state)
+        lock_path = state.settings.log_dir / "atlas_radar_kalshi.runtime.lock"
+        runtime_enabled = _acquire_runtime_lock(lock_path)
+        try:
+            state.runtime_enabled = runtime_enabled  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        if not runtime_enabled:
+            logging.getLogger("radar.kalshi.main").warning(
+                "Radar runtime lock ocupado; este proceso NO iniciará orquestador."
+            )
         # exponer el orquestador en el state para los endpoints /api/radar/*
         try:
             state.orchestrator = orch  # type: ignore[attr-defined]
@@ -178,6 +259,8 @@ def register(app, state: Optional[RadarState] = None,
 
         @app.on_event("startup")
         async def _start_radar() -> None:  # pragma: no cover - runtime hook
+            if not getattr(state, "runtime_enabled", True):
+                return
             task = getattr(state, "orchestrator_task", None)
             if task is None or task.done():
                 state.orchestrator_task = asyncio.create_task(
@@ -190,6 +273,8 @@ def register(app, state: Optional[RadarState] = None,
             task = getattr(state, "orchestrator_task", None)
             if task is not None and not task.done():
                 task.cancel()
+            if getattr(state, "runtime_enabled", True):
+                _release_runtime_lock()
     else:
         @app.on_event("startup")
         async def _start_radar_legacy() -> None:  # pragma: no cover

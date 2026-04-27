@@ -249,8 +249,10 @@ class HealthAggregator:
         """Loop que ejecuta get_global_health y save cada interval_sec."""
         while self._running:
             try:
-                report = self.get_global_health()
-                self.save_to_db(report)
+                # Evita bloquear el event loop principal de FastAPI con
+                # sondas de red/IO síncronas (urllib/sqlite).
+                report = await asyncio.to_thread(self.get_global_health)
+                await asyncio.to_thread(self.save_to_db, report)
             except Exception as e:
                 logger.exception("Health monitoring loop: %s", e)
             await asyncio.sleep(self._interval_sec)

@@ -123,6 +123,20 @@ class Orchestrator:
         self.journal = Journal(self.settings.log_dir)
         self.health = Health()
         self._stop = asyncio.Event()
+        self._decision_cooldown_s = max(
+            0.0, float(os.getenv("RADAR_DECISION_COOLDOWN_S", "5.0"))
+        )
+        self._next_decision_by_ticker: dict[str, float] = {}
+        self._event_queue: asyncio.Queue[MarketEvent] = asyncio.Queue(
+            maxsize=max(100, int(self.settings.event_queue_maxsize))
+        )
+        self._event_workers = max(1, int(self.settings.decision_workers))
+        self._worker_tasks: list[asyncio.Task] = []
+        self._pending_tickers: set[str] = set()
+        self._dropped_events: int = 0
+        self._journal_all_decisions = (
+            os.getenv("RADAR_JOURNAL_ALL_DECISIONS", "0") == "1"
+        )
 
     # ------------------------------------------------------------------
     async def start(self) -> None:
@@ -137,14 +151,24 @@ class Orchestrator:
             self.risk.update_balance(100_000)  # paper fallback
         self.state.balance_cents = self.risk.state.balance_cents
 
+        self._worker_tasks = [
+            asyncio.create_task(
+                self._event_worker(idx), name=f"radar-event-worker-{idx}"
+            )
+            for idx in range(self._event_workers)
+        ]
         watchdog = asyncio.create_task(self._watchdog(), name="radar-watchdog")
         try:
             async for ev in self.scanner.stream():
-                await self._on_event(ev)
+                self.health.tick("event")
+                self._enqueue_event(ev)
                 if self._stop.is_set():
                     break
         finally:
             watchdog.cancel()
+            for t in self._worker_tasks:
+                t.cancel()
+            self._worker_tasks.clear()
 
     def stop(self) -> None:
         self._stop.set()
@@ -165,6 +189,8 @@ class Orchestrator:
                 self.state.exec_metrics = self.executor.metrics.to_dict()  # type: ignore[attr-defined]
                 self.state.risk_status = self.risk.status()  # type: ignore[attr-defined]
                 self.state.health = self.health  # type: ignore[attr-defined]
+                self.state.queue_depth = int(self._event_queue.qsize())  # type: ignore[attr-defined]
+                self.state.queue_dropped = int(self._dropped_events)  # type: ignore[attr-defined]
             except Exception:
                 pass
             # botones kill / resume del dashboard
@@ -177,9 +203,45 @@ class Orchestrator:
             await self.state.broadcast({"type": "ping",
                                         "degraded": self.health.degraded})
 
+    def _enqueue_event(self, ev: MarketEvent) -> None:
+        """Encola sin bloquear ingestión WS; deduplica por ticker."""
+        ticker_scoped = ev.kind in {"orderbook", "ticker"}
+        if ticker_scoped:
+            ticker = ev.market_ticker
+            if ticker in self._pending_tickers:
+                return
+            self._pending_tickers.add(ticker)
+        try:
+            self._event_queue.put_nowait(ev)
+        except asyncio.QueueFull:
+            self._dropped_events += 1
+            if ticker_scoped:
+                self._pending_tickers.discard(ev.market_ticker)
+            if self._dropped_events == 1 or self._dropped_events % 200 == 0:
+                self.log.warning(
+                    "Event queue full: dropped=%d max=%d",
+                    self._dropped_events,
+                    self._event_queue.maxsize,
+                )
+
+    async def _event_worker(self, idx: int) -> None:
+        """Worker de eventos con backpressure controlado."""
+        while not self._stop.is_set():
+            ev = await self._event_queue.get()
+            try:
+                await self._on_event(ev)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.log.exception("Worker[%d] fallo procesando %s: %s",
+                                   idx, ev.kind, exc)
+            finally:
+                if ev.kind in {"orderbook", "ticker"}:
+                    self._pending_tickers.discard(ev.market_ticker)
+                self._event_queue.task_done()
+
     # ------------------------------------------------------------------
     async def _on_event(self, ev: MarketEvent) -> None:
-        self.health.tick("event")
         if ev.kind == "new_market":
             self.brain.update_market_meta(ev.market_ticker, ev.payload)
             self.state.update_market(ev.market_ticker, {
@@ -187,11 +249,28 @@ class Orchestrator:
                 "close_time": ev.payload.get("close_time"),
             })
             return
-        if ev.kind != "orderbook":
+        if ev.kind == "orderbook":
+            book = OrderBookSnapshot(**ev.payload)
+        elif ev.kind == "ticker":
+            book = self._book_from_ticker(ev)
+            if book is None:
+                return
+        else:
             return
 
-        book = OrderBookSnapshot(**ev.payload)
         history = self.scanner.history(ev.market_ticker)
+        self.state.update_market(ev.market_ticker, {
+            "p_market": book.yes_mid or 0.5,
+            "last_book_ts": ev.ts.isoformat(),
+        })
+
+        now = time.time()
+        next_allowed = self._next_decision_by_ticker.get(ev.market_ticker, 0.0)
+        if now < next_allowed:
+            return
+        self._next_decision_by_ticker[ev.market_ticker] = (
+            now + self._decision_cooldown_s
+        )
 
         # 1) brain (LLM + MC) — devuelve también p_market
         decision = await self.brain.evaluate(ev.market_ticker, book, history)
@@ -202,11 +281,7 @@ class Orchestrator:
         p_calibrated = self.calibrator.predict(readout.p_ensemble)
         readout = readout.model_copy(update={"p_ensemble": p_calibrated})
         self.health.tick("decision")
-        self.journal.write("decisions", {
-            "ticker": ev.market_ticker,
-            "decision": decision.model_dump(mode="json"),
-            "readout": readout.model_dump(mode="json"),
-        })
+        self.state.push_decision(decision)
 
         # 3) gestionar salidas primero (tiene prioridad)
         await self._manage_exits(ev.market_ticker, book, readout)
@@ -217,6 +292,13 @@ class Orchestrator:
             quote_age_ms=int((time.time() - ev.ts.timestamp()) * 1000),
             latency_ms=0,
         )
+        if self._journal_all_decisions or gate.accepted:
+            self.journal.write("decisions", {
+                "ticker": ev.market_ticker,
+                "decision": decision.model_dump(mode="json"),
+                "readout": readout.model_dump(mode="json"),
+                "gate": gate.model_dump(mode="json"),
+            })
 
         # propaga al dashboard
         self.state.update_market(ev.market_ticker, {
@@ -335,6 +417,45 @@ class Orchestrator:
             "fees_cents": int(0.07 * pos.size),
             "slippage_cents": report.slippage_cents,
         })
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _to_cents(value: object) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            v = float(value)
+        except Exception:
+            return None
+        cents = int(round(v * 100)) if abs(v) <= 1.0 else int(round(v))
+        return max(0, min(99, cents))
+
+    def _book_from_ticker(self, ev: MarketEvent) -> Optional[OrderBookSnapshot]:
+        payload = ev.payload or {}
+        bid = self._to_cents(payload.get("yes_bid"))
+        if bid is None:
+            bid = self._to_cents(payload.get("yes_bid_dollars"))
+        ask = self._to_cents(payload.get("yes_ask"))
+        if ask is None:
+            ask = self._to_cents(payload.get("yes_ask_dollars"))
+        if bid is None and ask is None:
+            return None
+        if bid is None:
+            bid = max(1, int(ask or 50) - 1)
+        if ask is None:
+            ask = min(99, int(bid) + 1)
+        qty_bid = int(payload.get("yes_bid_size") or 1)
+        qty_ask = int(payload.get("yes_ask_size") or 1)
+        no_bid = max(1, min(99, 100 - ask))
+        no_ask = max(1, min(99, 100 - bid))
+        return OrderBookSnapshot(
+            market_ticker=ev.market_ticker,
+            yes_bids=[(bid, max(1, qty_bid))],
+            yes_asks=[(ask, max(1, qty_ask))],
+            no_bids=[(no_bid, max(1, qty_ask))],
+            no_asks=[(no_ask, max(1, qty_bid))],
+            ts=ev.ts,
+        )
 
     # ------------------------------------------------------------------
     def _sizing_to_position(self, sizing):

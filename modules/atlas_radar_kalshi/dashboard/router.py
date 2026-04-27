@@ -124,8 +124,13 @@ def _repo_root_from_router() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def _env_file_path() -> Path:
-    return _repo_root_from_router() / ".env"
+def _env_file_paths() -> list[Path]:
+    repo_env = _repo_root_from_router() / ".env"
+    global_env = Path(r"C:\ATLAS\config\.env")
+    out = [repo_env]
+    if global_env != repo_env:
+        out.append(global_env)
+    return out
 
 
 def _mask_key(value: str) -> str:
@@ -186,6 +191,8 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
 
 async def _ensure_orchestrator_started(state: RadarState) -> None:
     """Arranca el orquestador si está montado pero aún no corriendo."""
+    if not bool(getattr(state, "runtime_enabled", True)):
+        return
     orch = getattr(state, "orchestrator", None)
     if orch is None:
         return
@@ -224,6 +231,8 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "markets_tracked": len(state.markets),
             "decisions_logged": len(state.decisions),
             "orders_logged": len(state.orders),
+            "queue_depth": int(getattr(state, "queue_depth", 0)),
+            "queue_dropped": int(getattr(state, "queue_dropped", 0)),
             "edge_threshold": state.settings.edge_threshold,
             "kelly_fraction": state.settings.kelly_fraction,
             "api_ready": runtime["api_ready"],
@@ -317,7 +326,8 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 "KALSHI_PRIVATE_KEY_PATH": str(private_key_path),
             }
             try:
-                _persist_env_updates(_env_file_path(), updates)
+                for env_path in _env_file_paths():
+                    _persist_env_updates(env_path, updates)
             except Exception as exc:
                 raise HTTPException(
                     status_code=500,
