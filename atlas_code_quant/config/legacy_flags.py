@@ -132,6 +132,49 @@ ATLAS_TRADIER_PHASE1_LEGACY_STACK: str = "atlas_options_brain_fase1"
 #       futuras: deben mantenerse retrocompatibles.
 ATLAS_RADAR_MULTI_SYMBOL_ENABLED: bool = False
 
+# ---------------------------------------------------------------------------
+# F6 — Code Quant Radar intake (shadow only).
+# ---------------------------------------------------------------------------
+#
+# Anuncia la existencia del cliente *intake* interno introducido en F6:
+#
+#     atlas_code_quant.intake.opportunity
+#         RadarOpportunityInternal, RadarOpportunityBatchInternal,
+#         RadarIntakeDegradation, from_radar_payload, batch_from_radar_payload.
+#     atlas_code_quant.intake.radar_client
+#         RadarClient (httpx-based) + fetch_opportunities_snapshot.
+#
+# El cliente sabe consumir los endpoints multi-símbolo del Radar (F5)
+# expuestos por ``atlas_adapter``:
+#
+#     GET /api/radar/opportunities
+#     GET /api/radar/opportunities/{symbol}
+#     GET /api/radar/stream/opportunities      (SSE — opcional)
+#
+# Estado en F6 (shadow only):
+#     * Default = ``False``: el cliente y los modelos internos están
+#       implementados y testeados, pero **no** están conectados a
+#       ``api/main.py``, operations, execution, autonomy, risk, paper loop
+#       ni live activation. Code Quant sigue dependiendo del scanner
+#       legacy como única fuente efectiva de oportunidades.
+#     * **Esta flag NO se consulta todavía** en runtime: ningún módulo de
+#       F6 la lee como condicional. Sirve como contrato público para
+#       herramientas de auditoría y para la fase posterior que active
+#       comparaciones scanner-vs-Radar y, eventualmente, el cutover.
+#
+# Reglas duras:
+#     * NO usar esta flag para enrutar tráfico real a Radar en F6.
+#     * NO interpretar su valor como autorización para conectar el cliente
+#       intake a operations / execution / autonomy.
+#     * NO añadir lógica condicional que haga divergir el comportamiento
+#       de runtime en función de esta flag sin un plan explícito de
+#       paridad y rollback.
+#     * Cualquier cambio de default a ``True`` requiere:
+#         - tests de paridad scanner-vs-Radar verdes,
+#         - documento de cutover dedicado,
+#         - aprobación humana explícita.
+ATLAS_RADAR_INTAKE_ENABLED: bool = False
+
 __all__ = [
     "SCANNER_IS_LEGACY",
     "LEAN_SIMULATOR_IS_INTERNAL_GBM",
@@ -139,4 +182,5 @@ __all__ = [
     "ATLAS_TRADIER_CANONICAL_STACK",
     "ATLAS_TRADIER_PHASE1_LEGACY_STACK",
     "ATLAS_RADAR_MULTI_SYMBOL_ENABLED",
+    "ATLAS_RADAR_INTAKE_ENABLED",
 ]
