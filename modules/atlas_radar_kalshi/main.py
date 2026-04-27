@@ -178,11 +178,18 @@ def register(app, state: Optional[RadarState] = None,
 
         @app.on_event("startup")
         async def _start_radar() -> None:  # pragma: no cover - runtime hook
-            asyncio.create_task(orch.start(), name="atlas-radar-kalshi-orch")
+            task = getattr(state, "orchestrator_task", None)
+            if task is None or task.done():
+                state.orchestrator_task = asyncio.create_task(
+                    orch.start(), name="atlas-radar-kalshi-orch"
+                )
 
         @app.on_event("shutdown")
         async def _stop_radar() -> None:  # pragma: no cover - runtime hook
             orch.stop()
+            task = getattr(state, "orchestrator_task", None)
+            if task is not None and not task.done():
+                task.cancel()
     else:
         @app.on_event("startup")
         async def _start_radar_legacy() -> None:  # pragma: no cover

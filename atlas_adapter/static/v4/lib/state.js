@@ -39,6 +39,14 @@ export function getAll() {
 export function on(key, fn) {
   if (!_listeners.has(key)) _listeners.set(key, new Set());
   _listeners.get(key).add(fn);
+  const cur = _store[key];
+  if (cur !== undefined && cur !== null) {
+    try {
+      fn(cur, cur);
+    } catch (e) {
+      console.error('state listener error:', e);
+    }
+  }
   return () => _listeners.get(key).delete(fn);
 }
 

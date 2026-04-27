@@ -323,6 +323,18 @@ function _handleRoute() {
   location.hash = '/';
 }
 
+function _ensureLandingRendered() {
+  const v = document.getElementById('app-view');
+  if (!v) return;
+  if (v.children.length > 0) return;
+  try {
+    const cleanup = window.AtlasLanding?.render?.(v);
+    if (typeof cleanup === 'function') _currentCleanup = cleanup;
+  } catch (_e) {
+    /* evita pantalla vacía en arranque degradado */
+  }
+}
+
 async function _loadModules() {
   const MODULE_BUILD = '20260320-paper-phase3d-order-flow';
   const MODULE_NAMES = [
@@ -361,43 +373,53 @@ async function _loadModules() {
   );
 }
 
+function _healthSignal(ms) {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  const c = new AbortController();
+  setTimeout(() => c.abort(), ms);
+  return c.signal;
+}
+
+async function _fetchHealthPayload() {
+  const timeoutMs = 10000;
+  const _json = async (url) => {
+    const r = await fetch(url, { signal: _healthSignal(timeoutMs) });
+    if (!r.ok) throw new Error(`http_${r.status}`);
+    return r.json();
+  };
+  try {
+    return await _json("/health");
+  } catch {
+    return await _json("/status");
+  }
+}
+
+function _applyHealthPayload(d) {
+  const ok = d?.ok !== false;
+  const uptime = d.checks?.active_port
+    ? 'online'
+    : (ok ? 'online' : 'offline');
+  const version =
+    d.checks?.version ||
+    d.version ||
+    (typeof d.service === 'string' ? d.service : null) ||
+    '--';
+  window.AtlasState?.set('health', { uptime, ok, score: d.score });
+  window.AtlasState?.set('model', version);
+  const dot = document.getElementById('topbar-dot');
+  if (dot) dot.className = `topbar-health-dot${ok ? '' : ' error'}`;
+}
+
 function _startHealthPolling() {
   let failStreak = 0;
-
-  function _healthSignal(ms) {
-    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
-      return AbortSignal.timeout(ms);
-    }
-    const c = new AbortController();
-    setTimeout(() => c.abort(), ms);
-    return c.signal;
-  }
-
-  async function _fetchHealthPayload() {
-    const timeoutMs = 10000;
-    const _json = async (url) => {
-      const r = await fetch(url, { signal: _healthSignal(timeoutMs) });
-      if (!r.ok) throw new Error(`http_${r.status}`);
-      return r.json();
-    };
-    try {
-      return await _json("/health");
-    } catch {
-      return await _json("/status");
-    }
-  }
 
   async function _poll() {
     try {
       const d = await _fetchHealthPayload();
       failStreak = 0;
-      const ok = d?.ok !== false;
-      const uptime = d.checks?.active_port ? 'online' : '--';
-      const version = d.checks?.version || d.version || '--';
-      window.AtlasState?.set('health', { uptime, ok, score: d.score });
-      window.AtlasState?.set('model', version);
-      const dot = document.getElementById('topbar-dot');
-      if (dot) dot.className = `topbar-health-dot${ok ? '' : ' error'}`;
+      _applyHealthPayload(d);
     } catch {
       failStreak += 1;
       if (failStreak >= 2) {
@@ -428,48 +450,67 @@ async function main() {
     console.error("[Atlas v4] Falta nodo #app");
     return;
   }
-  _mountBootPlaceholder(app);
+  try {
+    _mountBootPlaceholder(app);
 
-  const savedTheme = localStorage.getItem('atlas-theme') || 'cyan';
-  _themeIdx = THEMES.indexOf(savedTheme);
-  if (_themeIdx < 0) _themeIdx = 0;
-  _applyTheme(THEMES[_themeIdx]);
+    const savedTheme = localStorage.getItem('atlas-theme') || 'cyan';
+    _themeIdx = THEMES.indexOf(savedTheme);
+    if (_themeIdx < 0) _themeIdx = 0;
+    _applyTheme(THEMES[_themeIdx]);
 
-  const modulesPromise = _loadModules();
-  /* No bloquear el shell por 27 módulos: el landing viene de landing.js (script en index). */
-  await new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve));
-  });
+    const modulesPromise = _loadModules();
+    /* No bloquear el shell por 27 módulos: el landing viene de landing.js (script en index). */
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
 
-  app.innerHTML = "";
+    app.innerHTML = "";
 
-  _buildTopbar(app);
-  window.AtlasUpdatePanel = { open: _openUpdatePanel };
-  window.AtlasMegaMenu?.mount?.(app);
-
-  const viewContainer = document.createElement("main");
-  viewContainer.id = "app-view";
-  app.appendChild(viewContainer);
-
-  window.AtlasCompanion?.mount?.(app);
-
-  window.addEventListener("hashchange", _handleRoute);
-  _handleRoute();
-
-  _startHealthPolling();
-
-  void modulesPromise.then(() => {
+    _buildTopbar(app);
+    window.AtlasUpdatePanel = { open: _openUpdatePanel };
     try {
-      _handleRoute();
-    } catch (_e) {}
-  });
+      window.AtlasMegaMenu?.mount?.(app);
+    } catch (e) {
+      console.warn('[Atlas v4] MegaMenu mount:', e);
+    }
 
-  let _idleTimer = null;
-  document.addEventListener("mousemove", () => {
-    if (window.AtlasCompanion?.getState() === "sleeping") window.AtlasCompanion.wake();
-    clearTimeout(_idleTimer);
-    _idleTimer = setTimeout(() => window.AtlasCompanion?.sleep(), 120000);
-  });
+    const viewContainer = document.createElement("main");
+    viewContainer.id = "app-view";
+    app.appendChild(viewContainer);
+
+    try {
+      window.AtlasCompanion?.mount?.(app);
+    } catch (e) {
+      console.warn('[Atlas v4] Companion mount:', e);
+    }
+
+    window.addEventListener("hashchange", _handleRoute);
+    _startHealthPolling();
+    _handleRoute();
+    setTimeout(_ensureLandingRendered, 600);
+
+    void modulesPromise.then(() => {
+      try {
+        _handleRoute();
+        _ensureLandingRendered();
+      } catch (_e) {}
+    });
+
+    let _idleTimer = null;
+    document.addEventListener("mousemove", () => {
+      if (window.AtlasCompanion?.getState() === "sleeping") window.AtlasCompanion.wake();
+      clearTimeout(_idleTimer);
+      _idleTimer = setTimeout(() => window.AtlasCompanion?.sleep(), 120000);
+    });
+  } catch (e) {
+    console.error('[Atlas v4] main()', e);
+    const msg = e && e.message ? e.message : String(e);
+    app.innerHTML = '';
+    const box = document.createElement('div');
+    box.style.cssText = 'padding:24px 20px;font-family:system-ui,Segoe UI,sans-serif;color:#f85149;max-width:720px;margin:0 auto;line-height:1.45';
+    box.textContent = 'Error al iniciar la interfaz ATLAS v4:\n\n' + msg + '\n\nRecarga con Ctrl+Shift+R. Si persiste, abre la consola (F12) y copia el error.';
+    app.appendChild(box);
+  }
 }
 
 if (document.readyState === 'loading') {

@@ -219,22 +219,22 @@ export function render(container) {
         <div class="landing-options-head">
           <div>
             <div class="landing-options-title">Options Engine</div>
-            <div class="landing-options-sub" id="landing-options-sub">paper_only · pending</div>
+            <div class="landing-options-sub" id="landing-options-sub">paper_only · sincronizando</div>
           </div>
           <span class="landing-options-badge degraded" id="landing-options-badge">Cargando</span>
         </div>
         <div class="landing-options-grid" id="landing-options-grid">
-          <div class="landing-options-stat"><span>IV Rank</span><strong>pending</strong></div>
-          <div class="landing-options-stat"><span>Journal hoy</span><strong>pending</strong></div>
-          <div class="landing-options-stat"><span>Sesiones</span><strong>pending</strong></div>
-          <div class="landing-options-stat"><span>Cerrados hoy</span><strong>pending</strong></div>
-          <div class="landing-options-stat"><span>Meta</span><strong>pending</strong></div>
-          <div class="landing-options-stat"><span>WR / PF</span><strong>pending</strong></div>
+          <div class="landing-options-stat"><span>IV Rank</span><strong>sincronizando</strong></div>
+          <div class="landing-options-stat"><span>Journal hoy</span><strong>sincronizando</strong></div>
+          <div class="landing-options-stat"><span>Sesiones</span><strong>sincronizando</strong></div>
+          <div class="landing-options-stat"><span>Cerrados hoy</span><strong>sincronizando</strong></div>
+          <div class="landing-options-stat"><span>Meta</span><strong>sincronizando</strong></div>
+          <div class="landing-options-stat"><span>WR / PF</span><strong>sincronizando</strong></div>
         </div>
-        <div class="landing-options-note" id="landing-options-note">Cargando estado operativo...</div>
+        <div class="landing-options-note" id="landing-options-note">Sincronizando métricas operativas...</div>
         <div class="landing-options-meta" id="landing-options-meta">
           <span class="landing-options-dot degraded" id="landing-options-dot"></span>
-          <span id="landing-options-refresh-text">Esperando primer snapshot...</span>
+          <span id="landing-options-refresh-text">Sincronización inicial en curso...</span>
         </div>
         <div class="landing-options-links">
           <a href="#" id="landing-options-health" target="_blank" rel="noopener">Health</a>
@@ -495,14 +495,37 @@ export function render(container) {
     });
   });
 
-  const unsubHealth = on('health', h => {
-    const el = container.querySelector('#footer-uptime');
-    if (el && h) el.textContent = `Uptime: ${h.uptime || '--'}`;
-  });
-  const unsubModel = on('model', m => {
-    const el = container.querySelector('#footer-model');
-    if (el) el.textContent = `Model: ${m || '--'}`;
-  });
+  function applyFooterHealthModel() {
+    const h = get('health');
+    const elU = container.querySelector('#footer-uptime');
+    if (elU && h) elU.textContent = `Uptime: ${h.uptime || '--'}`;
+    const m = get('model');
+    const elM = container.querySelector('#footer-model');
+    if (elM) elM.textContent = `Model: ${m ?? '--'}`;
+  }
+
+  const unsubHealth = on('health', applyFooterHealthModel);
+  const unsubModel = on('model', applyFooterHealthModel);
+  applyFooterHealthModel();
+  (async () => {
+    const elU = container.querySelector('#footer-uptime');
+    const elM = container.querySelector('#footer-model');
+    const needsHydration =
+      (elU && /--/.test(elU.textContent || '')) || (elM && /--/.test(elM.textContent || ''));
+    if (!needsHydration) return;
+    try {
+      let r = await fetch('/health', { cache: 'no-store' });
+      if (!r.ok) r = await fetch('/status', { cache: 'no-store' });
+      const d = await r.json();
+      const ok = d?.ok !== false;
+      const uptime = d?.checks?.active_port ? 'online' : (ok ? 'online' : 'offline');
+      const model = d?.checks?.version || d?.version || d?.service || '--';
+      if (elU) elU.textContent = `Uptime: ${uptime}`;
+      if (elM) elM.textContent = `Model: ${model}`;
+    } catch {
+      /* mantener fallback visual si el backend aún está calentando */
+    }
+  })();
 
   function optionsStatusClass(status) {
     if (status === 'GO') return 'go';
@@ -541,9 +564,30 @@ export function render(container) {
     return { label: 'Journal stale', dot: 'stale' };
   }
 
-  const OPTIONS_FETCH_TIMEOUT_MS = 8000;
+  const OPTIONS_FETCH_TIMEOUT_MS = 20000;
   const OPTIONS_REFRESH_MS = 30000;
   const OPTIONS_BOOTSTRAP_RETRY_MS = 5000;
+  const OPTIONS_LOCAL_CACHE_KEY = 'atlas-options-engine-last';
+
+  function readCachedOptionsSnapshot() {
+    try {
+      const raw = localStorage.getItem(OPTIONS_LOCAL_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeCachedOptionsSnapshot(snapshot) {
+    try {
+      localStorage.setItem(OPTIONS_LOCAL_CACHE_KEY, JSON.stringify(snapshot || {}));
+    } catch {
+      /* ignore quota/storage errors */
+    }
+  }
 
   function scheduleOptionsBootstrapRetry() {
     if (container.__optionsLastOk) return;
@@ -586,7 +630,7 @@ export function render(container) {
       if (!r.ok || d.ok === false) throw new Error(d.error || `HTTP ${r.status}`);
 
       const status = d.status || d.go_nogo_label || 'DEGRADED';
-      const loopMode = d.loop_mode || 'metrics unavailable';
+      const loopMode = d.loop_mode || 'sincronizando';
       const automationMode = d.automation_mode || 'paper_only';
       const closedToday = d.paper_trades_closed_today ?? d.trades_closed_today ?? 0;
       const completedTotal = d.trades_completed_total ?? closedToday;
@@ -616,7 +660,7 @@ export function render(container) {
 
       noteEl.className = `landing-options-note${stale ? ' warn' : ''}`;
       noteEl.textContent = stale
-        ? `${d.notes || 'sin datos aun'} · Journal stale`
+        ? `${d.notes || 'sin datos aun'} · Journal desactualizado`
         : (d.notes || 'sin datos aun');
 
       if (healthEl) healthEl.href = d.grafana_health_dashboard_url || '#';
@@ -629,27 +673,67 @@ export function render(container) {
         clearTimeout(container.__optionsBootstrapRetryTimer);
         container.__optionsBootstrapRetryTimer = null;
       }
+      writeCachedOptionsSnapshot(d);
       container.__optionsLastOk = true;
       return true;
     } catch (err) {
-      const errMsg = err?.name === 'AbortError' ? 'request timeout' : String(err);
+      const errMsg = err?.name === 'AbortError' ? 'timeout de sincronización' : String(err);
+      const cached = readCachedOptionsSnapshot();
+      if (cached) {
+        const status = cached.status || cached.go_nogo_label || 'DEGRADED';
+        const loopMode = cached.loop_mode || 'sincronizando';
+        const automationMode = cached.automation_mode || 'paper_only';
+        const closedToday = cached.paper_trades_closed_today ?? cached.trades_closed_today ?? 0;
+        const completedTotal = cached.trades_completed_total ?? closedToday;
+        const target = cached.paper_trades_target ?? null;
+        const freshness = journalFreshnessState(cached.journal_last_write_age_seconds);
+        const wrpf = (cached.wr_basic != null || cached.pf_basic != null)
+          ? `WR ${safeMetric(cached.wr_basic, v => Number(v).toFixed(2))} · PF ${safeMetric(cached.pf_basic, v => Number(v).toFixed(2))}`
+          : 'pending';
+        badgeEl.className = `landing-options-badge ${optionsStatusClass(status)}`;
+        badgeEl.textContent = String(status).replace(/_/g, '-');
+        subEl.textContent = `${automationMode} · ${loopMode}`;
+        gridEl.innerHTML = [
+          ['IV Rank', safeMetric(cached.iv_rank_current, v => Number(v).toFixed(2))],
+          ['Journal hoy', safeMetric(cached.journal_events_today, v => parseInt(v, 10))],
+          ['Sesiones', safeMetric(cached.journal_sessions_today, v => parseInt(v, 10))],
+          ['Cerrados hoy', safeMetric(closedToday, v => parseInt(v, 10))],
+          ['Meta', target != null ? `${completedTotal}/${target}` : String(completedTotal)],
+          ['WR / PF', wrpf],
+        ].map(([label, value]) => `
+          <div class="landing-options-stat">
+            <span>${label}</span>
+            <strong>${value}</strong>
+          </div>
+        `).join('');
+        noteEl.className = 'landing-options-note warn';
+        dotEl.className = `landing-options-dot ${freshness.dot}`;
+        refreshTextEl.textContent = `${formatRefreshTime(cached.last_updated_utc)} · cache local`;
+        noteEl.textContent = `Sincronizando métricas... mostrando último snapshot válido`;
+        if (healthEl) healthEl.href = cached.grafana_health_dashboard_url || '#';
+        if (signalsEl) signalsEl.href = cached.grafana_signals_dashboard_url || deriveGrafanaUrl(cached.grafana_health_dashboard_url, 'atlas-options-signals-intent', 'options-engine-signals-intent');
+        if (perfEl) perfEl.href = cached.grafana_paper_performance_dashboard_url || deriveGrafanaUrl(cached.grafana_health_dashboard_url, 'atlas-options-paper-performance', 'options-engine-paper-performance');
+        if (uiEl) uiEl.href = cached.options_ui_url || '/quant-ui';
+        scheduleOptionsBootstrapRetry();
+        return false;
+      }
       if (container.__optionsLastOk) {
         noteEl.className = 'landing-options-note warn';
         dotEl.className = 'landing-options-dot warm';
-        refreshTextEl.textContent = `${refreshTextEl.textContent || 'Last refresh pending'} Â· refresh delayed`;
-        noteEl.textContent = `${noteEl.textContent || 'Estado previo conservado'} Â· metrics refresh delayed`;
+        refreshTextEl.textContent = `${refreshTextEl.textContent || 'Sincronización pendiente'} · sincronizando`;
+        noteEl.textContent = `${noteEl.textContent || 'Estado previo conservado'} · Sincronizando métricas...`;
         return false;
       }
       badgeEl.className = 'landing-options-badge degraded';
-      badgeEl.textContent = 'DEGRADED';
-      subEl.textContent = 'paper_only · metrics unavailable';
+      badgeEl.textContent = 'SINCRONIZANDO';
+      subEl.textContent = 'paper_only · sincronizando';
       gridEl.innerHTML = [
-        ['IV Rank', 'pending'],
-        ['Journal hoy', 'pending'],
-        ['Sesiones', 'pending'],
-        ['Cerrados hoy', 'pending'],
-        ['Meta', 'pending'],
-        ['WR / PF', 'pending'],
+        ['IV Rank', 'sincronizando'],
+        ['Journal hoy', 'sincronizando'],
+        ['Sesiones', 'sincronizando'],
+        ['Cerrados hoy', 'sincronizando'],
+        ['Meta', 'sincronizando'],
+        ['WR / PF', 'sincronizando'],
       ].map(([label, value]) => `
         <div class="landing-options-stat">
           <span>${label}</span>
@@ -658,8 +742,8 @@ export function render(container) {
       `).join('');
       noteEl.className = 'landing-options-note warn';
       dotEl.className = 'landing-options-dot warm';
-      refreshTextEl.textContent = `${refreshTextEl.textContent || 'Last refresh pending'} · refresh delayed`;
-      noteEl.textContent = `metrics unavailable · ${errMsg}`;
+      refreshTextEl.textContent = `${refreshTextEl.textContent || 'Sincronización pendiente'} · sincronizando`;
+      noteEl.textContent = `Sincronizando métricas... ${errMsg}`;
       scheduleOptionsBootstrapRetry();
       return false;
     } finally {

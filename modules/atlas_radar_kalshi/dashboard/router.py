@@ -184,6 +184,19 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
     }
 
 
+async def _ensure_orchestrator_started(state: RadarState) -> None:
+    """Arranca el orquestador si está montado pero aún no corriendo."""
+    orch = getattr(state, "orchestrator", None)
+    if orch is None:
+        return
+    task = getattr(state, "orchestrator_task", None)
+    if task is not None and not task.done():
+        return
+    state.orchestrator_task = asyncio.create_task(
+        orch.start(), name="atlas-radar-kalshi-orch-runtime"
+    )
+
+
 # ===========================================================================
 # Router builder
 # ===========================================================================
@@ -194,7 +207,8 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
 
     # ---------------- API REST ----------------
     @router.get("/api/radar/status")
-    def status() -> dict:
+    async def status() -> dict:
+        await _ensure_orchestrator_started(state)
         runtime = _runtime_snapshot(state)
         return {
             "ok": True,
@@ -219,11 +233,13 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
         }
 
     @router.get("/api/radar/config")
-    def config_get() -> dict:
+    async def config_get() -> dict:
+        await _ensure_orchestrator_started(state)
         return {"ok": True, **_runtime_snapshot(state)}
 
     @router.post("/api/radar/config")
     async def config_set(payload: RadarRuntimeConfigBody) -> dict:
+        await _ensure_orchestrator_started(state)
         environment = payload.environment
         execution_mode = payload.execution_mode
         paper_balance_cents = int(round(payload.paper_balance_usd * 100))
@@ -410,6 +426,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
     # ---------------- WebSocket ----------------
     @router.websocket("/api/radar/stream")
     async def stream(ws: WebSocket) -> None:
+        await _ensure_orchestrator_started(state)
         await ws.accept()
         state.subscribers.add(ws)
         try:
@@ -739,7 +756,6 @@ function connectWS(){
 
 loadConfig(); refresh();
 setInterval(refresh, 5000);
-setInterval(loadConfig, 15000);
 connectWS();
 </script>
 </body></html>
