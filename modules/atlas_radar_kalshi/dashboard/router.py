@@ -39,6 +39,8 @@ from ..config import RadarSettings, get_settings
 from ..brain import BrainDecision
 from ..executor import OrderResult
 from ..risk import PositionSize
+from ..state.journal import Journal
+from ..metrics import compute as compute_perf, prometheus_text
 
 
 # ===========================================================================
@@ -129,20 +131,63 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
 
     @router.get("/api/radar/metrics")
     def metrics() -> dict:
-        if not state.decisions:
-            return {"ok": True, "edges_avg": 0.0, "actionable_pct": 0.0,
-                    "orders_total": len(state.orders)}
         edges = [d.edge for d in state.decisions]
         actionable = sum(1 for d in state.decisions if d.side)
+        # performance from journal
+        journal = Journal(state.settings.log_dir)
+        perf = compute_perf(journal)
+        exec_metrics = getattr(state, "exec_metrics", {}) or {}
+        risk_status = getattr(state, "risk_status", {}) or {}
         return {
             "ok": True,
-            "edges_avg": sum(edges) / len(edges),
-            "edges_max": max(edges),
-            "edges_min": min(edges),
-            "actionable_pct": actionable / len(state.decisions),
+            "edges_avg": (sum(edges) / len(edges)) if edges else 0.0,
+            "edges_max": max(edges) if edges else 0.0,
+            "edges_min": min(edges) if edges else 0.0,
+            "actionable_pct": (actionable / len(state.decisions))
+            if state.decisions else 0.0,
             "orders_total": len(state.orders),
             "balance_usd": state.balance_cents / 100.0,
+            "performance": perf.model_dump(),
+            "execution": exec_metrics,
+            "risk": risk_status,
         }
+
+    @router.get("/api/radar/risk")
+    def risk_endpoint() -> dict:
+        return {"ok": True, "risk": getattr(state, "risk_status", {}) or {}}
+
+    @router.get("/api/radar/health")
+    def health() -> dict:
+        h = getattr(state, "health", None)
+        return {
+            "ok": True,
+            "degraded": bool(getattr(h, "degraded", False)),
+            "last_event_ts": getattr(h, "last_event_ts", 0.0),
+            "last_decision_ts": getattr(h, "last_decision_ts", 0.0),
+            "last_order_ts": getattr(h, "last_order_ts", 0.0),
+        }
+
+    @router.get("/api/radar/prometheus")
+    def prom() -> Any:
+        from fastapi.responses import PlainTextResponse
+        journal = Journal(state.settings.log_dir)
+        perf = compute_perf(journal)
+        text = prometheus_text(
+            perf,
+            getattr(state, "exec_metrics", {}) or {},
+            getattr(state, "risk_status", {}) or {},
+        )
+        return PlainTextResponse(text, media_type="text/plain; version=0.0.4")
+
+    @router.post("/api/radar/kill")
+    def kill() -> dict:
+        state.kill_requested = True
+        return {"ok": True, "kill_switch": True}
+
+    @router.post("/api/radar/resume")
+    def resume() -> dict:
+        state.kill_requested = False
+        return {"ok": True, "kill_switch": False}
 
     # ---------------- WebSocket ----------------
     @router.websocket("/api/radar/stream")
@@ -197,6 +242,8 @@ _RADAR_HTML = r"""<!doctype html>
     --muted:#8b97a8; --accent:#3fb950; --neg:#f85149; --warn:#d29922;
     --blue:#58a6ff;
   }
+  .grid{grid-template-columns:repeat(4,1fr) !important}
+  @media (min-width:1280px){.grid{grid-template-columns:repeat(8,1fr) !important}}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);
        font:14px/1.4 -apple-system,Segoe UI,Inter,Roboto,sans-serif}
@@ -247,10 +294,28 @@ _RADAR_HTML = r"""<!doctype html>
 </header>
 
 <section class="grid">
+  <div class="tile"><h3>PnL neto</h3><div class="v" id="pnl">$0.00</div></div>
+  <div class="tile"><h3>Hit rate</h3><div class="v" id="hit">0.0%</div></div>
+  <div class="tile"><h3>Profit factor</h3><div class="v" id="pf">0.00</div></div>
+  <div class="tile"><h3>Drawdown</h3><div class="v neg" id="dd">$0.00</div></div>
+  <div class="tile"><h3>Expectancy</h3><div class="v" id="exp">$0.00</div></div>
+  <div class="tile"><h3>Latencia p95</h3><div class="v" id="p95">0 ms</div></div>
+  <div class="tile"><h3>Fill ratio</h3><div class="v" id="fr">0.00%</div></div>
+  <div class="tile"><h3>Exposición</h3><div class="v" id="exp_t">$0.00</div></div>
+</section>
+
+<section class="grid" style="grid-template-columns:repeat(4,1fr)">
   <div class="tile"><h3>Balance</h3><div class="v" id="bal">$0.00</div></div>
   <div class="tile"><h3>Mercados</h3><div class="v" id="mkt">0</div></div>
   <div class="tile"><h3>Edge medio</h3><div class="v" id="edge">0.00%</div></div>
-  <div class="tile"><h3>Órdenes</h3><div class="v" id="ord">0</div></div>
+  <div class="tile">
+    <h3>Riesgo</h3>
+    <div class="v" id="risk_v">healthy</div>
+    <div style="margin-top:6px">
+      <button onclick="kill()" style="background:#311;border:1px solid #6b1f1f;color:#f85149;padding:4px 8px;border-radius:6px;cursor:pointer">Kill</button>
+      <button onclick="resume()" style="background:#0e1f12;border:1px solid #1f6b3a;color:#3fb950;padding:4px 8px;border-radius:6px;cursor:pointer;margin-left:6px">Resume</button>
+    </div>
+  </div>
 </section>
 
 <main>
@@ -280,20 +345,35 @@ const log = (cls, msg) => {
   el.prepend(d);
 };
 
+async function kill(){await fetch('/api/radar/kill',{method:'POST'}); refresh();}
+async function resume(){await fetch('/api/radar/resume',{method:'POST'}); refresh();}
+
 async function refresh(){
   try {
     const s = await (await fetch('/api/radar/status')).json();
     $('#env').textContent = s.environment;
     $('#bal').textContent = fmtUSD(s.balance_usd||0);
     $('#mkt').textContent = s.markets_tracked;
-    $('#ord').textContent = s.orders_logged;
     const m = await (await fetch('/api/radar/metrics')).json();
     const e = m.edges_avg||0;
     $('#edge').textContent = fmtPct(e);
     $('#edge').className = 'v '+(e>=0?'pos':'neg');
-    const r = await (await fetch('/api/radar/markets')).json();
+    const p = m.performance||{}; const x = m.execution||{}; const r = m.risk||{};
+    $('#pnl').textContent = fmtUSD((p.pnl_net_cents||0)/100);
+    $('#pnl').className = 'v '+((p.pnl_net_cents||0)>=0?'pos':'neg');
+    $('#hit').textContent = fmtPct(p.hit_rate||0);
+    $('#pf').textContent = (p.profit_factor||0).toFixed(2);
+    $('#dd').textContent = fmtUSD(-(p.max_drawdown_cents||0)/100);
+    $('#exp').textContent = fmtUSD((p.expectancy_cents||0)/100);
+    $('#p95').textContent = (x.p95_ms||0).toFixed(0)+' ms';
+    $('#fr').textContent = fmtPct(x.fill_ratio||0);
+    $('#exp_t').textContent = fmtUSD((r.exposure_cents||0)/100);
+    const breakers = (r.breakers||[]);
+    $('#risk_v').textContent = r.kill_switch?'KILL':(r.safe_mode?'SAFE':'healthy');
+    $('#risk_v').className = 'v '+(r.kill_switch||r.safe_mode?'neg':'pos');
+    const mk = await (await fetch('/api/radar/markets')).json();
     const tb = $('#tbl tbody'); tb.innerHTML='';
-    r.rows.slice(0,40).forEach(row=>{
+    (mk.rows||[]).slice(0,40).forEach(row=>{
       const tr = document.createElement('tr');
       if(row.side) tr.className='act';
       tr.innerHTML = `<td>${row.ticker}</td>
