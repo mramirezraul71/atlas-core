@@ -151,17 +151,43 @@ async def _handle_event(
 # ===========================================================================
 # Integración con atlas-core (FastAPI app principal)
 # ===========================================================================
-def register(app, state: Optional[RadarState] = None) -> RadarState:
+def register(app, state: Optional[RadarState] = None,
+             use_v2: Optional[bool] = None) -> RadarState:
     """
     Monta el radar en una ``FastAPI`` ya existente (:8791).
-    Lanza el ``trading_loop`` como tarea de background al startup.
+
+    Por defecto usa el ``Orchestrator`` v2 (calibración + ensemble + gating +
+    risk engine + executor v2 + exits + journal). Si ``ATLAS_RADAR_LEGACY=1``
+    o ``use_v2=False``, usa el ``trading_loop`` legado de PR #14.
     """
+    import os as _os
+    if use_v2 is None:
+        use_v2 = _os.getenv("ATLAS_RADAR_LEGACY", "0") != "1"
+
     state = state or RadarState()
     app.include_router(build_router(state))
 
-    @app.on_event("startup")
-    async def _start_radar() -> None:  # pragma: no cover - runtime hook
-        asyncio.create_task(trading_loop(state), name="atlas-radar-kalshi-loop")
+    if use_v2:
+        from .orchestrator import Orchestrator
+        orch = Orchestrator(state=state)
+        # exponer el orquestador en el state para los endpoints /api/radar/*
+        try:
+            state.orchestrator = orch  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        @app.on_event("startup")
+        async def _start_radar() -> None:  # pragma: no cover - runtime hook
+            asyncio.create_task(orch.start(), name="atlas-radar-kalshi-orch")
+
+        @app.on_event("shutdown")
+        async def _stop_radar() -> None:  # pragma: no cover - runtime hook
+            orch.stop()
+    else:
+        @app.on_event("startup")
+        async def _start_radar_legacy() -> None:  # pragma: no cover
+            asyncio.create_task(trading_loop(state),
+                                name="atlas-radar-kalshi-loop")
 
     return state
 
@@ -182,12 +208,18 @@ def main() -> None:  # pragma: no cover
                         help="Levanta uvicorn en :8792 con UI + API.")
     parser.add_argument("--loop", action="store_true",
                         help="Solo loop de trading, sin servidor HTTP.")
+    parser.add_argument("--legacy", action="store_true",
+                        help="Usar trading_loop legacy en lugar de Orchestrator v2.")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8792)
     args = parser.parse_args()
 
     if args.loop and not args.serve:
-        asyncio.run(trading_loop())
+        if args.legacy:
+            asyncio.run(trading_loop())
+        else:
+            from .orchestrator import Orchestrator
+            asyncio.run(Orchestrator().start())
         return
 
     import uvicorn
