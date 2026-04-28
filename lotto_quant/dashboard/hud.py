@@ -42,6 +42,8 @@ except Exception:  # pragma: no cover
     _PLOTLY_OK = False
 
 from .. import config as _config
+from ..data.database import LottoQuantDB
+from ..execution.broker import LiveBroker
 from ..execution.modes import OperatingMode, get_state, set_active_mode
 from .metrics import DashboardMetrics, MetricsService
 
@@ -546,6 +548,109 @@ def _table_per_game(m: DashboardMetrics):
     st.dataframe(df, use_container_width=True, height=320)
 
 
+def _chart_roi_per_game(m: DashboardMetrics):
+    """Horizontal bar of ROI% per game, sorted best → worst."""
+    if not _PLOTLY_OK:
+        st.info("Plotly not installed.")
+        return
+    if not m.pnl.per_game:
+        st.info("No fills aggregated yet — run the radar to populate ROI.")
+        return
+    df = pd.DataFrame(m.pnl.per_game).sort_values("roi", ascending=True)
+    df["roi_pct"] = df["roi"] * 100
+    df["color"] = df["roi_pct"].apply(
+        lambda v: "#22c55e" if v >= 0 else ("#f59e0b" if v >= -25 else "#ef4444")
+    )
+    fig = go.Figure(go.Bar(
+        x=df["roi_pct"], y=df["game_id"],
+        orientation="h", marker_color=df["color"],
+        text=[f"{v:+.1f}%" for v in df["roi_pct"]],
+        textposition="outside",
+        customdata=df[["n_fills", "n_tickets", "pnl_net"]].values,
+        hovertemplate=(
+            "<b>%{y}</b><br>ROI: %{x:.2f}%%<br>"
+            "Fills: %{customdata[0]} · Tickets: %{customdata[1]}<br>"
+            "P&L: $%{customdata[2]:.2f}<extra></extra>"
+        ),
+    ))
+    fig.update_layout(title="ROI per game (realized)",
+                      xaxis_title="ROI (%)", yaxis_title="")
+    st.plotly_chart(_apply_plot_theme(fig), use_container_width=True)
+
+
+# ───────────────────────────────────────────────────────────────
+# Live confirmation form
+# ───────────────────────────────────────────────────────────────
+def _live_confirmation_panel(m: DashboardMetrics):
+    """Form to confirm or cancel LIVE orders without writing code."""
+    if m.mode != OperatingMode.LIVE:
+        st.info(
+            "Switch to **LIVE** mode in the sidebar to confirm physical "
+            "ticket outcomes. PAPER mode auto-fills via Monte Carlo."
+        )
+        return
+
+    db = LottoQuantDB()
+    broker = LiveBroker(db)
+    open_orders = broker.list_open_orders(limit=50)
+
+    st.markdown(
+        "#### Confirm physical ticket outcomes\n"
+        "Pick a LIVE order, enter the gross payout the retailer paid you "
+        "(before tax), and Atlas will record the fill with the correct "
+        "NC + federal withholding applied."
+    )
+
+    if not open_orders:
+        st.success("✓ No open LIVE orders awaiting confirmation.")
+        return
+
+    options = {
+        f"{o.game_name}  ·  {o.n_tickets}×${o.ticket_price:.2f}  ·  "
+        f"{o.created_iso[:19]}  ·  id={o.order_id[:8]}…": o
+        for o in open_orders
+    }
+    label = st.selectbox("Open LIVE orders", list(options.keys()))
+    order = options[label]
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Tickets", order.n_tickets)
+    col2.metric("Cost", f"${order.cost():.2f}")
+    col3.metric("Expected EV", f"${order.expected_ev:+.2f}")
+
+    with st.form("confirm_outcome_form", clear_on_submit=True):
+        gross = st.number_input(
+            "Gross payout received ($)",
+            min_value=0.0, value=0.0, step=1.0, format="%.2f",
+            help="Total prize value before any tax withholding.",
+        )
+        c1, c2 = st.columns(2)
+        confirm_clicked = c1.form_submit_button("✓ Confirm outcome",
+                                                 use_container_width=True,
+                                                 type="primary")
+        cancel_clicked = c2.form_submit_button("✗ Cancel order",
+                                                use_container_width=True)
+
+    if confirm_clicked:
+        try:
+            fill = broker.confirm_outcome(order, gross_payout=float(gross))
+            st.success(
+                f"Recorded fill {fill.fill_id[:8]}…  "
+                f"gross=${fill.gross_payout:.2f}  net=${fill.net_payout:.2f}  "
+                f"P&L=${fill.pnl_net:+.2f}"
+            )
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed to record outcome: {e}")
+
+    if cancel_clicked:
+        if broker.cancel_order(order.order_id):
+            st.warning(f"Order {order.order_id[:8]}… cancelled.")
+            st.rerun()
+        else:
+            st.error("Could not cancel — order may already be filled.")
+
+
 # ─────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────
@@ -566,6 +671,7 @@ def main():
         "Anomaly Map",
         "Markov",
         "Fills & P&L",
+        "Confirm LIVE",
         "Signals",
         "Alerts",
     ])
@@ -576,6 +682,8 @@ def main():
             _chart_equity(metrics)
         with c2:
             _chart_ev_scoreboard(metrics)
+        st.markdown("#### ROI per game")
+        _chart_roi_per_game(metrics)
         st.markdown("#### Per-game performance")
         _table_per_game(metrics)
 
@@ -597,12 +705,17 @@ def main():
         _chart_markov(metrics)
 
     with tabs[4]:
+        _chart_roi_per_game(metrics)
+        st.markdown("#### Fills")
         _table_fills(metrics)
 
     with tabs[5]:
-        _table_signals(metrics)
+        _live_confirmation_panel(metrics)
 
     with tabs[6]:
+        _table_signals(metrics)
+
+    with tabs[7]:
         _table_alerts(metrics)
 
     # Auto-refresh

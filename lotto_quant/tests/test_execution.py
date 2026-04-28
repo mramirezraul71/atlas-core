@@ -194,6 +194,57 @@ def test_pnl_snapshot_after_paper_fills():
     assert 0.0 <= snap.win_rate <= 1.0
 
 
+# ──────────────────────────────────────────────────────────────
+# LiveBroker helpers (HUD form)
+# ──────────────────────────────────────────────────────────────
+def test_live_broker_list_open_orders():
+    from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import LiveBroker
+
+    db = LottoQuantDB()
+    broker = LiveBroker(db)
+    o1 = broker.submit_order(game=_build_game(), n_tickets=2, expected_ev=0.0)
+    o2 = broker.submit_order(game=_build_game(), n_tickets=3, expected_ev=0.0)
+    open_ = broker.list_open_orders()
+    ids = {o.order_id for o in open_}
+    assert o1.order_id in ids
+    assert o2.order_id in ids
+    assert all(o.status == "OPEN" for o in open_)
+
+    # After confirming one, only the other remains open
+    broker.confirm_outcome(o1, gross_payout=0.0)
+    open_ = broker.list_open_orders()
+    ids = {o.order_id for o in open_}
+    assert o1.order_id not in ids
+    assert o2.order_id in ids
+
+
+def test_live_broker_get_order_returns_none_for_unknown():
+    from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import LiveBroker
+    db = LottoQuantDB()
+    broker = LiveBroker(db)
+    assert broker.get_order("does-not-exist") is None
+
+
+def test_live_broker_cancel_order_only_when_open():
+    from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import LiveBroker
+
+    db = LottoQuantDB()
+    broker = LiveBroker(db)
+    order = broker.submit_order(game=_build_game(), n_tickets=2, expected_ev=0.0)
+    # First cancel succeeds
+    assert broker.cancel_order(order.order_id) is True
+    # Second cancel fails (status changed)
+    assert broker.cancel_order(order.order_id) is False
+
+    # No fill was created for the cancelled order
+    cur = db._cursor()
+    cur.execute("SELECT COUNT(*) FROM exec_fills WHERE order_id = ?", (order.order_id,))
+    assert cur.fetchone()[0] == 0
+
+
 def test_pnl_filters_by_mode():
     from lotto_quant.data.database import LottoQuantDB
     from lotto_quant.execution.broker import PaperBroker, LiveBroker

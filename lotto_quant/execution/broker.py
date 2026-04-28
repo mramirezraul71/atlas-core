@@ -318,6 +318,56 @@ class LiveBroker(BrokerBase):
         # In live mode, settle is a no-op until confirm_outcome() is called.
         return None
 
+    # ── helpers for HUD form ─────────────────────────────────────
+    def list_open_orders(self, limit: int = 50) -> List[Order]:
+        """Return LIVE orders that are still OPEN (awaiting human confirmation)."""
+        cur = self.db._cursor()
+        cur.execute(
+            "SELECT order_id, game_id, game_name, ticket_price, n_tickets, "
+            "expected_ev, mode, created_iso, status "
+            "FROM exec_orders WHERE mode = ? AND status = 'OPEN' "
+            "ORDER BY created_iso DESC LIMIT ?",
+            (self.mode.value, limit),
+        )
+        rows = cur.fetchall()
+        out: List[Order] = []
+        for r in rows:
+            out.append(Order(
+                order_id=r[0], game_id=r[1], game_name=r[2],
+                ticket_price=float(r[3]), n_tickets=int(r[4]),
+                expected_ev=float(r[5]), mode=OperatingMode.from_string(r[6]),
+                created_iso=str(r[7]), status=str(r[8]),
+            ))
+        return out
+
+    def get_order(self, order_id: str) -> Optional[Order]:
+        """Fetch a single order by id (any status)."""
+        cur = self.db._cursor()
+        cur.execute(
+            "SELECT order_id, game_id, game_name, ticket_price, n_tickets, "
+            "expected_ev, mode, created_iso, status "
+            "FROM exec_orders WHERE order_id = ?",
+            (order_id,),
+        )
+        r = cur.fetchone()
+        if not r:
+            return None
+        return Order(
+            order_id=r[0], game_id=r[1], game_name=r[2],
+            ticket_price=float(r[3]), n_tickets=int(r[4]),
+            expected_ev=float(r[5]), mode=OperatingMode.from_string(r[6]),
+            created_iso=str(r[7]), status=str(r[8]),
+        )
+
+    def cancel_order(self, order_id: str) -> bool:
+        """Mark a LIVE order CANCELLED (e.g. user decided not to buy the ticket)."""
+        order = self.get_order(order_id)
+        if not order or order.status != "OPEN":
+            return False
+        self._update_order_status(order_id, "CANCELLED")
+        logger.info("LIVE order %s cancelled by user", order_id)
+        return True
+
     def confirm_outcome(
         self,
         order: Order,
