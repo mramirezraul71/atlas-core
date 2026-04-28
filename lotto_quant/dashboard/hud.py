@@ -43,6 +43,7 @@ except Exception:  # pragma: no cover
 
 from .. import config as _config
 from ..data.database import LottoQuantDB
+from ..backtest import BacktestConfig, BacktestEngine, BacktestResult
 from ..execution.broker import LiveBroker
 from ..signals.alert_engine import make_default_notifier
 from ..execution.modes import OperatingMode, get_state, set_active_mode
@@ -672,6 +673,162 @@ def _live_confirmation_panel(m: DashboardMetrics):
 
 
 # ─────────────────────────────────────────────────────────────────
+# Backtest panel
+# ─────────────────────────────────────────────────────────────────
+def _run_backtest_cached(
+    *,
+    bankroll_start: float,
+    kelly_fraction: float,
+    max_position_pct: float,
+    max_daily_exposure: float,
+    min_ev_per_dollar: float,
+    rng_seed: int,
+    days_back: Optional[int],
+) -> BacktestResult:
+    """Run a backtest using a temp workspace DB so production stays clean."""
+    import tempfile
+    fd, tmp_path = tempfile.mkstemp(prefix="lotto_bt_hud_", suffix=".sqlite")
+    os.close(fd)
+    cfg = BacktestConfig(
+        workspace_db=tmp_path,
+        bankroll_start=bankroll_start,
+        kelly_fraction=kelly_fraction,
+        max_position_pct=max_position_pct,
+        max_daily_exposure=max_daily_exposure,
+        min_ev_per_dollar=min_ev_per_dollar,
+        rng_seed=rng_seed,
+        days_back=days_back,
+    )
+    return BacktestEngine(cfg).run()
+
+
+def _backtest_panel() -> None:
+    """Sidebar-driven backtest tab — replays snapshots in paper mode."""
+    st.markdown("### Historical replay (paper mode)")
+    st.caption(
+        "Replays the snapshot archive through the paper broker so you can "
+        "calibrate Kelly fraction, EV cutoff, and exposure caps before "
+        "committing capital. Backtests never touch the LIVE flow."
+    )
+
+    with st.form("backtest_form"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            bankroll = st.number_input(
+                "Starting bankroll ($)", min_value=50.0, max_value=100_000.0,
+                value=1_000.0, step=50.0,
+            )
+            days_back = st.number_input(
+                "Days back (0 = all)", min_value=0, max_value=365,
+                value=30, step=1,
+            )
+        with c2:
+            kelly_fraction = st.slider(
+                "Kelly fraction", min_value=0.05, max_value=1.0,
+                value=0.25, step=0.05,
+            )
+            max_position_pct = st.slider(
+                "Max position pct", min_value=0.005, max_value=0.20,
+                value=0.05, step=0.005,
+            )
+        with c3:
+            max_daily_exposure = st.slider(
+                "Max daily exposure", min_value=0.05, max_value=0.50,
+                value=0.20, step=0.05,
+            )
+            min_ev_per_dollar = st.number_input(
+                "Min EV / $ (filter)", min_value=-1.0, max_value=1.0,
+                value=0.0, step=0.01,
+            )
+        rng_seed = st.number_input("RNG seed", min_value=0, max_value=2**31 - 1,
+                                    value=1234, step=1)
+        run = st.form_submit_button("Run backtest", type="primary")
+
+    if not run:
+        st.info("Configure parameters and click **Run backtest**.")
+        return
+
+    with st.spinner("Replaying snapshots…"):
+        try:
+            res = _run_backtest_cached(
+                bankroll_start=float(bankroll),
+                kelly_fraction=float(kelly_fraction),
+                max_position_pct=float(max_position_pct),
+                max_daily_exposure=float(max_daily_exposure),
+                min_ev_per_dollar=float(min_ev_per_dollar),
+                rng_seed=int(rng_seed),
+                days_back=int(days_back) if days_back > 0 else None,
+            )
+        except Exception as e:
+            st.error(f"Backtest failed: {e}")
+            return
+
+    if res.notes:
+        for n in res.notes:
+            st.warning(n)
+        if not res.days:
+            return
+
+    # KPI strip
+    pnl = res.realized_pnl
+    pnl_color = "normal" if pnl >= 0 else "inverse"
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Final bankroll", f"${res.final_bankroll:,.2f}",
+              f"{pnl:+,.2f}", delta_color=pnl_color)
+    k2.metric("Realized P&L", f"${pnl:+,.2f}")
+    k3.metric("Max drawdown", f"{res.max_drawdown * 100:.2f}%")
+    k4.metric("Sharpe-like", f"{res.sharpe_like:.3f}")
+    k5.metric("Win-rate (days)", f"{res.win_rate * 100:.1f}%")
+
+    # Equity curve
+    if _PLOTLY_OK and res.days:
+        eq_df = pd.DataFrame(res.equity_curve, columns=["day", "bankroll"])
+        fig = px.line(eq_df, x="day", y="bankroll",
+                       title="Backtest equity curve", markers=True)
+        fig.update_layout(
+            height=320, margin=dict(l=10, r=10, t=40, b=10),
+            paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+            font=dict(color="#e6e6e6"),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Daily breakdown
+    st.markdown("#### Daily breakdown")
+    if res.days:
+        df = pd.DataFrame([d.to_dict() for d in res.days])
+        for col in ("bankroll_open", "bankroll_close", "total_cost",
+                    "gross_payout", "net_payout", "pnl_net", "drawdown"):
+            if col in df.columns:
+                df[col] = df[col].astype(float).round(2)
+        st.dataframe(df, use_container_width=True, height=320)
+
+    # Per-game PnL
+    if res.per_game_pnl:
+        st.markdown("#### Per-game P&L")
+        pg_df = pd.DataFrame(
+            [{"game_id": gid, "pnl_net": float(round(v, 2))}
+             for gid, v in sorted(res.per_game_pnl.items(),
+                                   key=lambda kv: kv[1], reverse=True)]
+        )
+        if _PLOTLY_OK and not pg_df.empty:
+            fig2 = px.bar(
+                pg_df.head(20), x="game_id", y="pnl_net",
+                title="P&L per game (top 20)",
+                color="pnl_net", color_continuous_scale="RdYlGn",
+            )
+            fig2.update_layout(
+                height=300, margin=dict(l=10, r=10, t=40, b=10),
+                paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+                font=dict(color="#e6e6e6"),
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+        st.dataframe(pg_df, use_container_width=True, height=240)
+
+    with st.expander("Run summary (raw)"):
+        st.json(res.summary_dict())
+
+
+# ─────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────
 def main():
@@ -692,6 +849,7 @@ def main():
         "Markov",
         "Fills & P&L",
         "Confirm LIVE",
+        "Backtest",
         "Signals",
         "Alerts",
     ])
@@ -733,9 +891,12 @@ def main():
         _live_confirmation_panel(metrics)
 
     with tabs[6]:
-        _table_signals(metrics)
+        _backtest_panel()
 
     with tabs[7]:
+        _table_signals(metrics)
+
+    with tabs[8]:
         _table_alerts(metrics)
 
     # Auto-refresh
