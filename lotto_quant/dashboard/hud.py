@@ -46,6 +46,7 @@ from ..data.database import LottoQuantDB
 from ..execution.broker import LiveBroker
 from ..signals.alert_engine import make_default_notifier
 from ..execution.modes import OperatingMode, get_state, set_active_mode
+from .links import atlas_central_url
 from .metrics import DashboardMetrics, MetricsService
 
 # ─────────────────────────────────────────────────────────────────
@@ -307,6 +308,20 @@ def _sidebar() -> dict:
     else:
         st.sidebar.caption(s.get("error") or s.get("note", "offline"))
 
+    # Cross-link to Atlas central dashboard (V4)
+    st.sidebar.markdown("### Atlas central")
+    central_url = atlas_central_url()
+    st.sidebar.markdown(
+        f"<a href='{central_url}' target='_blank' rel='noopener noreferrer' "
+        "style='display:inline-block;padding:8px 12px;background:#1f2937;"
+        "border:1px solid #2a3242;border-radius:8px;text-decoration:none;"
+        "color:#e7ecf2;font-weight:600;width:100%;text-align:center;'>"
+        "→ Atlas Dashboard V4"
+        "</a>",
+        unsafe_allow_html=True,
+    )
+    st.sidebar.caption(central_url)
+
     return {"auto": auto, "interval": interval}
 
 
@@ -330,9 +345,13 @@ def _header(m: DashboardMetrics):
         )
     with col2:
         ts = pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        central = atlas_central_url()
         st.markdown(
             f'<div style="text-align:right;color:#8b93a7;font-size:12px;margin-top:14px">'
-            f'Last refresh<br/><b style="color:#e7ecf2">{ts}</b></div>',
+            f'Last refresh<br/><b style="color:#e7ecf2">{ts}</b><br/>'
+            f'<a href="{central}" target="_blank" rel="noopener noreferrer" '
+            f'style="color:#4ea3ff;text-decoration:none;font-weight:600">'
+            f'↗ Atlas V4</a></div>',
             unsafe_allow_html=True,
         )
     st.markdown("<hr/>", unsafe_allow_html=True)
