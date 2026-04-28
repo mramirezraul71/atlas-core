@@ -72,6 +72,8 @@ class Gating:
         p_market: float,
         quote_age_ms: int,
         latency_ms: int,
+        p_market_yes: Optional[float] = None,
+        p_market_no: Optional[float] = None,
     ) -> GateDecision:
         cfg = self.cfg
 
@@ -98,13 +100,25 @@ class Gating:
         if not self._cd.ready(ticker, cfg.cooldown_seconds):
             return GateDecision(accepted=False, reason="cooldown")
 
-        # 4) Edge
-        edge_gross = readout.p_ensemble - p_market
-        side = "YES" if edge_gross >= 0 else "NO"
+        # 4) Edge (lado ejecutable). Si no llegan precios por lado, fallback simétrico.
+        p_yes = float(p_market_yes if p_market_yes is not None else p_market)
+        p_no = float(p_market_no if p_market_no is not None else (1.0 - p_market))
+        p_yes = max(0.001, min(0.999, p_yes))
+        p_no = max(0.001, min(0.999, p_no))
+        edge_yes = readout.p_ensemble - p_yes
+        edge_no = (1.0 - readout.p_ensemble) - p_no
+        if edge_yes >= edge_no:
+            side = "YES"
+            edge_gross = edge_yes
+            px_oper = p_yes
+        else:
+            side = "NO"
+            edge_gross = edge_no
+            px_oper = p_no
         # estimación de costo total (fees + slippage) en probabilidad
         cost_prob = (cfg.fee_per_contract_cents +
                      cfg.slippage_buffer_cents) / 100.0
-        edge_net = abs(edge_gross) - cost_prob
+        edge_net = edge_gross - cost_prob
 
         if readout.confidence < cfg.confidence_min:
             return GateDecision(accepted=False,
@@ -116,9 +130,8 @@ class Gating:
                                 edge_gross=edge_gross, edge_net=edge_net)
 
         score = edge_net * readout.confidence * max(0.05, readout.liquidity_score)
-        # precio operativo aproximado
-        price_cents = int(round((p_market if side == "YES"
-                                  else 1.0 - p_market) * 100))
+        # precio operativo por lado ejecutable (ask).
+        price_cents = int(round(px_oper * 100))
         price_cents = max(1, min(99, price_cents))
 
         return GateDecision(

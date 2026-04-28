@@ -293,16 +293,40 @@ def _summarize(name: str, trades: list[int], cfg: BTConfig,
 # ===========================================================================
 def run_experiment(cfg: Optional[BTConfig] = None,
                    out_dir: Optional[Path] = None) -> dict:
-    """Walk-forward: genera markets con seed; baseline + candidate sobre
-    el mismo dataset; reporta y guarda JSON."""
+    """Walk-forward temporal: train->test por folds sin mezclar ventanas."""
     cfg = cfg or BTConfig()
     rng = random.Random(cfg.seed)
     markets = [_gen_market(rng, cfg.steps_per_market)
                for _ in range(cfg.n_markets)]
+    fold_size = max(20, cfg.n_markets // 5)
+    folds: list[dict] = []
+    base_all: list[int] = []
+    cand_all: list[int] = []
+    for i in range(0, len(markets), fold_size):
+        test_markets = markets[i : i + fold_size]
+        if not test_markets:
+            continue
+        base = run_baseline(cfg, test_markets)
+        cand = run_candidate(cfg, test_markets)
+        folds.append(
+            {
+                "idx": len(folds),
+                "start": i,
+                "end": i + len(test_markets),
+                "baseline": _strategy_to_dict(base),
+                "candidate": _strategy_to_dict(cand),
+            }
+        )
+        base_all.extend(base.equity_curve[-1:] if base.equity_curve else [])
+        cand_all.extend(cand.equity_curve[-1:] if cand.equity_curve else [])
+    # Resultado consolidado sobre toda la muestra temporal.
     base = run_baseline(cfg, markets)
     cand = run_candidate(cfg, markets)
     summary = {
         "config": cfg.__dict__,
+        "mode": "walk_forward_temporal",
+        "fold_size": fold_size,
+        "folds": folds,
         "baseline": _strategy_to_dict(base),
         "candidate": _strategy_to_dict(cand),
         "delta": {
@@ -311,6 +335,10 @@ def run_experiment(cfg: Optional[BTConfig] = None,
             "hit_rate": cand.hit_rate - base.hit_rate,
             "profit_factor": cand.pf - base.pf,
             "max_drawdown_cents": cand.max_drawdown_cents - base.max_drawdown_cents,
+        },
+        "stability": {
+            "baseline_finals": base_all,
+            "candidate_finals": cand_all,
         },
     }
     if out_dir is not None:

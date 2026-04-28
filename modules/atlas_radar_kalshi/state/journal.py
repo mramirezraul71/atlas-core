@@ -30,6 +30,8 @@ class Journal:
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self.max_bytes = 8 * 1024 * 1024
+        self.keep_rotated = 5
 
     def write(self, kind: str, payload: dict[str, Any]) -> None:
         path = self.log_dir / f"radar_{kind}.jsonl"
@@ -38,6 +40,7 @@ class Journal:
             **payload,
         }, default=str)
         with self._lock:
+            self._rotate_if_needed(path)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
 
@@ -53,3 +56,25 @@ class Journal:
                 except Exception:
                     continue
         return rows
+
+    def _rotate_if_needed(self, path: Path) -> None:
+        if not path.exists():
+            return
+        try:
+            if path.stat().st_size < self.max_bytes:
+                return
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+            rotated = path.with_suffix(f".jsonl.{ts}")
+            path.replace(rotated)
+            self._cleanup_rotated(path)
+        except Exception:
+            return
+
+    def _cleanup_rotated(self, path: Path) -> None:
+        pattern = f"{path.name}.*"
+        rotated = sorted(path.parent.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in rotated[self.keep_rotated :]:
+            try:
+                old.unlink(missing_ok=True)
+            except Exception:
+                continue

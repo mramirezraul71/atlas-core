@@ -22,11 +22,22 @@ Start-Sleep -Milliseconds 600
 $env:PYTHONPATH = $Root
 if (-not $env:ATLAS_ENABLE_RADAR_KALSHI) { $env:ATLAS_ENABLE_RADAR_KALSHI = "1" }
 
-$py = (Get-Command python -ErrorAction SilentlyContinue).Source
-if (-not $py) { throw "python no está en PATH" }
+$pyCmd = Get-Command python -ErrorAction SilentlyContinue
+$py = if ($pyCmd) { $pyCmd.Source } else { $null }
+$usingLauncher = $false
+if (-not $py) {
+    $launcher = Get-Command py -ErrorAction SilentlyContinue
+    if ($launcher) {
+        $py = $launcher.Source
+        $usingLauncher = $true
+    }
+}
+if (-not $py) { throw "No se encontró python ni py launcher en PATH" }
 
 # Desacoplar: logs propios, sin ventana (el proceso sigue aunque cierres el terminal)
-$argList = @(
+$argList = @()
+if ($usingLauncher) { $argList += @("-3.11") }
+$argList += @(
     "-m", "uvicorn", "atlas_adapter.atlas_http_api:app",
     "--host", "127.0.0.1", "--port", "8791", "--log-level", "info"
 )

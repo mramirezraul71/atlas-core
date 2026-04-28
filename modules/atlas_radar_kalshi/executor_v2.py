@@ -141,10 +141,11 @@ class KalshiExecutorV2:
 
     @staticmethod
     def make_client_order_id(ticker: str, side: str, price: int,
-                             contracts: int, ts_bucket_ms: int = 1000) -> str:
+                             contracts: int, ts_bucket_ms: int = 100) -> str:
         """Idempotency key estable: misma intención -> mismo id."""
-        bucket = int(time.time() * 1000) // ts_bucket_ms
-        raw = f"{ticker}|{side}|{price}|{contracts}|{bucket}"
+        bucket_ms = max(10, int(ts_bucket_ms))
+        bucket = int(time.time_ns() // 1_000_000) // bucket_ms
+        raw = f"{ticker}|{side}|{price}|{contracts}|{bucket}|{bucket_ms}"
         h = hashlib.sha1(raw.encode()).hexdigest()[:16]
         return f"radar-{h}"
 

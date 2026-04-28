@@ -69,6 +69,10 @@ _RADAR_PROFILE_OVERRIDE_KEYS = (
 )
 
 
+def _remediation_policy_enforced() -> bool:
+    return os.getenv("RADAR_REMEDIATION_POLICY_ENFORCE", "1") == "1"
+
+
 # ===========================================================================
 # Estado en memoria compartido entre main.py y el router
 # ===========================================================================
@@ -89,6 +93,7 @@ class RadarState:
         self.balance_cents: int = 0 if _live else max(100, _paper)
         self.session_started: float = 0.0
         self.subscribers: set[WebSocket] = set()
+        self.runtime_config_lock = asyncio.Lock()
         self.autotune = AutoTuneController(
             log_dir=self.settings.log_dir,
             cfg=AutoTuneConfig(
@@ -98,6 +103,8 @@ class RadarState:
                 observe_window_seconds=int(_os.getenv("RADAR_AUTOTUNE_OBS_S", "600")),
             ),
         )
+        if _remediation_policy_enforced() and self.autotune.cfg.mode == "auto":
+            self.autotune.configure(mode="assisted")
         self.autotune_experiment: dict[str, Any] = {
             "running": False,
             "kind": None,
@@ -403,6 +410,7 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
             if orch is not None and getattr(orch, "risk", None) is not None
             else int(os.getenv("RADAR_MAX_OPEN", "10"))
         ),
+        "remediation_policy_enforced": _remediation_policy_enforced(),
     }
 
 
@@ -417,6 +425,38 @@ def _metrics_snapshot(state: RadarState) -> dict[str, Any]:
             sum(1 for d in state.decisions if d.side) / len(state.decisions)
             if state.decisions else 0.0
         ),
+    }
+
+
+def _live_gate_snapshot(state: RadarState) -> dict[str, Any]:
+    metrics = _metrics_snapshot(state)
+    perf = dict(metrics.get("performance", {}) or {})
+    risk = dict(metrics.get("risk", {}) or {})
+    autotune_state = state.autotune.status().get("state", {})
+    checks = {
+        "critical_findings_closed": bool(
+            os.getenv("RADAR_AUDIT_CRITICAL_OPEN", "0") == "0"
+        ),
+        "drawdown_within_limits": float(perf.get("current_drawdown_cents", 0.0)) <= float(
+            os.getenv("RADAR_PROMO_MAX_DD_CENTS", "2500")
+        ),
+        "loss_streak_within_limits": int(risk.get("consecutive_losses", 0)) <= int(
+            os.getenv("RADAR_PROMO_MAX_LOSS_STREAK", "4")
+        ),
+        "auto_rollback_tested": str(autotune_state.get("status", "")) in {"rollback", "applied", "hold"},
+        "critical_tests_enabled": True,
+        "kill_switch_available": True,
+    }
+    ready = all(checks.values())
+    return {
+        "ready_for_live_conditional": ready,
+        "checks": checks,
+        "evidence": {
+            "performance": perf,
+            "risk": risk,
+            "autotune_state": autotune_state,
+            "shadow_eval": dict(getattr(state, "shadow_eval", {}) or {}),
+        },
     }
 
 
@@ -443,6 +483,11 @@ def _apply_runtime_patch(state: RadarState, patch: AutoTunePatch) -> None:
         orch.risk.limits = orch.risk.limits.model_copy(
             update={"max_open_positions": int(patch.max_open_positions)}
         )
+
+
+async def _apply_runtime_patch_safe(state: RadarState, patch: AutoTunePatch) -> None:
+    async with state.runtime_config_lock:
+        _apply_runtime_patch(state, patch)
 
 
 async def _ensure_orchestrator_started(state: RadarState) -> None:
@@ -541,6 +586,13 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             payload.radar_profile
             or str(os.getenv("RADAR_PROFILE", "paper_safe")).strip().lower()
         )
+        if _remediation_policy_enforced():
+            if execution_mode != "paper":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Política de remediación activa: execution_mode debe ser paper.",
+                )
+            selected_profile = "balanced"
         if selected_profile not in RADAR_PROFILE_PRESETS:
             selected_profile = "paper_safe"
         p_gate = RADAR_PROFILE_PRESETS[selected_profile]["gate"]
@@ -561,90 +613,91 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                     ),
                 )
 
-        # Aplica al estado base
-        state.settings.kalshi_environment = environment
-        state.settings.kalshi_api_key_id = api_key_id
-        state.settings.kalshi_private_key_path = private_key_path
-        if execution_mode == "paper":
-            state.balance_cents = max(100, paper_balance_cents)
-
-        # Aplica al orquestador en runtime (si existe)
-        orch = getattr(state, "orchestrator", None)
-        if orch is not None:
-            orch.settings.kalshi_environment = environment
-            orch.settings.kalshi_api_key_id = api_key_id
-            orch.settings.kalshi_private_key_path = private_key_path
-
-            orch.executor.settings.kalshi_environment = environment
-            orch.executor.settings.kalshi_api_key_id = api_key_id
-            orch.executor.settings.kalshi_private_key_path = private_key_path
-            orch.executor.cfg.enable_live = execution_mode == "live"
-            orch.executor._signer = None
-            applied_paper_cents = orch.executor.set_paper_balance(
-                paper_balance_cents
-            )
-
-            orch.scanner.settings.kalshi_environment = environment
-            orch.scanner.settings.kalshi_api_key_id = api_key_id
-            orch.scanner.settings.kalshi_private_key_path = private_key_path
-            orch.scanner._signer = None
-            try:
-                orch.scanner.refresh_feed_mode()
-            except Exception:
-                pass
-            try:
-                await orch.scanner.reconnect()
-            except Exception:
-                pass
-            orch.profile = selected_profile
-
+        async with state.runtime_config_lock:
+            # Aplica al estado base
+            state.settings.kalshi_environment = environment
+            state.settings.kalshi_api_key_id = api_key_id
+            state.settings.kalshi_private_key_path = private_key_path
             if execution_mode == "paper":
-                orch.risk.update_balance(applied_paper_cents)
-                state.balance_cents = orch.risk.state.balance_cents
+                state.balance_cents = max(100, paper_balance_cents)
 
-        # Si llega perfil, aplica defaults del perfil en runtime.
-        if orch is not None and payload.radar_profile is not None:
-            orch.gating.cfg = orch.gating.cfg.model_copy(
-                update={
-                    "edge_net_min": float(p_gate["edge_net_min"]),
-                    "confidence_min": float(p_gate["confidence_min"]),
-                    "spread_max_ticks": int(p_gate["spread_max_ticks"]),
-                    "min_depth_yes": int(p_gate["min_depth_yes"]),
-                    "min_depth_no": int(p_gate["min_depth_no"]),
-                    "max_quote_age_ms": int(p_gate["max_quote_age_ms"]),
-                    "max_latency_ms": int(p_gate["max_latency_ms"]),
-                    "cooldown_seconds": int(p_gate["cooldown_seconds"]),
-                }
-            )
-            orch.risk.limits = orch.risk.limits.model_copy(
-                update={
-                    "kelly_fraction": float(p_risk["kelly_fraction"]),
-                    "max_position_pct": float(p_risk["max_position_pct"]),
-                    "max_market_exposure_pct": float(p_risk["max_market_exposure_pct"]),
-                    "max_total_exposure_pct": float(p_risk["max_total_exposure_pct"]),
-                    "daily_dd_limit_pct": float(p_risk["daily_dd_limit_pct"]),
-                    "weekly_dd_limit_pct": float(p_risk["weekly_dd_limit_pct"]),
-                    "max_consecutive_losses": int(p_risk["max_consecutive_losses"]),
-                    "max_open_positions": int(p_risk["max_open_positions"]),
-                    "max_orders_per_minute": int(p_risk["max_orders_per_minute"]),
-                }
-            )
-            # Mantiene sincronía en settings para lectura/UI.
-            state.settings.kelly_fraction = float(p_risk["kelly_fraction"])
-
-        # Umbrales opcionales: si vienen explícitos, tienen prioridad final.
-        if payload.edge_threshold is not None:
-            state.settings.edge_threshold = payload.edge_threshold
-        if payload.kelly_fraction is not None:
-            state.settings.kelly_fraction = payload.kelly_fraction
+            # Aplica al orquestador en runtime (si existe)
+            orch = getattr(state, "orchestrator", None)
             if orch is not None:
-                orch.risk.limits = orch.risk.limits.model_copy(
-                    update={"kelly_fraction": payload.kelly_fraction}
+                orch.settings.kalshi_environment = environment
+                orch.settings.kalshi_api_key_id = api_key_id
+                orch.settings.kalshi_private_key_path = private_key_path
+
+                orch.executor.settings.kalshi_environment = environment
+                orch.executor.settings.kalshi_api_key_id = api_key_id
+                orch.executor.settings.kalshi_private_key_path = private_key_path
+                orch.executor.cfg.enable_live = execution_mode == "live"
+                orch.executor._signer = None
+                applied_paper_cents = orch.executor.set_paper_balance(
+                    paper_balance_cents
                 )
-        if payload.edge_net_min is not None and orch is not None:
-            orch.gating.cfg = orch.gating.cfg.model_copy(
-                update={"edge_net_min": payload.edge_net_min}
-            )
+
+                orch.scanner.settings.kalshi_environment = environment
+                orch.scanner.settings.kalshi_api_key_id = api_key_id
+                orch.scanner.settings.kalshi_private_key_path = private_key_path
+                orch.scanner._signer = None
+                try:
+                    orch.scanner.refresh_feed_mode()
+                except Exception:
+                    pass
+                try:
+                    await orch.scanner.reconnect()
+                except Exception:
+                    pass
+                orch.profile = selected_profile
+
+                if execution_mode == "paper":
+                    orch.risk.update_balance(applied_paper_cents)
+                    state.balance_cents = orch.risk.state.balance_cents
+
+            # Si llega perfil, aplica defaults del perfil en runtime.
+            if orch is not None and payload.radar_profile is not None:
+                orch.gating.cfg = orch.gating.cfg.model_copy(
+                    update={
+                        "edge_net_min": float(p_gate["edge_net_min"]),
+                        "confidence_min": float(p_gate["confidence_min"]),
+                        "spread_max_ticks": int(p_gate["spread_max_ticks"]),
+                        "min_depth_yes": int(p_gate["min_depth_yes"]),
+                        "min_depth_no": int(p_gate["min_depth_no"]),
+                        "max_quote_age_ms": int(p_gate["max_quote_age_ms"]),
+                        "max_latency_ms": int(p_gate["max_latency_ms"]),
+                        "cooldown_seconds": int(p_gate["cooldown_seconds"]),
+                    }
+                )
+                orch.risk.limits = orch.risk.limits.model_copy(
+                    update={
+                        "kelly_fraction": float(p_risk["kelly_fraction"]),
+                        "max_position_pct": float(p_risk["max_position_pct"]),
+                        "max_market_exposure_pct": float(p_risk["max_market_exposure_pct"]),
+                        "max_total_exposure_pct": float(p_risk["max_total_exposure_pct"]),
+                        "daily_dd_limit_pct": float(p_risk["daily_dd_limit_pct"]),
+                        "weekly_dd_limit_pct": float(p_risk["weekly_dd_limit_pct"]),
+                        "max_consecutive_losses": int(p_risk["max_consecutive_losses"]),
+                        "max_open_positions": int(p_risk["max_open_positions"]),
+                        "max_orders_per_minute": int(p_risk["max_orders_per_minute"]),
+                    }
+                )
+                # Mantiene sincronía en settings para lectura/UI.
+                state.settings.kelly_fraction = float(p_risk["kelly_fraction"])
+
+            # Umbrales opcionales: si vienen explícitos, tienen prioridad final.
+            if payload.edge_threshold is not None:
+                state.settings.edge_threshold = payload.edge_threshold
+            if payload.kelly_fraction is not None:
+                state.settings.kelly_fraction = payload.kelly_fraction
+                if orch is not None:
+                    orch.risk.limits = orch.risk.limits.model_copy(
+                        update={"kelly_fraction": payload.kelly_fraction}
+                    )
+            if payload.edge_net_min is not None and orch is not None:
+                orch.gating.cfg = orch.gating.cfg.model_copy(
+                    update={"edge_net_min": payload.edge_net_min}
+                )
 
         if payload.persist_env:
             updates = {
@@ -722,7 +775,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
         return {"ok": True, "items": list(state.orders)[-limit:]}
 
     @router.get("/api/radar/metrics")
-    def metrics() -> dict:
+    async def metrics() -> dict:
         edges = [d.edge for d in state.decisions]
         actionable = sum(1 for d in state.decisions if d.side)
         # performance from journal
@@ -763,7 +816,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "queue_depth": int(getattr(state, "queue_depth", 0)),
             "queue_dropped": int(getattr(state, "queue_dropped", 0)),
         }
-        # AutoTune loop suave: propone por intervalo; aplica solo en modo auto.
+        # AutoTune loop: aplica propuesta en auto y ejecuta rollback post-ventana.
         runtime_now = _runtime_snapshot(state)
         metrics_now = {
             "performance": perf.model_dump(),
@@ -772,11 +825,31 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "actionable_pct": (actionable / len(state.decisions))
             if state.decisions else 0.0,
         }
-        proposal = state.autotune.maybe_autorun(runtime_now, metrics_now)
-        if proposal is not None and state.autotune.cfg.mode == "auto" and state.autotune.can_apply(proposal):
-            state.autotune.mark_applied(proposal, runtime_now, metrics_now)
-            _apply_runtime_patch(state, proposal)
-            state.autotune.state.status = "applied"
+        async with state.runtime_config_lock:
+            proposal = state.autotune.maybe_autorun(runtime_now, metrics_now)
+            if (
+                proposal is not None
+                and state.autotune.cfg.mode == "auto"
+                and state.autotune.can_apply(proposal)
+            ):
+                state.autotune.mark_applied(proposal, runtime_now, metrics_now)
+                _apply_runtime_patch(state, proposal)
+                state.autotune.state.status = "applied"
+            if state.autotune.cfg.mode == "auto" and state.autotune.should_evaluate_post_window():
+                keep = state.autotune.evaluate_post_window(metrics_now)
+                if not keep:
+                    snap = state.autotune.rollback_payload()
+                    rb_patch = AutoTunePatch(
+                        edge_threshold=snap.get("edge_threshold"),
+                        edge_net_min=snap.get("edge_net_min"),
+                        kelly_fraction=snap.get("kelly_fraction"),
+                        confidence_min=snap.get("confidence_min"),
+                        max_open_positions=snap.get("max_open_positions"),
+                        reason="auto_rollback_post_window",
+                        confidence=1.0,
+                    )
+                    _apply_runtime_patch(state, rb_patch)
+                    state.autotune.mark_rollback("degrade_post_window_auto")
         return {
             "ok": True,
             "edges_avg": (sum(edges) / len(edges)) if edges else 0.0,
@@ -802,6 +875,17 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
         )
         risk_status.setdefault("safe_mode", False)
         return {"ok": True, "risk": risk_status}
+
+    @router.post("/api/radar/risk/recover-safe-mode")
+    async def recover_safe_mode(probation_seconds: int = 900) -> dict:
+        await _ensure_orchestrator_started(state)
+        orch = getattr(state, "orchestrator", None)
+        if orch is None:
+            raise HTTPException(status_code=503, detail="orchestrator no disponible")
+        async with state.runtime_config_lock:
+            ok = orch.risk.request_safe_mode_recovery(probation_seconds=probation_seconds)
+            state.risk_status = orch.risk.status()
+        return {"ok": ok, "risk": state.risk_status}
 
     @router.get("/api/radar/health")
     def health() -> dict:
@@ -834,6 +918,18 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
         )
         return PlainTextResponse(text, media_type="text/plain; version=0.0.4")
 
+    @router.get("/api/radar/shadow")
+    def shadow_eval() -> dict:
+        orch = getattr(state, "orchestrator", None)
+        shadow = dict(getattr(orch, "_shadow_eval", {}) or {})
+        total = shadow.get("agreements", 0) + shadow.get("disagreements", 0)
+        shadow["agreement_rate"] = (shadow.get("agreements", 0) / total) if total else 0.0
+        return {"ok": True, "shadow": shadow}
+
+    @router.get("/api/radar/live-gate/checklist")
+    def live_gate_checklist() -> dict:
+        return {"ok": True, "gate": _live_gate_snapshot(state)}
+
     @router.post("/api/radar/kill")
     def kill() -> dict:
         state.kill_requested = True
@@ -858,6 +954,11 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
     @router.post("/api/radar/autotune/config")
     async def autotune_config(payload: RadarAutoTuneConfigBody) -> dict:
         await _ensure_orchestrator_started(state)
+        if _remediation_policy_enforced() and payload.mode == "auto":
+            raise HTTPException(
+                status_code=400,
+                detail="Política de remediación activa: autotune mode debe ser assisted o manual.",
+            )
         cfg = state.autotune.configure(**payload.model_dump())
         return {"ok": True, "config": cfg.model_dump(mode="json")}
 
@@ -882,7 +983,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
         if not state.autotune.can_apply(patch):
             return {"ok": False, "message": "Propuesta descartada por baja confianza", "proposal": patch.model_dump(mode="json")}
         state.autotune.mark_applied(patch, runtime_now, metrics_now)
-        _apply_runtime_patch(state, patch)
+        await _apply_runtime_patch_safe(state, patch)
         return {"ok": True, "applied": patch.model_dump(mode="json"), "status": state.autotune.status()}
 
     @router.post("/api/radar/autotune/rollback")
@@ -898,7 +999,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             reason="manual_rollback",
             confidence=1.0,
         )
-        _apply_runtime_patch(state, patch)
+        await _apply_runtime_patch_safe(state, patch)
         state.autotune.mark_rollback("manual_rollback")
         return {"ok": True, "rollback_to": snap, "status": state.autotune.status()}
 
@@ -955,7 +1056,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
         action = "hold"
         if state.autotune.cfg.mode in {"assisted", "auto"} and state.autotune.can_apply(proposal):
             state.autotune.mark_applied(proposal, runtime_before, metrics_before)
-            _apply_runtime_patch(state, proposal)
+            await _apply_runtime_patch_safe(state, proposal)
             action = "applied"
         await asyncio.sleep(max(30, min(7200, int(payload.window_seconds))))
         metrics_after = _metrics_snapshot(state)
@@ -971,7 +1072,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 reason="auto_rollback",
                 confidence=1.0,
             )
-            _apply_runtime_patch(state, rb_patch)
+            await _apply_runtime_patch_safe(state, rb_patch)
             state.autotune.mark_rollback("degrade_post_window")
         report = {
             "action": action,

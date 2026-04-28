@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from .brain import RadarBrain
-from .calibration import Calibrator, fit_from_disk
+from .calibration import Calibrator, fit_from_disk, refit_from_disk_temporal
 from .config import RadarSettings, get_settings
 from .dashboard import RadarState
 from .exit_manager import ExitConfig, ExitManager, Position
@@ -153,6 +153,18 @@ class Orchestrator:
         )
         self._last_degraded_log_ts: float = 0.0
         self._last_recover_ts: float = 0.0
+        self._last_calibrator_refit_ts: float = 0.0
+        self._calibration_path = self.settings.log_dir / "radar_calibration.jsonl"
+        self._calibrator_refit_interval_s = max(
+            60.0, float(os.getenv("RADAR_CAL_REFIT_INTERVAL_S", "900"))
+        )
+        self._shadow_eval = {
+            "baseline_accepts": 0,
+            "candidate_accepts": 0,
+            "agreements": 0,
+            "disagreements": 0,
+            "last_reason": "",
+        }
 
     # ------------------------------------------------------------------
     async def start(self) -> None:
@@ -238,6 +250,7 @@ class Orchestrator:
                     await self._attempt_feed_recovery(age_s=age)
             # publicar al state para que /api/radar/{metrics,risk,health} sirvan datos
             try:
+                await self._maybe_refit_calibrator()
                 self.state.exec_metrics = self.executor.metrics.to_dict()  # type: ignore[attr-defined]
                 self.state.risk_status = self.risk.status()  # type: ignore[attr-defined]
                 self.state.health = self.health  # type: ignore[attr-defined]
@@ -254,6 +267,26 @@ class Orchestrator:
                 self.risk.reset_kill()
             await self.state.broadcast({"type": "ping",
                                         "degraded": self.health.degraded})
+
+    async def _maybe_refit_calibrator(self) -> None:
+        now = time.time()
+        if (now - self._last_calibrator_refit_ts) < self._calibrator_refit_interval_s:
+            return
+        self._last_calibrator_refit_ts = now
+        try:
+            cal, stats = await asyncio.to_thread(
+                refit_from_disk_temporal,
+                self._calibration_path,
+                os.getenv("RADAR_CAL_METHOD", "platt"),
+                50,
+                30,
+                0.8,
+            )
+            if stats.get("updated"):
+                self.calibrator = cal
+                self.state.calibration_runtime = stats
+        except Exception as exc:
+            self.log.debug("calibrator runtime refit failed: %s", exc)
 
     async def _attempt_feed_recovery(self, age_s: float) -> None:
         """Autocuración del feed sin reiniciar todo PUSH."""
@@ -340,8 +373,11 @@ class Orchestrator:
             return
 
         history = self.scanner.history(ev.market_ticker)
+        px = self._executable_probabilities(book)
         self.state.update_market(ev.market_ticker, {
-            "p_market": book.yes_mid or 0.5,
+            "p_market": px["mid_yes"],
+            "p_market_yes": px["yes_ask"],
+            "p_market_no": px["no_ask"],
             "last_book_ts": ev.ts.isoformat(),
         })
 
@@ -369,10 +405,13 @@ class Orchestrator:
 
         # 4) gating sobre nueva entrada
         gate = self.gating.evaluate(
-            ev.market_ticker, readout, p_market=book.yes_mid or 0.5,
+            ev.market_ticker, readout, p_market=px["mid_yes"],
             quote_age_ms=self._quote_age_ms(book, ev),
             latency_ms=0,
+            p_market_yes=px["yes_ask"],
+            p_market_no=px["no_ask"],
         )
+        self._update_shadow_eval(readout, px, gate)
         if self._journal_all_decisions or gate.accepted:
             self.journal.write("decisions", {
                 "ticker": ev.market_ticker,
@@ -383,7 +422,9 @@ class Orchestrator:
 
         # propaga al dashboard
         self.state.update_market(ev.market_ticker, {
-            "p_market": book.yes_mid or 0.5,
+            "p_market": px["mid_yes"],
+            "p_market_yes": px["yes_ask"],
+            "p_market_no": px["no_ask"],
             "p_model": readout.p_ensemble,
             "edge": gate.edge_gross,
             "edge_net": gate.edge_net,
@@ -401,7 +442,7 @@ class Orchestrator:
             "edge": gate.edge_gross,
             "edge_net": gate.edge_net,
             "side": gate.side, "p_model": readout.p_ensemble,
-            "p_market": book.yes_mid or 0.5,
+            "p_market": px["mid_yes"],
             "score": gate.score, "gate": gate.reason,
         })
         if not gate.accepted:
@@ -462,8 +503,9 @@ class Orchestrator:
     # ------------------------------------------------------------------
     async def _manage_exits(self, ticker: str, book: OrderBookSnapshot,
                             readout: SignalReadout) -> None:
-        cur_price = int(round((book.yes_mid or 0.5) * 100))
-        cur_edge = readout.p_ensemble - (book.yes_mid or 0.5)
+        px = self._executable_probabilities(book)
+        cur_price = int(round(px["mid_yes"] * 100))
+        cur_edge = readout.p_ensemble - px["mid_yes"]
         forced = (self.risk.state.kill_switch or
                   os.getenv("ATLAS_RADAR_KILL", "0") == "1")
         sig = self.exit_mgr.evaluate(
@@ -553,6 +595,50 @@ class Orchestrator:
             no_asks=[(no_ask, max(1, qty_bid))],
             ts=datetime.now(timezone.utc),
         )
+
+    @staticmethod
+    def _best_price(side: list[tuple[int, int]], mode: str) -> Optional[int]:
+        prices = [int(p) for p, q in side if int(q) > 0]
+        if not prices:
+            return None
+        return max(prices) if mode == "max" else min(prices)
+
+    def _executable_probabilities(self, book: OrderBookSnapshot) -> dict[str, float]:
+        """Probabilidades ejecutables por lado (ask YES/NO) + mid."""
+        yes_ask_c = self._best_price(book.yes_asks, "min")
+        yes_bid_c = self._best_price(book.yes_bids, "max")
+        no_ask_c = self._best_price(book.no_asks, "min")
+        no_bid_c = self._best_price(book.no_bids, "max")
+        if yes_ask_c is None and no_bid_c is not None:
+            yes_ask_c = max(1, min(99, 100 - no_bid_c))
+        if no_ask_c is None and yes_bid_c is not None:
+            no_ask_c = max(1, min(99, 100 - yes_bid_c))
+        mid_yes = float(book.yes_mid if book.yes_mid is not None else 0.5)
+        yes_ask = float((yes_ask_c if yes_ask_c is not None else int(round(mid_yes * 100))) / 100.0)
+        no_ask = float((no_ask_c if no_ask_c is not None else int(round((1.0 - mid_yes) * 100))) / 100.0)
+        return {
+            "yes_ask": max(0.001, min(0.999, yes_ask)),
+            "no_ask": max(0.001, min(0.999, no_ask)),
+            "mid_yes": max(0.001, min(0.999, mid_yes)),
+        }
+
+    def _update_shadow_eval(
+        self, readout: SignalReadout, px: dict[str, float], gate
+    ) -> None:
+        """Compara baseline simplificado vs candidate sin impactar ejecución."""
+        edge_thr = float(self.settings.edge_threshold)
+        edge_yes = readout.p_ensemble - px["yes_ask"]
+        edge_no = (1.0 - readout.p_ensemble) - px["no_ask"]
+        baseline_ok = max(edge_yes, edge_no) >= edge_thr
+        candidate_ok = bool(gate.accepted)
+        self._shadow_eval["baseline_accepts"] += 1 if baseline_ok else 0
+        self._shadow_eval["candidate_accepts"] += 1 if candidate_ok else 0
+        if baseline_ok == candidate_ok:
+            self._shadow_eval["agreements"] += 1
+        else:
+            self._shadow_eval["disagreements"] += 1
+            self._shadow_eval["last_reason"] = str(gate.reason)
+        self.state.shadow_eval = dict(self._shadow_eval)
 
     # ------------------------------------------------------------------
     def _sizing_to_position(self, sizing):

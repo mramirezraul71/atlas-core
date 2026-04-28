@@ -64,6 +64,7 @@ class Calibrator:
             a, b = 1.0, 0.0
             for _ in range(200):
                 z = a * logit + b
+                z = np.clip(z, -40, 40)
                 p = 1.0 / (1.0 + np.exp(-z))
                 w = p * (1 - p) + 1e-9
                 grad_a = ((p - t) * logit).sum()
@@ -93,7 +94,7 @@ class Calibrator:
             return float(self._iso.predict([p])[0])
         # platt
         logit = math.log(p / (1 - p))
-        z = self.a * logit + self.b
+        z = max(-40.0, min(40.0, self.a * logit + self.b))
         return 1.0 / (1.0 + math.exp(-z))
 
     # ------------------------------------------------------------------
@@ -137,3 +138,42 @@ def fit_from_disk(path: Path, method: str = "platt",
     if p_raw:
         cal.fit(p_raw, ys)
     return cal
+
+
+def refit_from_disk_temporal(
+    path: Path,
+    method: str = "platt",
+    min_samples: int = 50,
+    min_holdout: int = 30,
+    train_ratio: float = 0.8,
+) -> tuple[Calibrator, dict]:
+    """
+    Reentrena con split temporal mínimo para evitar leakage.
+    Devuelve calibrador + métricas de holdout.
+    """
+    p_raw, ys = load_history(path)
+    cal = Calibrator(method=method, min_samples=min_samples)
+    n = len(p_raw)
+    if n < max(min_samples, min_holdout + 5):
+        return cal, {"updated": False, "n_samples": n, "reason": "insufficient_samples"}
+
+    ratio = max(0.5, min(0.95, float(train_ratio)))
+    split = int(n * ratio)
+    split = max(min_samples, min(split, n - min_holdout))
+    x_train = p_raw[:split]
+    y_train = ys[:split]
+    x_test = p_raw[split:]
+    y_test = ys[split:]
+    cal.fit(x_train, y_train)
+    if not x_test:
+        return cal, {"updated": cal._fitted, "n_samples": n, "train_size": len(x_train), "test_size": 0}
+    preds = [cal.predict(x) for x in x_test]
+    brier = float(np.mean([(p - y) ** 2 for p, y in zip(preds, y_test)]))
+    return cal, {
+        "updated": cal._fitted,
+        "n_samples": n,
+        "train_size": len(x_train),
+        "test_size": len(x_test),
+        "brier_holdout": brier,
+        "method": cal.method,
+    }

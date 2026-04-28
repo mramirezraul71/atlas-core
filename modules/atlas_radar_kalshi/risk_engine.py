@@ -70,6 +70,9 @@ class RiskState:
     safe_mode: bool = False
     kill_switch: bool = False
     breakers: list[str] = field(default_factory=list)
+    safe_mode_reason: str = ""
+    manual_recover_requested: bool = False
+    probation_until_ts: float = 0.0
     day_start: float = field(default_factory=time.time)
     week_start: float = field(default_factory=time.time)
 
@@ -127,6 +130,9 @@ class RiskEngine:
             "safe_mode": s.safe_mode,
             "kill_switch": s.kill_switch,
             "breakers": list(s.breakers)[-10:],
+            "safe_mode_reason": s.safe_mode_reason,
+            "manual_recover_requested": s.manual_recover_requested,
+            "probation_until_ts": s.probation_until_ts,
             "balance_cents": s.balance_cents,
             "exposure_cents": s.total_exposure_cents,
             "open_positions": dict(s.open_positions),
@@ -153,6 +159,7 @@ class RiskEngine:
         breaker = self._check_breakers()
         if breaker:
             self.state.safe_mode = True
+            self.state.safe_mode_reason = breaker
             if breaker not in self.state.breakers[-3:]:
                 self.state.breakers.append(breaker)
             return SizingDecision(
@@ -210,6 +217,7 @@ class RiskEngine:
         )
         self.state.realized_pnl_day += pnl_cents
         self.state.realized_pnl_week += pnl_cents
+        self.state.balance_cents += pnl_cents
         if pnl_cents < 0:
             self.state.consecutive_losses += 1
         else:
@@ -218,11 +226,38 @@ class RiskEngine:
         eq = self.state.balance_cents
         self.state.equity_high_day = max(self.state.equity_high_day, eq)
         self.state.equity_high_week = max(self.state.equity_high_week, eq)
+        breaker = self._check_breakers()
+        if breaker:
+            self.state.safe_mode = True
+            self.state.safe_mode_reason = breaker
+            if breaker not in self.state.breakers[-3:]:
+                self.state.breakers.append(breaker)
+        else:
+            self._maybe_clear_safe_mode()
 
     def update_balance(self, balance_cents: int) -> None:
         self.state.balance_cents = balance_cents
         self.state.equity_high_day = max(self.state.equity_high_day, balance_cents)
         self.state.equity_high_week = max(self.state.equity_high_week, balance_cents)
+        self._maybe_clear_safe_mode()
+
+    def request_safe_mode_recovery(self, probation_seconds: int = 900) -> bool:
+        """
+        Recuperación supervisada: limpia safe_mode si breakers están en verde
+        y aplica una ventana de probation.
+        """
+        self.state.manual_recover_requested = True
+        breaker = self._check_breakers()
+        if breaker:
+            self.state.safe_mode = True
+            self.state.safe_mode_reason = breaker
+            return False
+        self.state.safe_mode = False
+        self.state.safe_mode_reason = ""
+        self.state.breakers.clear()
+        self.state.manual_recover_requested = False
+        self.state.probation_until_ts = time.time() + max(60, int(probation_seconds))
+        return True
 
     # ------------------------------------------------------------------
     def roll_day(self) -> None:
@@ -230,10 +265,24 @@ class RiskEngine:
         self.state.equity_high_day = self.state.balance_cents
         self.state.day_start = time.time()
         self.state.consecutive_losses = 0
-        self.state.safe_mode = False
-        self.state.breakers.clear()
+        self._maybe_clear_safe_mode(force=True)
 
     def roll_week(self) -> None:
         self.state.realized_pnl_week = 0
         self.state.equity_high_week = self.state.balance_cents
         self.state.week_start = time.time()
+
+    def _maybe_clear_safe_mode(self, force: bool = False) -> None:
+        if force:
+            self.state.safe_mode = False
+            self.state.safe_mode_reason = ""
+            self.state.breakers.clear()
+            self.state.manual_recover_requested = False
+            return
+        if not self.state.safe_mode:
+            return
+        if self._check_breakers() is None:
+            self.state.safe_mode = False
+            self.state.safe_mode_reason = ""
+            self.state.breakers.clear()
+            self.state.manual_recover_requested = False

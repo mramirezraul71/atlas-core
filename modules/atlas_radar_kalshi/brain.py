@@ -59,6 +59,8 @@ class BrainDecision(BaseModel):
     market_ticker: str
     p_model: float = Field(..., ge=0.0, le=1.0)
     p_market: float = Field(..., ge=0.0, le=1.0)
+    p_market_yes: float = Field(0.5, ge=0.0, le=1.0)
+    p_market_no: float = Field(0.5, ge=0.0, le=1.0)
     edge: float
     side: Optional[str] = Field(
         default=None,
@@ -127,14 +129,21 @@ class RadarBrain:
         # 4) Monte Carlo (offload CPU para mantener responsivo /health,/ui)
         winrate = await asyncio.to_thread(self._monte_carlo, p_mix, history)
 
-        # 5) Edge vs mercado
-        p_market = book.yes_mid if book.yes_mid is not None else 0.5
-        edge = winrate - p_market
+        # 5) Edge vs mercado por lado ejecutable (ask YES/NO).
+        px = self._executable_probabilities(book)
+        edge_yes = winrate - px["yes_ask"]
+        edge_no = (1.0 - winrate) - px["no_ask"]
+        if edge_yes >= edge_no:
+            edge = edge_yes
+            p_market = px["yes_ask"]
+            side_candidate = "YES"
+        else:
+            edge = edge_no
+            p_market = px["no_ask"]
+            side_candidate = "NO"
         side: Optional[str]
         if edge >= self.settings.edge_threshold:
-            side = "YES"
-        elif -edge >= self.settings.edge_threshold:
-            side = "NO"
+            side = side_candidate
         else:
             side = None
 
@@ -142,6 +151,8 @@ class RadarBrain:
             market_ticker=ticker,
             p_model=winrate,
             p_market=p_market,
+            p_market_yes=px["yes_ask"],
+            p_market_no=px["no_ask"],
             edge=edge,
             side=side,
             confidence=llm.confidence,
@@ -158,6 +169,31 @@ class RadarBrain:
             decision.side,
         )
         return decision
+
+    @staticmethod
+    def _best_price(side: list[tuple[int, int]], mode: str) -> Optional[int]:
+        prices = [int(p) for p, q in side if int(q) > 0]
+        if not prices:
+            return None
+        return max(prices) if mode == "max" else min(prices)
+
+    def _executable_probabilities(self, book: OrderBookSnapshot) -> dict[str, float]:
+        yes_ask_c = self._best_price(book.yes_asks, "min")
+        yes_bid_c = self._best_price(book.yes_bids, "max")
+        no_ask_c = self._best_price(book.no_asks, "min")
+        no_bid_c = self._best_price(book.no_bids, "max")
+        if yes_ask_c is None and no_bid_c is not None:
+            yes_ask_c = max(1, min(99, 100 - no_bid_c))
+        if no_ask_c is None and yes_bid_c is not None:
+            no_ask_c = max(1, min(99, 100 - yes_bid_c))
+        mid_yes = float(book.yes_mid if book.yes_mid is not None else 0.5)
+        yes_ask = float((yes_ask_c if yes_ask_c is not None else int(round(mid_yes * 100))) / 100.0)
+        no_ask = float((no_ask_c if no_ask_c is not None else int(round((1.0 - mid_yes) * 100))) / 100.0)
+        return {
+            "yes_ask": max(0.001, min(0.999, yes_ask)),
+            "no_ask": max(0.001, min(0.999, no_ask)),
+            "mid_yes": max(0.001, min(0.999, mid_yes)),
+        }
 
     # ------------------------------------------------------------------
     # 1) Ollama

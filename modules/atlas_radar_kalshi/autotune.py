@@ -62,6 +62,7 @@ class AutoTuneState:
     rollback_snapshot: dict[str, Any] = field(default_factory=dict)
     metrics_before_apply: dict[str, Any] = field(default_factory=dict)
     metrics_after_window: dict[str, Any] = field(default_factory=dict)
+    post_window_evaluated: bool = False
     last_score: float = 0.0
     scorer: str = "heuristic"
 
@@ -277,6 +278,7 @@ class AutoTuneController:
         self.state.metrics_before_apply = self._extract_features(metrics_before)
         self.state.last_applied_patch = patch
         self.state.last_apply_ts = time.time()
+        self.state.post_window_evaluated = False
         self.state.status = "applied"
         self.journal.write(
             "autotune",
@@ -293,6 +295,7 @@ class AutoTuneController:
         before = self.state.metrics_before_apply or {}
         after = self._extract_features(metrics_now)
         self.state.metrics_after_window = after
+        self.state.post_window_evaluated = True
         # Degradación simple: más DD y expectativa peor.
         dd_before = float(before.get("drawdown_usd", 0.0))
         dd_after = float(after.get("drawdown_usd", 0.0))
@@ -309,6 +312,15 @@ class AutoTuneController:
             },
         )
         return keep
+
+    def should_evaluate_post_window(self) -> bool:
+        if self.state.last_applied_patch is None:
+            return False
+        if self.state.post_window_evaluated:
+            return False
+        if self.state.last_apply_ts <= 0.0:
+            return False
+        return (time.time() - self.state.last_apply_ts) >= self.cfg.observe_window_seconds
 
     def rollback_payload(self) -> dict[str, Any]:
         snap = dict(self.state.rollback_snapshot or {})
