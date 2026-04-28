@@ -98,10 +98,10 @@ class RadarState:
         self.autotune = AutoTuneController(
             log_dir=self.settings.log_dir,
             cfg=AutoTuneConfig(
-                mode=(_os.getenv("RADAR_AUTOTUNE_MODE", "manual") or "manual").strip().lower(),
-                enabled=(_os.getenv("RADAR_AUTOTUNE_ENABLED", "0") == "1"),
-                interval_seconds=int(_os.getenv("RADAR_AUTOTUNE_INTERVAL_S", "900")),
-                observe_window_seconds=int(_os.getenv("RADAR_AUTOTUNE_OBS_S", "600")),
+                mode=(_os.getenv("RADAR_AUTOTUNE_MODE", "auto") or "auto").strip().lower(),
+                enabled=(_os.getenv("RADAR_AUTOTUNE_ENABLED", "1") == "1"),
+                interval_seconds=int(_os.getenv("RADAR_AUTOTUNE_INTERVAL_S", "120")),
+                observe_window_seconds=int(_os.getenv("RADAR_AUTOTUNE_OBS_S", "180")),
             ),
         )
         if _remediation_policy_enforced() and self.autotune.cfg.mode == "auto":
