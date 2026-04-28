@@ -70,7 +70,8 @@ _RADAR_PROFILE_OVERRIDE_KEYS = (
 
 
 def _remediation_policy_enforced() -> bool:
-    return os.getenv("RADAR_REMEDIATION_POLICY_ENFORCE", "1") == "1"
+    # Opt-in: solo forzar política de remediación cuando el operador lo indique.
+    return os.getenv("RADAR_REMEDIATION_POLICY_ENFORCE", "0") == "1"
 
 
 # ===========================================================================
