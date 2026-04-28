@@ -70,6 +70,7 @@ const MENU_ITEMS = [
     category: 'Integraciones',
     items: [
       { id: 'trading', label: 'Trading AI',     desc: 'Análisis de mercados con Grok', icon: 'trending-up',    route: '/trading', badge: 'Beta' },
+      { id: 'lotto-quant', label: 'Atlas Lotto-Quant', desc: 'HUD profesional de edge en lotería NC (Streamlit)', icon: 'trending-up', href: '/lotto-quant', badge: 'Beta' },
     ]
   },
   {
