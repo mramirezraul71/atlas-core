@@ -280,52 +280,60 @@ class KalshiScanner:
                 if not tickers:
                     await asyncio.sleep(1.0)
                     continue
-                base = str(self.settings.base_url).rstrip("/")
-                async with httpx.AsyncClient(timeout=25) as client:
-                    for t in tickers:
-                        try:
-                            r = await client.get(
-                                f"{base}/markets/{t}/orderbook",
-                                headers={"Accept": "application/json"},
-                            )
-                            if r.status_code != 200:
-                                continue
-                            data = r.json()
-                            ob = data.get("orderbook_fp") or {}
-                            yes_raw = ob.get("yes_dollars") or []
-                            no_raw = ob.get("no_dollars") or []
-                            if not yes_raw and not no_raw:
-                                continue
-                            yes_levels: list[list[int]] = []
-                            for row in yes_raw:
-                                if len(row) >= 2:
-                                    price_d, qv = row[0], row[1]
-                                    pc = int(round(float(price_d) * 100))
-                                    pc = max(1, min(99, pc))
-                                    yes_levels.append(
-                                        [pc, max(1, int(float(qv)))]
-                                    )
-                            no_levels: list[list[int]] = []
-                            for row in no_raw:
-                                if len(row) >= 2:
-                                    price_d, qv = row[0], row[1]
-                                    pc = int(round(float(price_d) * 100))
-                                    pc = max(1, min(99, pc))
-                                    no_levels.append(
-                                        [pc, max(1, int(float(qv)))]
-                                    )
-                            book = self._books.setdefault(
-                                t, _LocalOrderBook(t)
-                            )
-                            book.apply_snapshot(
-                                {"yes": yes_levels, "no": no_levels}
-                            )
-                            await self._emit_book(book)
-                        except Exception as exc:
-                            self.log.debug("orderbook %s: %s", t, exc)
+                await self.pulse_public_orderbooks(limit=max_ob)
             except Exception as exc:
                 self.log.warning("public orderbook poll: %s", exc)
             await asyncio.sleep(interval)
+
+    async def pulse_public_orderbooks(self, limit: int = 25) -> int:
+        """
+        Fuerza un barrido puntual de orderbooks públicos y emite eventos.
+
+        Se usa tanto en el loop normal como en recuperación del watchdog.
+        """
+        if not self.uses_public_rest_feed:
+            return 0
+        tickers = list(self._tickers)[: max(1, int(limit))]
+        if not tickers:
+            return 0
+        emitted = 0
+        base = str(self.settings.base_url).rstrip("/")
+        async with httpx.AsyncClient(timeout=25) as client:
+            for t in tickers:
+                try:
+                    r = await client.get(
+                        f"{base}/markets/{t}/orderbook",
+                        headers={"Accept": "application/json"},
+                    )
+                    if r.status_code != 200:
+                        continue
+                    data = r.json()
+                    ob = data.get("orderbook_fp") or {}
+                    yes_raw = ob.get("yes_dollars") or []
+                    no_raw = ob.get("no_dollars") or []
+                    if not yes_raw and not no_raw:
+                        continue
+                    yes_levels: list[list[int]] = []
+                    for row in yes_raw:
+                        if len(row) >= 2:
+                            price_d, qv = row[0], row[1]
+                            pc = int(round(float(price_d) * 100))
+                            pc = max(1, min(99, pc))
+                            yes_levels.append([pc, max(1, int(float(qv)))])
+                    no_levels: list[list[int]] = []
+                    for row in no_raw:
+                        if len(row) >= 2:
+                            price_d, qv = row[0], row[1]
+                            pc = int(round(float(price_d) * 100))
+                            pc = max(1, min(99, pc))
+                            no_levels.append([pc, max(1, int(float(qv)))])
+                    book = self._books.setdefault(t, _LocalOrderBook(t))
+                    book.apply_snapshot({"yes": yes_levels, "no": no_levels})
+                    await self._emit_book(book)
+                    emitted += 1
+                except Exception as exc:
+                    self.log.debug("orderbook %s: %s", t, exc)
+        return emitted
 
     # ------------------------------------------------------------------
     # WebSocket: orderbook + ticker

@@ -144,6 +144,7 @@ class Orchestrator:
             os.getenv("RADAR_JOURNAL_ALL_DECISIONS", "0") == "1"
         )
         self._last_degraded_log_ts: float = 0.0
+        self._last_recover_ts: float = 0.0
 
     # ------------------------------------------------------------------
     async def start(self) -> None:
@@ -216,6 +217,17 @@ class Orchestrator:
                         stale_sec, age, self.health.last_event_ts,
                         self.health.last_decision_ts,
                     )
+                recover_after = max(
+                    stale_sec,
+                    float(os.getenv("RADAR_WATCHDOG_RECOVER_SEC", "180")),
+                )
+                recover_cd = max(
+                    30.0,
+                    float(os.getenv("RADAR_WATCHDOG_RECOVER_COOLDOWN_SEC", "90")),
+                )
+                if age >= recover_after and (now - self._last_recover_ts) >= recover_cd:
+                    self._last_recover_ts = now
+                    await self._attempt_feed_recovery(age_s=age)
             # publicar al state para que /api/radar/{metrics,risk,health} sirvan datos
             try:
                 self.state.exec_metrics = self.executor.metrics.to_dict()  # type: ignore[attr-defined]
@@ -234,6 +246,35 @@ class Orchestrator:
                 self.risk.reset_kill()
             await self.state.broadcast({"type": "ping",
                                         "degraded": self.health.degraded})
+
+    async def _attempt_feed_recovery(self, age_s: float) -> None:
+        """Autocuración del feed sin reiniciar todo PUSH."""
+        self.log.warning(
+            "Watchdog recovery: feed inactivo %.0fs. Ejecutando discover+pulse+reconnect.",
+            age_s,
+        )
+        try:
+            self.scanner.refresh_feed_mode()
+        except Exception:
+            pass
+        try:
+            new_tickers = await self.scanner.discover_markets()
+            if new_tickers:
+                self.log.info("Recovery discover: nuevos tickers=%d", len(new_tickers))
+        except Exception as exc:
+            self.log.warning("Recovery discover falló: %s", exc)
+        try:
+            emitted = await self.scanner.pulse_public_orderbooks(
+                limit=max(5, min(25, int(self.settings.ws_max_tickers)))
+            )
+            if emitted > 0:
+                self.log.info("Recovery pulse: orderbooks emitidos=%d", emitted)
+        except Exception as exc:
+            self.log.warning("Recovery pulse falló: %s", exc)
+        try:
+            await self.scanner.reconnect()
+        except Exception as exc:
+            self.log.debug("Recovery reconnect (best-effort): %s", exc)
 
     def _enqueue_event(self, ev: MarketEvent) -> None:
         """Encola sin bloquear ingestión WS; deduplica por ticker."""
