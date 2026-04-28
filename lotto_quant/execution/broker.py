@@ -28,13 +28,18 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import numpy as np
 
 from ..data.database import LottoQuantDB
 from ..models.ev_calculator import EVCalculator, ScratchOffGame
 from .modes import OperatingMode
+
+# Notifier callable signature: (message, game_id) -> bool (True if delivered).
+# Kept as a free type alias to avoid a hard dependency on alert_engine here
+# (alert_engine imports execution downstream — keep this layer decoupled).
+Notifier = Callable[[str, str], bool]
 
 logger = logging.getLogger(__name__)
 
@@ -122,9 +127,24 @@ class BrokerBase(ABC):
 
     mode: OperatingMode
 
-    def __init__(self, db: LottoQuantDB):
+    def __init__(self, db: LottoQuantDB, notifier: Optional[Notifier] = None):
         self.db = db
+        self.notifier = notifier
         ensure_broker_tables(self.db)
+
+    # ── notifier helper ──────────────────────────────────────────
+    def _notify(self, message: str, game_id: str = "EXEC") -> bool:
+        """Fire the injected notifier (if any), swallowing all exceptions.
+
+        Notifications must NEVER break execution flow.
+        """
+        if self.notifier is None:
+            return False
+        try:
+            return bool(self.notifier(message, game_id))
+        except Exception as e:  # pragma: no cover
+            logger.warning("Notifier raised: %s", e)
+            return False
 
     @abstractmethod
     def submit_order(
@@ -179,8 +199,13 @@ class PaperBroker(BrokerBase):
 
     mode = OperatingMode.PAPER
 
-    def __init__(self, db: LottoQuantDB, rng_seed: Optional[int] = None):
-        super().__init__(db)
+    def __init__(
+        self,
+        db: LottoQuantDB,
+        rng_seed: Optional[int] = None,
+        notifier: Optional[Notifier] = None,
+    ):
+        super().__init__(db, notifier=notifier)
         self.rng = np.random.default_rng(rng_seed)
         self.calc = EVCalculator()
 
@@ -312,6 +337,15 @@ class LiveBroker(BrokerBase):
             "Awaiting human confirmation via confirm_outcome().",
             order.game_name, n_tickets, order.ticket_price,
         )
+        # Notify (Telegram + console + alert_log)
+        msg = (
+            f"🟡 ATLAS LIVE • INTENT recorded\n"
+            f"{order.game_name} (${order.ticket_price:.2f}) ×{n_tickets} "
+            f"= ${order.cost():.2f}\n"
+            f"EV/$={expected_ev:+.4f}  order={order.order_id[:8]}\n"
+            f"Awaiting human confirmation."
+        )
+        self._notify(msg, game_id=order.game_id)
         return order
 
     def settle(self, order: Order) -> Optional[Fill]:
@@ -366,6 +400,13 @@ class LiveBroker(BrokerBase):
             return False
         self._update_order_status(order_id, "CANCELLED")
         logger.info("LIVE order %s cancelled by user", order_id)
+        msg = (
+            f"⚪ ATLAS LIVE • CANCELLED\n"
+            f"{order.game_name} (${order.ticket_price:.2f}) ×{order.n_tickets} "
+            f"= ${order.cost():.2f}\n"
+            f"order={order.order_id[:8]}"
+        )
+        self._notify(msg, game_id=order.game_id)
         return True
 
     def confirm_outcome(
@@ -398,13 +439,27 @@ class LiveBroker(BrokerBase):
             "LIVE CONFIRMED %s: gross=$%.2f net=$%.2f pnl=$%.2f",
             order.game_name, gross_payout, net_payout, pnl_net,
         )
+        sign = "🟢" if pnl_net >= 0 else "🔴"
+        msg = (
+            f"{sign} ATLAS LIVE • CONFIRMED\n"
+            f"{order.game_name} (${order.ticket_price:.2f}) ×{order.n_tickets} "
+            f"= ${cost:.2f}\n"
+            f"gross=${gross_payout:.2f}  net=${net_payout:.2f}  "
+            f"PnL={pnl_net:+.2f}\n"
+            f"order={order.order_id[:8]}"
+        )
+        self._notify(msg, game_id=order.game_id)
         return fill
 
 
 # ─────────────────────────────────────────────────────────────────────
 # Factory
 # ─────────────────────────────────────────────────────────────────────
-def get_broker(mode: OperatingMode, db: LottoQuantDB) -> BrokerBase:
+def get_broker(
+    mode: OperatingMode,
+    db: LottoQuantDB,
+    notifier: Optional[Notifier] = None,
+) -> BrokerBase:
     if mode == OperatingMode.PAPER:
-        return PaperBroker(db)
-    return LiveBroker(db)
+        return PaperBroker(db, notifier=notifier)
+    return LiveBroker(db, notifier=notifier)

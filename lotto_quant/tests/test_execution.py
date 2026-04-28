@@ -245,6 +245,105 @@ def test_live_broker_cancel_order_only_when_open():
     assert cur.fetchone()[0] == 0
 
 
+# ─────────────────────────────────────────────────────────────────
+# Notifier hook (Telegram-style integration via injected callable)
+# ─────────────────────────────────────────────────────────────────
+class _FakeNotifier:
+    """List-capturing notifier used in lieu of real Telegram traffic."""
+
+    def __init__(self):
+        self.messages = []
+
+    def __call__(self, message: str, game_id: str = "EXEC") -> bool:
+        self.messages.append((game_id, message))
+        return True
+
+
+def test_live_broker_notifier_fires_on_submit():
+    from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import LiveBroker
+
+    notifier = _FakeNotifier()
+    db = LottoQuantDB()
+    broker = LiveBroker(db, notifier=notifier)
+    broker.submit_order(game=_build_game(), n_tickets=2, expected_ev=0.07)
+    assert len(notifier.messages) == 1
+    game_id, msg = notifier.messages[0]
+    assert game_id == "GAME-X"
+    assert "INTENT" in msg
+    assert "Test Game" in msg
+
+
+def test_live_broker_notifier_fires_on_confirm():
+    from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import LiveBroker
+
+    notifier = _FakeNotifier()
+    db = LottoQuantDB()
+    broker = LiveBroker(db, notifier=notifier)
+    order = broker.submit_order(game=_build_game(), n_tickets=2, expected_ev=0.0)
+    notifier.messages.clear()
+    broker.confirm_outcome(order, gross_payout=25.0)
+    assert len(notifier.messages) == 1
+    _game_id, msg = notifier.messages[0]
+    assert "CONFIRMED" in msg
+    assert "PnL" in msg
+
+
+def test_live_broker_notifier_fires_on_cancel():
+    from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import LiveBroker
+
+    notifier = _FakeNotifier()
+    db = LottoQuantDB()
+    broker = LiveBroker(db, notifier=notifier)
+    order = broker.submit_order(game=_build_game(), n_tickets=2, expected_ev=0.0)
+    notifier.messages.clear()
+    assert broker.cancel_order(order.order_id) is True
+    assert len(notifier.messages) == 1
+    _game_id, msg = notifier.messages[0]
+    assert "CANCELLED" in msg
+
+
+def test_broker_notifier_exception_does_not_break_flow():
+    """A misbehaving notifier must never break execution."""
+    from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import LiveBroker
+
+    def _bad(_msg, _gid):
+        raise RuntimeError("boom")
+
+    db = LottoQuantDB()
+    broker = LiveBroker(db, notifier=_bad)
+    order = broker.submit_order(game=_build_game(), n_tickets=1, expected_ev=0.0)
+    assert order.status == "OPEN"
+    # Confirm still works despite notifier failure
+    fill = broker.confirm_outcome(order, gross_payout=10.0)
+    assert fill is not None
+
+
+def test_paper_broker_does_not_notify_by_default():
+    """Paper mode shouldn't spam the user — notifier optional."""
+    from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import PaperBroker
+
+    notifier = _FakeNotifier()
+    db = LottoQuantDB()
+    # Even when a notifier is wired, paper broker doesn't emit messages
+    # for paper fills (only LIVE events surface to Telegram).
+    broker = PaperBroker(db, rng_seed=11, notifier=notifier)
+    broker.submit_order(game=_build_game(), n_tickets=3, expected_ev=0.0)
+    assert notifier.messages == []
+
+
+def test_make_default_notifier_returns_callable():
+    from lotto_quant.signals.alert_engine import make_default_notifier
+    from lotto_quant.data.database import LottoQuantDB
+
+    notif = make_default_notifier(LottoQuantDB())
+    assert callable(notif)
+
+
 def test_pnl_filters_by_mode():
     from lotto_quant.data.database import LottoQuantDB
     from lotto_quant.execution.broker import PaperBroker, LiveBroker

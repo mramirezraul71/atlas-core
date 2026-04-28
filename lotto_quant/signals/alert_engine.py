@@ -143,8 +143,60 @@ class AlertEngine:
             logger.error("Telegram send failed: %s", e)
             return False
 
+    # ── free-form text (used by execution events, not just signals) ───
+    async def notify_text(
+        self,
+        message: str,
+        *,
+        game_id: str = "EXEC",
+    ) -> dict:
+        """Send arbitrary text via Telegram + console + alert_log."""
+        if config.ENABLE_CONSOLE_ALERTS:
+            logger.info("NOTIFY: %s", message)
+            print(f"\n=== Atlas Lotto-Quant ===\n{message}\n", flush=True)
+        delivered_telegram = False
+        if self.telegram_enabled:
+            delivered_telegram = await self._send_telegram(message)
+        if self.db is not None:
+            try:
+                self.db.insert_alert(
+                    game_id=game_id,
+                    message=message,
+                    channel=("telegram" if delivered_telegram else "console"),
+                    delivered=delivered_telegram or config.ENABLE_CONSOLE_ALERTS,
+                )
+            except Exception as e:  # pragma: no cover
+                logger.debug("alert_log insert failed: %s", e)
+        return {
+            "delivered_telegram": delivered_telegram,
+            "delivered_console": config.ENABLE_CONSOLE_ALERTS,
+        }
 
-# ── helper for sync callers ───────────────────────────────────────
+
+# ── helpers for sync callers ──────────────────────────────────────
 def dispatch_sync(ev: EVResult, **kwargs) -> dict:
     engine = AlertEngine(**kwargs)
     return asyncio.run(engine.dispatch(ev))
+
+
+def notify_text_sync(message: str, *, game_id: str = "EXEC", **kwargs) -> dict:
+    engine = AlertEngine(**kwargs)
+    return asyncio.run(engine.notify_text(message, game_id=game_id))
+
+
+def make_default_notifier(db: Optional[LottoQuantDB] = None):
+    """
+    Build the default execution-event notifier.
+
+    Returns a callable `(message, game_id='EXEC') -> bool` that fires
+    Telegram + console + alert_log. Tests can replace this with a fake
+    callable to capture emitted messages.
+    """
+    def _notify(message: str, game_id: str = "EXEC") -> bool:
+        try:
+            res = notify_text_sync(message, game_id=game_id, db=db)
+            return bool(res.get("delivered_telegram") or res.get("delivered_console"))
+        except Exception as e:  # pragma: no cover
+            logger.warning("Notifier failed: %s", e)
+            return False
+    return _notify

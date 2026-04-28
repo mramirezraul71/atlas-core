@@ -44,6 +44,7 @@ except Exception:  # pragma: no cover
 from .. import config as _config
 from ..data.database import LottoQuantDB
 from ..execution.broker import LiveBroker
+from ..signals.alert_engine import make_default_notifier
 from ..execution.modes import OperatingMode, get_state, set_active_mode
 from .metrics import DashboardMetrics, MetricsService
 
@@ -591,7 +592,7 @@ def _live_confirmation_panel(m: DashboardMetrics):
         return
 
     db = LottoQuantDB()
-    broker = LiveBroker(db)
+    broker = LiveBroker(db, notifier=make_default_notifier(db))
     open_orders = broker.list_open_orders(limit=50)
 
     st.markdown(
