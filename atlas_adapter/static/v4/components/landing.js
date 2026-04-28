@@ -155,6 +155,10 @@ export function render(container) {
           <div class="app-tile-icon">${SVG.health}</div>
           <div class="app-tile-label">Diagnostico Live</div>
         </div>
+        <div class="app-tile" data-app="lotto-quant">
+          <div class="app-tile-icon">${SVG.trading}</div>
+          <div class="app-tile-label">Lotto-Quant</div>
+        </div>
       </div>
     </div>
 
@@ -264,6 +268,7 @@ export function render(container) {
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
+    'lotto-quant':  { href: '/lotto-quant', newTab: true },
   };
 
   container.querySelectorAll('.app-tile').forEach(tile => {

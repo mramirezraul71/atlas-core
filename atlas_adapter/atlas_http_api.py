@@ -5348,6 +5348,24 @@ def serve_ui():
     return {"ok": False, "error": "v4/index.html not found"}
 
 
+@app.get("/lotto-quant")
+def redirect_lotto_quant():
+    """Redirige al HUD profesional Atlas Lotto-Quant (Streamlit).
+
+    URL configurable via env `ATLAS_LOTTO_QUANT_URL`.
+    Default: http://127.0.0.1:8501 (puerto Streamlit por defecto).
+
+    Lanzar el HUD localmente:
+        streamlit run lotto_quant/dashboard/hud.py
+    """
+    from fastapi.responses import RedirectResponse
+
+    target = (os.getenv("ATLAS_LOTTO_QUANT_URL") or "http://127.0.0.1:8501").strip().rstrip("/")
+    if not target:
+        target = "http://127.0.0.1:8501"
+    return RedirectResponse(url=target, status_code=302)
+
+
 @app.get("/v3")
 def serve_v3():
     """Legacy dashboard v3.8.0 (operational UI)."""
