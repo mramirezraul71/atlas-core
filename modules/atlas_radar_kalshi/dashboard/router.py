@@ -39,12 +39,32 @@ from pydantic import BaseModel, Field, field_validator
 from ..config import RadarSettings, get_settings
 from ..brain import BrainDecision
 from ..executor import OrderResult
+from ..profiles import RADAR_PROFILE_PRESETS
 from ..risk import PositionSize
 from ..state.journal import Journal
 from ..metrics import compute as compute_perf, prometheus_text
 
 # Visible en /ui/radar: si no coincide tras pull, reiniciar proceso :8791.
 RADAR_UI_BUILD = "20260429-watchdog-health-v1"
+_RADAR_PROFILE_OVERRIDE_KEYS = (
+    "RADAR_EDGE_NET_MIN",
+    "RADAR_CONFIDENCE_MIN",
+    "RADAR_SPREAD_MAX",
+    "RADAR_MIN_DEPTH_YES",
+    "RADAR_MIN_DEPTH_NO",
+    "RADAR_MAX_QUOTE_AGE_MS",
+    "RADAR_MAX_LATENCY_MS",
+    "RADAR_COOLDOWN_S",
+    "RADAR_KELLY_FRACTION",
+    "RADAR_MAX_POSITION_PCT",
+    "RADAR_MAX_MARKET_EXP",
+    "RADAR_MAX_TOTAL_EXP",
+    "RADAR_DAILY_DD",
+    "RADAR_WEEKLY_DD",
+    "RADAR_MAX_CL",
+    "RADAR_MAX_OPEN",
+    "RADAR_MAX_OPM",
+)
 
 
 # ===========================================================================
@@ -103,6 +123,8 @@ class RadarRuntimeConfigBody(BaseModel):
     api_key_id: Optional[str] = None
     private_key_path: Optional[str] = None
     persist_env: bool = True
+    radar_profile: Optional[str] = None
+    clear_profile_overrides: bool = False
     # Opcionales: si vienen en el JSON, se aplican en caliente (+ .env si persist_env)
     edge_threshold: Optional[float] = Field(
         default=None,
@@ -139,6 +161,18 @@ class RadarRuntimeConfigBody(BaseModel):
         if value <= 0:
             raise ValueError("paper_balance_usd debe ser mayor a 0")
         return value
+
+    @field_validator("radar_profile")
+    @classmethod
+    def _v_profile(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        v = value.strip().lower()
+        if v not in RADAR_PROFILE_PRESETS:
+            raise ValueError(
+                f"radar_profile inválido: {v}. Usa uno de: {', '.join(sorted(RADAR_PROFILE_PRESETS))}"
+            )
+        return v
 
     @field_validator("edge_threshold")
     @classmethod
@@ -211,6 +245,23 @@ def _persist_env_updates(env_file: Path, updates: dict[str, str]) -> None:
     env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _persist_env_remove_keys(env_file: Path, keys_to_remove: set[str]) -> None:
+    """Elimina variables específicas del .env, preservando comentarios."""
+    if not env_file.exists():
+        return
+    out_lines: list[str] = []
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            out_lines.append(line)
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in keys_to_remove:
+            continue
+        out_lines.append(line)
+    env_file.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+
+
 def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
     orch = getattr(state, "orchestrator", None)
     executor = getattr(orch, "executor", None) if orch else None
@@ -245,6 +296,10 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
             "y el feed público REST está desactivado (RADAR_DISABLE_PUBLIC_MARKET_DATA=1). "
             "Copia .env.example → .env o configura la Bóveda y reinicia :8791."
         )
+    profile_overrides_active = any(
+        os.getenv(k) not in (None, "")
+        for k in _RADAR_PROFILE_OVERRIDE_KEYS
+    )
     return {
         "environment": state.settings.kalshi_environment,
         "execution_mode": "live" if live_enabled else "paper",
@@ -273,12 +328,26 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
             },
         },
         "radar_ui_build": RADAR_UI_BUILD,
+        "radar_profile": (
+            str(getattr(orch, "profile", "") or os.getenv("RADAR_PROFILE", "paper_safe"))
+        ),
+        "profile_overrides_active": profile_overrides_active,
         "edge_threshold": state.settings.edge_threshold,
         "kelly_fraction": state.settings.kelly_fraction,
         "edge_net_min": (
             float(orch.gating.cfg.edge_net_min)
             if orch is not None and getattr(orch, "gating", None) is not None
             else float(os.getenv("RADAR_EDGE_NET_MIN", "0.03"))
+        ),
+        "confidence_min": (
+            float(orch.gating.cfg.confidence_min)
+            if orch is not None and getattr(orch, "gating", None) is not None
+            else float(os.getenv("RADAR_CONFIDENCE_MIN", "0.30"))
+        ),
+        "max_open_positions": (
+            int(orch.risk.limits.max_open_positions)
+            if orch is not None and getattr(orch, "risk", None) is not None
+            else int(os.getenv("RADAR_MAX_OPEN", "10"))
         ),
     }
 
@@ -335,6 +404,10 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "edge_threshold": runtime["edge_threshold"],
             "kelly_fraction": runtime["kelly_fraction"],
             "edge_net_min": runtime["edge_net_min"],
+            "confidence_min": runtime["confidence_min"],
+            "max_open_positions": runtime["max_open_positions"],
+            "radar_profile": runtime["radar_profile"],
+            "profile_overrides_active": runtime["profile_overrides_active"],
             "api_ready": runtime["api_ready"],
             "market_data_ok": runtime["market_data_ok"],
             "kalshi_public_feed": runtime["kalshi_public_feed"],
@@ -370,6 +443,14 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             if payload.private_key_path
             else str(state.settings.kalshi_private_key_path)
         ).expanduser()
+        selected_profile = (
+            payload.radar_profile
+            or str(os.getenv("RADAR_PROFILE", "paper_safe")).strip().lower()
+        )
+        if selected_profile not in RADAR_PROFILE_PRESETS:
+            selected_profile = "paper_safe"
+        p_gate = RADAR_PROFILE_PRESETS[selected_profile]["gate"]
+        p_risk = RADAR_PROFILE_PRESETS[selected_profile]["risk"]
 
         if execution_mode == "live":
             if not api_key_id:
@@ -421,12 +502,43 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 await orch.scanner.reconnect()
             except Exception:
                 pass
+            orch.profile = selected_profile
 
             if execution_mode == "paper":
                 orch.risk.update_balance(applied_paper_cents)
                 state.balance_cents = orch.risk.state.balance_cents
 
-        # Umbrales opcionales: brain (settings) + gating (edge neto) + risk (Kelly)
+        # Si llega perfil, aplica defaults del perfil en runtime.
+        if orch is not None and payload.radar_profile is not None:
+            orch.gating.cfg = orch.gating.cfg.model_copy(
+                update={
+                    "edge_net_min": float(p_gate["edge_net_min"]),
+                    "confidence_min": float(p_gate["confidence_min"]),
+                    "spread_max_ticks": int(p_gate["spread_max_ticks"]),
+                    "min_depth_yes": int(p_gate["min_depth_yes"]),
+                    "min_depth_no": int(p_gate["min_depth_no"]),
+                    "max_quote_age_ms": int(p_gate["max_quote_age_ms"]),
+                    "max_latency_ms": int(p_gate["max_latency_ms"]),
+                    "cooldown_seconds": int(p_gate["cooldown_seconds"]),
+                }
+            )
+            orch.risk.limits = orch.risk.limits.model_copy(
+                update={
+                    "kelly_fraction": float(p_risk["kelly_fraction"]),
+                    "max_position_pct": float(p_risk["max_position_pct"]),
+                    "max_market_exposure_pct": float(p_risk["max_market_exposure_pct"]),
+                    "max_total_exposure_pct": float(p_risk["max_total_exposure_pct"]),
+                    "daily_dd_limit_pct": float(p_risk["daily_dd_limit_pct"]),
+                    "weekly_dd_limit_pct": float(p_risk["weekly_dd_limit_pct"]),
+                    "max_consecutive_losses": int(p_risk["max_consecutive_losses"]),
+                    "max_open_positions": int(p_risk["max_open_positions"]),
+                    "max_orders_per_minute": int(p_risk["max_orders_per_minute"]),
+                }
+            )
+            # Mantiene sincronía en settings para lectura/UI.
+            state.settings.kelly_fraction = float(p_risk["kelly_fraction"])
+
+        # Umbrales opcionales: si vienen explícitos, tienen prioridad final.
         if payload.edge_threshold is not None:
             state.settings.edge_threshold = payload.edge_threshold
         if payload.kelly_fraction is not None:
@@ -435,15 +547,15 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 orch.risk.limits = orch.risk.limits.model_copy(
                     update={"kelly_fraction": payload.kelly_fraction}
                 )
-        if payload.edge_net_min is not None:
-            if orch is not None:
-                orch.gating.cfg = orch.gating.cfg.model_copy(
-                    update={"edge_net_min": payload.edge_net_min}
-                )
+        if payload.edge_net_min is not None and orch is not None:
+            orch.gating.cfg = orch.gating.cfg.model_copy(
+                update={"edge_net_min": payload.edge_net_min}
+            )
 
         if payload.persist_env:
             updates = {
                 "ATLAS_ENABLE_RADAR_KALSHI": "1",
+                "RADAR_PROFILE": selected_profile,
                 "KALSHI_ENV": environment,
                 "ATLAS_RADAR_EXECUTION_MODE": execution_mode,
                 "ATLAS_RADAR_LIVE": "1" if execution_mode == "live" else "0",
@@ -461,6 +573,29 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 updates["RADAR_EDGE_NET_MIN"] = str(payload.edge_net_min)
             try:
                 for env_path in _env_file_paths():
+                    if payload.clear_profile_overrides:
+                        _persist_env_remove_keys(
+                            env_path,
+                            {
+                                "RADAR_EDGE_NET_MIN",
+                                "RADAR_CONFIDENCE_MIN",
+                                "RADAR_SPREAD_MAX",
+                                "RADAR_MIN_DEPTH_YES",
+                                "RADAR_MIN_DEPTH_NO",
+                                "RADAR_MAX_QUOTE_AGE_MS",
+                                "RADAR_MAX_LATENCY_MS",
+                                "RADAR_COOLDOWN_S",
+                                "RADAR_KELLY_FRACTION",
+                                "RADAR_MAX_POSITION_PCT",
+                                "RADAR_MAX_MARKET_EXP",
+                                "RADAR_MAX_TOTAL_EXP",
+                                "RADAR_DAILY_DD",
+                                "RADAR_WEEKLY_DD",
+                                "RADAR_MAX_CL",
+                                "RADAR_MAX_OPEN",
+                                "RADAR_MAX_OPM",
+                            },
+                        )
                     _persist_env_updates(env_path, updates)
             except Exception as exc:
                 raise HTTPException(
@@ -674,6 +809,8 @@ _RADAR_HTML = r"""<!doctype html>
   header .pill{padding:3px 10px;border:1px solid var(--line);border-radius:999px;
                color:var(--muted);font-size:12px;margin-left:8px}
   header .pill.danger{color:var(--neg);border-color:rgba(248,81,73,.4)}
+  header .pill.ok{color:var(--accent);border-color:rgba(63,185,80,.35)}
+  header .pill.warn{color:var(--warn);border-color:rgba(210,153,34,.45)}
   header a{color:var(--blue);text-decoration:none;margin-left:14px;font-size:13px}
   .grid{display:grid;gap:14px;padding:14px;
         grid-template-columns:repeat(4,1fr)}
@@ -744,6 +881,8 @@ _RADAR_HTML = r"""<!doctype html>
     <h1>Atlas Radar · Kalshi</h1>
     <span class="pill" id="env">demo</span>
     <span class="pill" id="mode">paper</span>
+    <span class="pill" id="profile_pill" title="Perfil operativo activo">PROFILE: …</span>
+    <span class="pill" id="profile_mode_pill" title="Origen de parámetros">PARAMS: …</span>
     <span class="pill" id="feed_pill" title="Cotizaciones / mercado">DATOS: …</span>
     <span class="pill" id="order_pill" title="Simulado vs real">ÓRDENES: …</span>
     <span class="pill" id="ws">WS: …</span>
@@ -778,6 +917,16 @@ _RADAR_HTML = r"""<!doctype html>
       </select>
       <label for="cfg_paper">Paper USD</label>
       <input id="cfg_paper" type="number" min="1" step="1" value="1000" />
+      <label for="cfg_profile">Perfil</label>
+      <select id="cfg_profile">
+        <option value="paper_safe">paper_safe</option>
+        <option value="balanced">balanced</option>
+        <option value="aggressive">aggressive</option>
+      </select>
+      <label for="cfg_profile_only" title="Elimina overrides RADAR_* para que mande el perfil">
+        <input id="cfg_profile_only" type="checkbox" />
+        Usar sólo perfil
+      </label>
       <label for="cfg_pem">PEM</label>
       <input id="cfg_pem" type="text" readonly value="-" />
       <button class="btn" onclick="applyConfig()">Aplicar</button>
@@ -931,6 +1080,21 @@ function updateExecBanner(s){
     op.className = paper ? 'pill' : 'pill danger';
     op.title = paper ? 'No se envían órdenes a matching con dinero real' : 'Se envían órdenes reales';
   }
+  const pp = $('#profile_pill');
+  if (pp) {
+    const rp = (s.radar_profile || 'paper_safe');
+    pp.textContent = 'PROFILE: ' + rp;
+    pp.className = 'pill ok';
+  }
+  const pm = $('#profile_mode_pill');
+  if (pm) {
+    const hasOv = !!s.profile_overrides_active;
+    pm.textContent = hasOv ? 'PARAMS: OVERRIDES' : 'PARAMS: PROFILE-ONLY';
+    pm.className = hasOv ? 'pill warn' : 'pill ok';
+    pm.title = hasOv
+      ? 'Hay RADAR_* explícitas activas en entorno/.env'
+      : 'Sin overrides activos; manda el perfil';
+  }
 }
 
 async function loadConfig(){
@@ -963,6 +1127,9 @@ async function loadConfig(){
       $('#cfg_edge_net').value = (en * 100).toFixed(2);
       $('#cfg_kelly').value = String(Math.round(kf * 100));
     }
+    if ($('#cfg_profile')) {
+      $('#cfg_profile').value = cfg.radar_profile || 'paper_safe';
+    }
     updateModeSelectClass();
     updateExecBanner(cfg);
   }catch(err){
@@ -984,11 +1151,19 @@ async function applyConfig(){
     execution_mode: $('#cfg_mode').value,
     paper_balance_usd: Number($('#cfg_paper').value || 0),
     private_key_path: $('#cfg_pem').value || null,
-    edge_threshold: Number($('#cfg_edge_thr').value || 5) / 100,
-    edge_net_min: Number($('#cfg_edge_net').value || 3) / 100,
-    kelly_fraction: Number($('#cfg_kelly').value || 25) / 100,
+    radar_profile: $('#cfg_profile').value || 'paper_safe',
+    clear_profile_overrides: !!($('#cfg_profile_only') && $('#cfg_profile_only').checked),
     persist_env: true,
   };
+  if(!payload.clear_profile_overrides){
+    payload.edge_threshold = Number($('#cfg_edge_thr').value || 5) / 100;
+    payload.edge_net_min = Number($('#cfg_edge_net').value || 3) / 100;
+    payload.kelly_fraction = Number($('#cfg_kelly').value || 25) / 100;
+  }else{
+    payload.edge_threshold = null;
+    payload.edge_net_min = null;
+    payload.kelly_fraction = null;
+  }
   setCfgMsg('Aplicando configuración...', true);
   try{
     const res = await fetch('/api/radar/config', {

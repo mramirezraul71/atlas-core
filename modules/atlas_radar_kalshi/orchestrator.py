@@ -39,6 +39,7 @@ from .scanner import KalshiScanner, MarketEvent, OrderBookSnapshot
 from .signals import EnsembleWeights, SignalEnsemble, SignalReadout
 from .state.journal import Journal
 from .utils.logger import get_logger
+from .profiles import RADAR_PROFILE_PRESETS
 
 
 # ===========================================================================
@@ -79,6 +80,15 @@ class Orchestrator:
         self.state = state or RadarState(self.settings)
         self.log = get_logger("orchestrator", self.settings.log_dir,
                               self.settings.log_level)
+        profile = (os.getenv("RADAR_PROFILE", "paper_safe") or "").strip().lower()
+        if profile not in RADAR_PROFILE_PRESETS:
+            self.log.warning(
+                "RADAR_PROFILE desconocido '%s'; usando paper_safe", profile
+            )
+            profile = "paper_safe"
+        self.profile = profile
+        p_gate = RADAR_PROFILE_PRESETS[self.profile]["gate"]
+        p_risk = RADAR_PROFILE_PRESETS[self.profile]["risk"]
         self.scanner = KalshiScanner(self.settings)
         self.brain = RadarBrain(self.settings)
         self.ensemble = SignalEnsemble(EnsembleWeights(
@@ -92,27 +102,25 @@ class Orchestrator:
             method=os.getenv("RADAR_CAL_METHOD", "platt"),
         )
         self.gating = Gating(gate_cfg or GateConfig(
-            edge_net_min=float(os.getenv("RADAR_EDGE_NET_MIN", 0.03)),
-            confidence_min=float(os.getenv("RADAR_CONFIDENCE_MIN", 0.62)),
-            spread_max_ticks=int(os.getenv("RADAR_SPREAD_MAX", 8)),
-            # Libros Kalshi REST suelen ser finos; 50 rechazaba casi todo en paper.
-            min_depth_yes=int(os.getenv("RADAR_MIN_DEPTH_YES", 12)),
-            min_depth_no=int(os.getenv("RADAR_MIN_DEPTH_NO", 12)),
-            # Usar timestamp del libro (no ev.ts) evita cola lenta → quote "stale".
-            max_quote_age_ms=int(os.getenv("RADAR_MAX_QUOTE_AGE_MS", 20000)),
-            max_latency_ms=int(os.getenv("RADAR_MAX_LATENCY_MS", 1500)),
-            cooldown_seconds=int(os.getenv("RADAR_COOLDOWN_S", 30)),
+            edge_net_min=float(os.getenv("RADAR_EDGE_NET_MIN", p_gate["edge_net_min"])),
+            confidence_min=float(os.getenv("RADAR_CONFIDENCE_MIN", p_gate["confidence_min"])),
+            spread_max_ticks=int(os.getenv("RADAR_SPREAD_MAX", p_gate["spread_max_ticks"])),
+            min_depth_yes=int(os.getenv("RADAR_MIN_DEPTH_YES", p_gate["min_depth_yes"])),
+            min_depth_no=int(os.getenv("RADAR_MIN_DEPTH_NO", p_gate["min_depth_no"])),
+            max_quote_age_ms=int(os.getenv("RADAR_MAX_QUOTE_AGE_MS", p_gate["max_quote_age_ms"])),
+            max_latency_ms=int(os.getenv("RADAR_MAX_LATENCY_MS", p_gate["max_latency_ms"])),
+            cooldown_seconds=int(os.getenv("RADAR_COOLDOWN_S", p_gate["cooldown_seconds"])),
         ))
         self.risk = RiskEngine(risk_limits or RiskLimits(
-            kelly_fraction=float(os.getenv("RADAR_KELLY_FRACTION", 0.25)),
-            max_position_pct=float(os.getenv("RADAR_MAX_POSITION_PCT", 0.05)),
-            max_market_exposure_pct=float(os.getenv("RADAR_MAX_MARKET_EXP", 0.10)),
-            max_total_exposure_pct=float(os.getenv("RADAR_MAX_TOTAL_EXP", 0.50)),
-            daily_dd_limit_pct=float(os.getenv("RADAR_DAILY_DD", 0.05)),
-            weekly_dd_limit_pct=float(os.getenv("RADAR_WEEKLY_DD", 0.10)),
-            max_consecutive_losses=int(os.getenv("RADAR_MAX_CL", 5)),
-            max_open_positions=int(os.getenv("RADAR_MAX_OPEN", 8)),
-            max_orders_per_minute=int(os.getenv("RADAR_MAX_OPM", 30)),
+            kelly_fraction=float(os.getenv("RADAR_KELLY_FRACTION", p_risk["kelly_fraction"])),
+            max_position_pct=float(os.getenv("RADAR_MAX_POSITION_PCT", p_risk["max_position_pct"])),
+            max_market_exposure_pct=float(os.getenv("RADAR_MAX_MARKET_EXP", p_risk["max_market_exposure_pct"])),
+            max_total_exposure_pct=float(os.getenv("RADAR_MAX_TOTAL_EXP", p_risk["max_total_exposure_pct"])),
+            daily_dd_limit_pct=float(os.getenv("RADAR_DAILY_DD", p_risk["daily_dd_limit_pct"])),
+            weekly_dd_limit_pct=float(os.getenv("RADAR_WEEKLY_DD", p_risk["weekly_dd_limit_pct"])),
+            max_consecutive_losses=int(os.getenv("RADAR_MAX_CL", p_risk["max_consecutive_losses"])),
+            max_open_positions=int(os.getenv("RADAR_MAX_OPEN", p_risk["max_open_positions"])),
+            max_orders_per_minute=int(os.getenv("RADAR_MAX_OPM", p_risk["max_orders_per_minute"])),
         ))
         self.exit_mgr = ExitManager(exit_cfg or ExitConfig(
             tp_capture_pct=float(os.getenv("RADAR_TP_PCT", 0.6)),

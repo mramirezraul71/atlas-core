@@ -1,0 +1,79 @@
+"""Perfiles operativos de radar (gating + riesgo)."""
+
+from __future__ import annotations
+
+RADAR_PROFILE_PRESETS: dict[str, dict[str, dict[str, float | int]]] = {
+    # Perfil robusto para feed público/paper.
+    "paper_safe": {
+        "gate": {
+            "edge_net_min": 0.01,
+            "confidence_min": 0.30,
+            "spread_max_ticks": 8,
+            "min_depth_yes": 1,
+            "min_depth_no": 1,
+            "max_quote_age_ms": 60000,
+            "max_latency_ms": 1500,
+            "cooldown_seconds": 30,
+        },
+        "risk": {
+            "kelly_fraction": 0.25,
+            "max_position_pct": 0.05,
+            "max_market_exposure_pct": 0.10,
+            "max_total_exposure_pct": 0.50,
+            "daily_dd_limit_pct": 0.05,
+            "weekly_dd_limit_pct": 0.10,
+            "max_consecutive_losses": 5,
+            "max_open_positions": 10,
+            "max_orders_per_minute": 30,
+        },
+    },
+    # Perfil recomendado para operación continua.
+    "balanced": {
+        "gate": {
+            "edge_net_min": 0.035,
+            "confidence_min": 0.60,
+            "spread_max_ticks": 3,
+            "min_depth_yes": 1000,
+            "min_depth_no": 1000,
+            "max_quote_age_ms": 2000,
+            "max_latency_ms": 1500,
+            "cooldown_seconds": 300,
+        },
+        "risk": {
+            "kelly_fraction": 0.25,
+            "max_position_pct": 0.025,
+            "max_market_exposure_pct": 0.15,
+            "max_total_exposure_pct": 0.55,
+            "daily_dd_limit_pct": 0.03,
+            "weekly_dd_limit_pct": 0.07,
+            "max_consecutive_losses": 5,
+            "max_open_positions": 10,
+            "max_orders_per_minute": 10,
+        },
+    },
+    # Perfil agresivo: solo con track-record validado.
+    "aggressive": {
+        "gate": {
+            "edge_net_min": 0.025,
+            "confidence_min": 0.55,
+            "spread_max_ticks": 4,
+            "min_depth_yes": 500,
+            "min_depth_no": 500,
+            "max_quote_age_ms": 1000,
+            "max_latency_ms": 1200,
+            "cooldown_seconds": 120,
+        },
+        "risk": {
+            "kelly_fraction": 0.30,
+            "max_position_pct": 0.04,
+            "max_market_exposure_pct": 0.20,
+            "max_total_exposure_pct": 0.65,
+            "daily_dd_limit_pct": 0.05,
+            "weekly_dd_limit_pct": 0.10,
+            "max_consecutive_losses": 7,
+            "max_open_positions": 15,
+            "max_orders_per_minute": 20,
+        },
+    },
+}
+
