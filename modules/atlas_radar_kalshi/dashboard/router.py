@@ -40,6 +40,8 @@ from ..config import RadarSettings, get_settings
 from ..brain import BrainDecision
 from ..executor import OrderResult
 from ..profiles import RADAR_PROFILE_PRESETS
+from ..autotune import AutoTuneConfig, AutoTuneController, AutoTunePatch
+from ..backtest import BTConfig, run_experiment
 from ..risk import PositionSize
 from ..state.journal import Journal
 from ..metrics import compute as compute_perf, prometheus_text
@@ -87,6 +89,23 @@ class RadarState:
         self.balance_cents: int = 0 if _live else max(100, _paper)
         self.session_started: float = 0.0
         self.subscribers: set[WebSocket] = set()
+        self.autotune = AutoTuneController(
+            log_dir=self.settings.log_dir,
+            cfg=AutoTuneConfig(
+                mode=(_os.getenv("RADAR_AUTOTUNE_MODE", "manual") or "manual").strip().lower(),
+                enabled=(_os.getenv("RADAR_AUTOTUNE_ENABLED", "0") == "1"),
+                interval_seconds=int(_os.getenv("RADAR_AUTOTUNE_INTERVAL_S", "900")),
+                observe_window_seconds=int(_os.getenv("RADAR_AUTOTUNE_OBS_S", "600")),
+            ),
+        )
+        self.autotune_experiment: dict[str, Any] = {
+            "running": False,
+            "kind": None,
+            "started_ts": 0.0,
+            "finished_ts": 0.0,
+            "result": None,
+            "error": None,
+        }
 
     # ------------------------------------------------------------------
     async def broadcast(self, payload: dict[str, Any]) -> None:
@@ -201,6 +220,41 @@ class RadarRuntimeConfigBody(BaseModel):
             raise ValueError("edge_net_min debe estar entre 0.0 y 0.5")
         return v
 
+
+class RadarAutoTuneConfigBody(BaseModel):
+    mode: str = "manual"  # manual | assisted | auto
+    enabled: bool = False
+    interval_seconds: int = 900
+    observe_window_seconds: int = 600
+    step_edge_net: float = 0.0025
+    step_edge_threshold: float = 0.0020
+    step_kelly: float = 0.05
+    degrade_drawdown_cents: int = 1500
+    degrade_loss_streak: int = 4
+
+    @field_validator("mode")
+    @classmethod
+    def _v_mode(cls, v: str) -> str:
+        vv = v.strip().lower()
+        if vv not in {"manual", "assisted", "auto"}:
+            raise ValueError("mode debe ser manual|assisted|auto")
+        return vv
+
+
+class RadarExperimentBody(BaseModel):
+    kind: str = "offline"  # offline | online
+    window_seconds: int = 600
+    # offline knobs
+    n_markets: int = 200
+    steps_per_market: int = 80
+
+    @field_validator("kind")
+    @classmethod
+    def _v_kind(cls, v: str) -> str:
+        vv = v.strip().lower()
+        if vv not in {"offline", "online"}:
+            raise ValueError("kind debe ser offline|online")
+        return vv
 
 def _repo_root_from_router() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -352,6 +406,45 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
     }
 
 
+def _metrics_snapshot(state: RadarState) -> dict[str, Any]:
+    journal = Journal(state.settings.log_dir)
+    perf = compute_perf(journal).model_dump()
+    return {
+        "performance": perf,
+        "risk": dict(getattr(state, "risk_status", {}) or {}),
+        "execution": dict(getattr(state, "exec_metrics", {}) or {}),
+        "actionable_pct": (
+            sum(1 for d in state.decisions if d.side) / len(state.decisions)
+            if state.decisions else 0.0
+        ),
+    }
+
+
+def _apply_runtime_patch(state: RadarState, patch: AutoTunePatch) -> None:
+    orch = getattr(state, "orchestrator", None)
+    if patch.edge_threshold is not None:
+        state.settings.edge_threshold = float(patch.edge_threshold)
+    if orch is None:
+        return
+    if patch.edge_net_min is not None:
+        orch.gating.cfg = orch.gating.cfg.model_copy(
+            update={"edge_net_min": float(patch.edge_net_min)}
+        )
+    if patch.kelly_fraction is not None:
+        state.settings.kelly_fraction = float(patch.kelly_fraction)
+        orch.risk.limits = orch.risk.limits.model_copy(
+            update={"kelly_fraction": float(patch.kelly_fraction)}
+        )
+    if patch.confidence_min is not None:
+        orch.gating.cfg = orch.gating.cfg.model_copy(
+            update={"confidence_min": float(patch.confidence_min)}
+        )
+    if patch.max_open_positions is not None:
+        orch.risk.limits = orch.risk.limits.model_copy(
+            update={"max_open_positions": int(patch.max_open_positions)}
+        )
+
+
 async def _ensure_orchestrator_started(state: RadarState) -> None:
     """Arranca el orquestador si está montado pero aún no corriendo."""
     if not bool(getattr(state, "runtime_enabled", True)):
@@ -416,6 +509,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "private_key_path": runtime["private_key_path"],
             "private_key_exists": runtime["private_key_exists"],
             "radar_ui_build": runtime["radar_ui_build"],
+            "autotune": state.autotune.status(),
         }
         return JSONResponse(content=payload, headers=_no_store)
 
@@ -669,6 +763,20 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "queue_depth": int(getattr(state, "queue_depth", 0)),
             "queue_dropped": int(getattr(state, "queue_dropped", 0)),
         }
+        # AutoTune loop suave: propone por intervalo; aplica solo en modo auto.
+        runtime_now = _runtime_snapshot(state)
+        metrics_now = {
+            "performance": perf.model_dump(),
+            "execution": exec_metrics,
+            "risk": risk_status,
+            "actionable_pct": (actionable / len(state.decisions))
+            if state.decisions else 0.0,
+        }
+        proposal = state.autotune.maybe_autorun(runtime_now, metrics_now)
+        if proposal is not None and state.autotune.cfg.mode == "auto" and state.autotune.can_apply(proposal):
+            state.autotune.mark_applied(proposal, runtime_now, metrics_now)
+            _apply_runtime_patch(state, proposal)
+            state.autotune.state.status = "applied"
         return {
             "ok": True,
             "edges_avg": (sum(edges) / len(edges)) if edges else 0.0,
@@ -683,6 +791,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "risk": risk_status,
             "health": health_out,
             "session": session_out,
+            "autotune": state.autotune.status(),
         }
 
     @router.get("/api/radar/risk")
@@ -740,6 +849,153 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
         risk_status["kill_switch"] = False
         state.risk_status = risk_status
         return {"ok": True, "kill_switch": False}
+
+    @router.get("/api/radar/autotune/status")
+    async def autotune_status() -> dict:
+        await _ensure_orchestrator_started(state)
+        return {"ok": True, **state.autotune.status()}
+
+    @router.post("/api/radar/autotune/config")
+    async def autotune_config(payload: RadarAutoTuneConfigBody) -> dict:
+        await _ensure_orchestrator_started(state)
+        cfg = state.autotune.configure(**payload.model_dump())
+        return {"ok": True, "config": cfg.model_dump(mode="json")}
+
+    @router.post("/api/radar/autotune/propose")
+    async def autotune_propose() -> dict:
+        await _ensure_orchestrator_started(state)
+        runtime_now = _runtime_snapshot(state)
+        metrics_now = _metrics_snapshot(state)
+        patch = state.autotune.propose(runtime_now, metrics_now)
+        return {"ok": True, "proposal": patch.model_dump(mode="json"), "status": state.autotune.status()}
+
+    @router.post("/api/radar/autotune/apply")
+    async def autotune_apply() -> dict:
+        await _ensure_orchestrator_started(state)
+        patch = state.autotune.state.pending_patch
+        if patch is None:
+            raise HTTPException(status_code=400, detail="No hay propuesta pendiente")
+        if state.autotune.cfg.mode == "manual":
+            raise HTTPException(status_code=400, detail="AutoTune en modo manual: cambia a assisted/auto")
+        runtime_now = _runtime_snapshot(state)
+        metrics_now = _metrics_snapshot(state)
+        if not state.autotune.can_apply(patch):
+            return {"ok": False, "message": "Propuesta descartada por baja confianza", "proposal": patch.model_dump(mode="json")}
+        state.autotune.mark_applied(patch, runtime_now, metrics_now)
+        _apply_runtime_patch(state, patch)
+        return {"ok": True, "applied": patch.model_dump(mode="json"), "status": state.autotune.status()}
+
+    @router.post("/api/radar/autotune/rollback")
+    async def autotune_rollback() -> dict:
+        await _ensure_orchestrator_started(state)
+        snap = state.autotune.rollback_payload()
+        patch = AutoTunePatch(
+            edge_threshold=snap.get("edge_threshold"),
+            edge_net_min=snap.get("edge_net_min"),
+            kelly_fraction=snap.get("kelly_fraction"),
+            confidence_min=snap.get("confidence_min"),
+            max_open_positions=snap.get("max_open_positions"),
+            reason="manual_rollback",
+            confidence=1.0,
+        )
+        _apply_runtime_patch(state, patch)
+        state.autotune.mark_rollback("manual_rollback")
+        return {"ok": True, "rollback_to": snap, "status": state.autotune.status()}
+
+    @router.get("/api/radar/autotune/specialized")
+    def autotune_specialized() -> dict:
+        scorer = state.autotune.scorer
+        xgb_available = scorer.name == "xgboost"
+        recommendation = (
+            "xgboost listo: activar fase shadow->active con entrenamiento por lotes desde journal_autotune."
+            if xgb_available
+            else "xgboost no detectado: mantener heurística + reglas y evaluar instalación controlada."
+        )
+        return {
+            "ok": True,
+            "scorer": scorer.name,
+            "xgboost_available": xgb_available,
+            "recommendation": recommendation,
+        }
+
+    @router.post("/api/radar/experiment/run-offline")
+    async def experiment_offline(payload: RadarExperimentBody) -> dict:
+        await _ensure_orchestrator_started(state)
+        state.autotune_experiment.update(
+            {"running": True, "kind": "offline", "started_ts": asyncio.get_event_loop().time(), "error": None}
+        )
+        try:
+            summary = run_experiment(
+                BTConfig(
+                    n_markets=int(payload.n_markets),
+                    steps_per_market=int(payload.steps_per_market),
+                ),
+                out_dir=state.settings.log_dir / "radar_experiments",
+            )
+            state.autotune.journal.write("experiments", {"kind": "offline", "summary": summary})
+            state.autotune_experiment.update(
+                {"running": False, "finished_ts": asyncio.get_event_loop().time(), "result": summary}
+            )
+            return {"ok": True, "result": summary}
+        except Exception as exc:
+            state.autotune_experiment.update(
+                {"running": False, "finished_ts": asyncio.get_event_loop().time(), "error": str(exc)}
+            )
+            raise HTTPException(status_code=500, detail=f"offline experiment failed: {exc}") from exc
+
+    @router.post("/api/radar/experiment/run-online")
+    async def experiment_online(payload: RadarExperimentBody) -> dict:
+        await _ensure_orchestrator_started(state)
+        state.autotune_experiment.update(
+            {"running": True, "kind": "online", "started_ts": asyncio.get_event_loop().time(), "error": None}
+        )
+        runtime_before = _runtime_snapshot(state)
+        metrics_before = _metrics_snapshot(state)
+        proposal = state.autotune.propose(runtime_before, metrics_before)
+        action = "hold"
+        if state.autotune.cfg.mode in {"assisted", "auto"} and state.autotune.can_apply(proposal):
+            state.autotune.mark_applied(proposal, runtime_before, metrics_before)
+            _apply_runtime_patch(state, proposal)
+            action = "applied"
+        await asyncio.sleep(max(30, min(7200, int(payload.window_seconds))))
+        metrics_after = _metrics_snapshot(state)
+        keep = state.autotune.evaluate_post_window(metrics_after)
+        if not keep:
+            snap = state.autotune.rollback_payload()
+            rb_patch = AutoTunePatch(
+                edge_threshold=snap.get("edge_threshold"),
+                edge_net_min=snap.get("edge_net_min"),
+                kelly_fraction=snap.get("kelly_fraction"),
+                confidence_min=snap.get("confidence_min"),
+                max_open_positions=snap.get("max_open_positions"),
+                reason="auto_rollback",
+                confidence=1.0,
+            )
+            _apply_runtime_patch(state, rb_patch)
+            state.autotune.mark_rollback("degrade_post_window")
+        report = {
+            "action": action,
+            "proposal": proposal.model_dump(mode="json"),
+            "kept": keep,
+            "runtime_before": runtime_before,
+            "runtime_after": _runtime_snapshot(state),
+            "metrics_before": metrics_before,
+            "metrics_after": metrics_after,
+        }
+        state.autotune.journal.write("experiments", {"kind": "online", "report": report})
+        state.autotune_experiment.update(
+            {"running": False, "finished_ts": asyncio.get_event_loop().time(), "result": report}
+        )
+        return {"ok": True, "result": report}
+
+    @router.get("/api/radar/experiment/status")
+    def experiment_status() -> dict:
+        return {"ok": True, "experiment": dict(state.autotune_experiment)}
+
+    @router.get("/api/radar/experiment/report")
+    def experiment_report(limit: int = 200) -> dict:
+        rows = state.autotune.journal.read("experiments", limit=max(1, min(5000, limit)))
+        return {"ok": True, "items": rows}
 
     # ---------------- WebSocket ----------------
     @router.websocket("/api/radar/stream")
@@ -945,6 +1201,34 @@ _RADAR_HTML = r"""<!doctype html>
       </div>
     </div>
     <div class="mut" id="cfg_msg" style="margin-top:8px"></div>
+    <div class="threshold-box" role="group" aria-label="Autonomía y experimento" style="margin-top:10px">
+      <div class="threshold-title">Autonomía Radar
+        <span class="mut-hint">· Manual/Asistido/Auto · experimento offline/online · rollback transaccional</span>
+      </div>
+      <div class="ctrl" style="margin-top:6px;align-items:flex-end">
+        <label for="auto_mode">Modo</label>
+        <select id="auto_mode">
+          <option value="manual">manual</option>
+          <option value="assisted">assisted</option>
+          <option value="auto">auto</option>
+        </select>
+        <label for="auto_enabled">
+          <input id="auto_enabled" type="checkbox" />
+          AutoTune activo
+        </label>
+        <label for="auto_interval">Intervalo (s)</label>
+        <input id="auto_interval" type="number" min="30" max="86400" step="10" value="900" />
+        <label for="exp_window">Ventana online (s)</label>
+        <input id="exp_window" type="number" min="30" max="7200" step="30" value="600" />
+        <button class="btn" onclick="saveAutoTune()">Guardar AutoTune</button>
+        <button class="btn" onclick="proposeAutoTune()">Proponer</button>
+        <button class="btn" onclick="applyAutoTune()">Aplicar propuesta</button>
+        <button class="btn" onclick="rollbackAutoTune()">Rollback</button>
+        <button class="btn" onclick="runOfflineExperiment()">Exp. Offline</button>
+        <button class="btn" onclick="runOnlineExperiment()">Exp. Online</button>
+      </div>
+      <div class="mut" id="autotune_msg" style="margin-top:8px"></div>
+    </div>
   </div>
 </section>
 
@@ -1040,6 +1324,120 @@ function setCfgMsg(msg, ok=false){
   if(!el) return;
   el.textContent = msg || '';
   el.className = ok ? 'msg-ok' : 'msg-ko';
+}
+
+function setAutoMsg(msg, ok=false){
+  const el = $('#autotune_msg');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.className = ok ? 'msg-ok' : 'msg-ko';
+}
+
+async function loadAutoTune(){
+  try{
+    const res = await fetch('/api/radar/autotune/status');
+    const data = await res.json();
+    if(!res.ok || !data.ok) throw new Error(data.detail || 'No autotune status');
+    const cfg = data.config || {};
+    if($('#auto_mode')) $('#auto_mode').value = cfg.mode || 'manual';
+    if($('#auto_enabled')) $('#auto_enabled').checked = !!cfg.enabled;
+    if($('#auto_interval')) $('#auto_interval').value = String(cfg.interval_seconds || 900);
+    if($('#exp_window')) $('#exp_window').value = String(cfg.observe_window_seconds || 600);
+  }catch(err){
+    setAutoMsg('AutoTune status error: '+err, false);
+  }
+}
+
+async function saveAutoTune(){
+  const payload = {
+    mode: $('#auto_mode').value,
+    enabled: !!$('#auto_enabled').checked,
+    interval_seconds: Number($('#auto_interval').value || 900),
+    observe_window_seconds: Number($('#exp_window').value || 600),
+  };
+  try{
+    const res = await fetch('/api/radar/autotune/config', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(!res.ok || !data.ok) throw new Error(data.detail || 'No se pudo guardar');
+    setAutoMsg('AutoTune configurado.', true);
+  }catch(err){
+    setAutoMsg('Error guardando AutoTune: '+err, false);
+  }
+}
+
+async function proposeAutoTune(){
+  try{
+    const res = await fetch('/api/radar/autotune/propose', {method:'POST'});
+    const data = await res.json();
+    if(!res.ok || !data.ok) throw new Error(data.detail || 'No proposal');
+    setAutoMsg('Propuesta: '+((data.proposal||{}).reason||'n/a'), true);
+    await refresh();
+  }catch(err){
+    setAutoMsg('Error en propuesta: '+err, false);
+  }
+}
+
+async function applyAutoTune(){
+  try{
+    const res = await fetch('/api/radar/autotune/apply', {method:'POST'});
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.detail || data.message || 'No apply');
+    setAutoMsg('Propuesta aplicada.', true);
+    await loadConfig();
+    await refresh();
+  }catch(err){
+    setAutoMsg('Error aplicando propuesta: '+err, false);
+  }
+}
+
+async function rollbackAutoTune(){
+  try{
+    const res = await fetch('/api/radar/autotune/rollback', {method:'POST'});
+    const data = await res.json();
+    if(!res.ok || !data.ok) throw new Error(data.detail || 'No rollback');
+    setAutoMsg('Rollback aplicado.', true);
+    await loadConfig();
+    await refresh();
+  }catch(err){
+    setAutoMsg('Error en rollback: '+err, false);
+  }
+}
+
+async function runOfflineExperiment(){
+  try{
+    setAutoMsg('Lanzando experimento offline...', true);
+    const res = await fetch('/api/radar/experiment/run-offline', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({kind:'offline'})
+    });
+    const data = await res.json();
+    if(!res.ok || !data.ok) throw new Error(data.detail || 'offline failed');
+    setAutoMsg('Offline listo: delta pnl=' + (((data.result||{}).delta||{}).pnl_net_cents ?? 'n/a') + '¢', true);
+  }catch(err){
+    setAutoMsg('Error experimento offline: '+err, false);
+  }
+}
+
+async function runOnlineExperiment(){
+  try{
+    const w = Number($('#exp_window').value || 600);
+    setAutoMsg('Lanzando experimento online ('+w+'s)...', true);
+    const res = await fetch('/api/radar/experiment/run-online', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({kind:'online', window_seconds:w})
+    });
+    const data = await res.json();
+    if(!res.ok || !data.ok) throw new Error(data.detail || 'online failed');
+    setAutoMsg('Online finalizado: kept=' + ((data.result||{}).kept ? 'true' : 'false'), true);
+    await loadConfig();
+    await refresh();
+  }catch(err){
+    setAutoMsg('Error experimento online: '+err, false);
+  }
 }
 
 function updateModeSelectClass(){
@@ -1316,7 +1714,7 @@ function connectWS(){
   };
 }
 
-loadConfig(); refresh();
+loadConfig(); loadAutoTune(); refresh();
 setInterval(refresh, 5000);
 connectWS();
 </script>
