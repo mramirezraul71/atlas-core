@@ -91,12 +91,22 @@ class SignalEnsemble:
         ba_p, ba_q = self._best(book.yes_asks, "min")
         depth_yes = sum(q for _, q in book.yes_bids)
         depth_no = sum(q for _, q in book.no_bids)
-        if bb_p is None or ba_p is None:
+        # REST público / libros a una cara: sin esto spread=99 y el gating
+        # rechaza siempre (spread_max ~5).
+        if bb_p is None and ba_p is None:
             return 0.5, 0.5, 99, depth_yes, depth_no
-        spread = max(0, ba_p - bb_p)
+        if bb_p is None:
+            _ba = int(ba_p) if ba_p is not None else 50
+            bb_p = max(1, _ba - 1)
+            bb_q = max(1, int(bb_q or ba_q or 1))
+        if ba_p is None:
+            _bb = int(bb_p) if bb_p is not None else 50
+            ba_p = min(99, _bb + 1)
+            ba_q = max(1, int(ba_q or bb_q or 1))
+        spread = max(0, int(ba_p) - int(bb_p))
         # microprice clásico: (ask*bid_size + bid*ask_size) / (bid_size+ask_size)
         denom = max(1, bb_q + ba_q)
-        micro = (ba_p * bb_q + bb_p * ba_q) / denom
+        micro = (float(ba_p) * bb_q + float(bb_p) * ba_q) / denom
         # imbalance shrinkage hacia [0.05, 0.95]
         p = float(np.clip(micro / 100.0, 0.01, 0.99))
         return p, p, spread, depth_yes, depth_no

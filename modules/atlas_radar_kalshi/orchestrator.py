@@ -23,6 +23,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 from .brain import RadarBrain
@@ -93,10 +94,12 @@ class Orchestrator:
         self.gating = Gating(gate_cfg or GateConfig(
             edge_net_min=float(os.getenv("RADAR_EDGE_NET_MIN", 0.03)),
             confidence_min=float(os.getenv("RADAR_CONFIDENCE_MIN", 0.62)),
-            spread_max_ticks=int(os.getenv("RADAR_SPREAD_MAX", 5)),
-            min_depth_yes=int(os.getenv("RADAR_MIN_DEPTH_YES", 50)),
-            min_depth_no=int(os.getenv("RADAR_MIN_DEPTH_NO", 50)),
-            max_quote_age_ms=int(os.getenv("RADAR_MAX_QUOTE_AGE_MS", 3000)),
+            spread_max_ticks=int(os.getenv("RADAR_SPREAD_MAX", 8)),
+            # Libros Kalshi REST suelen ser finos; 50 rechazaba casi todo en paper.
+            min_depth_yes=int(os.getenv("RADAR_MIN_DEPTH_YES", 12)),
+            min_depth_no=int(os.getenv("RADAR_MIN_DEPTH_NO", 12)),
+            # Usar timestamp del libro (no ev.ts) evita cola lenta → quote "stale".
+            max_quote_age_ms=int(os.getenv("RADAR_MAX_QUOTE_AGE_MS", 20000)),
             max_latency_ms=int(os.getenv("RADAR_MAX_LATENCY_MS", 1500)),
             cooldown_seconds=int(os.getenv("RADAR_COOLDOWN_S", 30)),
         ))
@@ -318,7 +321,7 @@ class Orchestrator:
         # 4) gating sobre nueva entrada
         gate = self.gating.evaluate(
             ev.market_ticker, readout, p_market=book.yes_mid or 0.5,
-            quote_age_ms=int((time.time() - ev.ts.timestamp()) * 1000),
+            quote_age_ms=self._quote_age_ms(book, ev),
             latency_ms=0,
         )
         if self._journal_all_decisions or gate.accepted:
@@ -449,6 +452,22 @@ class Orchestrator:
 
     # ------------------------------------------------------------------
     @staticmethod
+    def _quote_age_ms(book: OrderBookSnapshot, ev: MarketEvent) -> int:
+        """Antigüedad de la cotización: preferir book.ts (momento del snapshot)."""
+        try:
+            ref: datetime = book.ts
+            if getattr(ref, "tzinfo", None) is None:
+                ref = ref.replace(tzinfo=timezone.utc)
+            return max(0, int((time.time() - ref.timestamp()) * 1000))
+        except Exception:
+            try:
+                return max(
+                    0, int((time.time() - ev.ts.timestamp()) * 1000)
+                )
+            except Exception:
+                return 0
+
+    @staticmethod
     def _to_cents(value: object) -> Optional[int]:
         if value is None:
             return None
@@ -483,7 +502,7 @@ class Orchestrator:
             yes_asks=[(ask, max(1, qty_ask))],
             no_bids=[(no_bid, max(1, qty_ask))],
             no_asks=[(no_ask, max(1, qty_bid))],
-            ts=ev.ts,
+            ts=datetime.now(timezone.utc),
         )
 
     # ------------------------------------------------------------------
