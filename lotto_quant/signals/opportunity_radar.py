@@ -30,6 +30,8 @@ from .. import config
 from ..data.database import LottoQuantDB
 from ..data.ncel_scraper import NCELScraper
 from ..data.scratchsmarter_scraper import ScratchOddsScraper
+from ..execution.broker import BrokerBase, get_broker
+from ..execution.modes import OperatingMode, get_active_mode, get_state
 from ..models.ev_calculator import EVCalculator, EVResult, ScratchOffGame
 from ..models.jackpot_simulator import JackpotSimulator
 from ..models.kelly_allocator import KellyAllocator
@@ -45,20 +47,33 @@ class LottoQuantRadar:
 
     def __init__(
         self,
-        bankroll: float,
+        bankroll: Optional[float] = None,
         db_path: Optional[str] = None,
         config_override: Optional[Dict[str, Any]] = None,
+        mode: Optional[OperatingMode] = None,
+        execute: bool = True,
     ):
-        if bankroll <= 0:
-            raise ValueError("bankroll must be > 0")
-        self.bankroll = bankroll
         self.config_override = config_override or {}
         self.db = LottoQuantDB(db_path)
+        self.mode = mode or get_active_mode()
+        # Bankroll comes from mode state by default but can be overridden
+        state = get_state()
+        if bankroll is None:
+            bankroll = (
+                state.paper_bankroll
+                if self.mode == OperatingMode.PAPER
+                else state.live_bankroll
+            )
+        if bankroll <= 0 and self.mode == OperatingMode.PAPER:
+            bankroll = 1_000.0  # safe default for paper
+        self.bankroll = bankroll
         self.ev_calc = EVCalculator()
         self.kelly = KellyAllocator()
         self.jackpot_sim = JackpotSimulator(self.ev_calc)
         self.gate = SignalGate()
         self.alerts = AlertEngine(db=self.db)
+        self.execute = execute
+        self.broker: BrokerBase = get_broker(self.mode, self.db)
         self._running = False
         self._cycle_count = 0
         self._current_exposure = 0.0
@@ -168,6 +183,18 @@ class LottoQuantRadar:
             signal_type=decision.signal_type,
             recommended_position=rec.recommended_position,
         )
+
+        # ── Execute via broker (paper auto-fills, live records intent) ──
+        if self.execute and rec.n_tickets > 0:
+            try:
+                self.broker.submit_order(
+                    game=game,
+                    n_tickets=rec.n_tickets,
+                    expected_ev=ev.adjusted_ev_nc,
+                )
+            except Exception as e:
+                logger.warning("Broker submission failed for %s: %s", ev.game_id, e)
+
         self._current_exposure += rec.recommended_position
         return [{
             "game_id": ev.game_id,
@@ -177,6 +204,7 @@ class LottoQuantRadar:
             "ev_per_dollar": ev.ev_per_dollar,
             "recommended_position": rec.recommended_position,
             "n_tickets": rec.n_tickets,
+            "mode": self.mode.value,
         }]
 
     async def _process_jackpot(
@@ -271,15 +299,26 @@ def _setup_logging() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Atlas Lotto-Quant radar")
-    parser.add_argument("--bankroll", type=float, required=True)
+    parser.add_argument("--bankroll", type=float, default=None,
+                        help="Override bankroll (else read from mode state)")
     parser.add_argument("--interval", type=int, default=config.SCRAPE_INTERVAL_SECONDS)
     parser.add_argument("--db", type=str, default=None)
     parser.add_argument("--once", action="store_true", help="Run a single cycle and exit")
+    parser.add_argument("--mode", type=str, choices=["paper", "live"], default=None,
+                        help="Operating mode (overrides persisted state)")
+    parser.add_argument("--no-execute", action="store_true",
+                        help="Disable broker execution (signal-only)")
     args = parser.parse_args()
 
     _setup_logging()
 
-    radar = LottoQuantRadar(bankroll=args.bankroll, db_path=args.db)
+    mode = OperatingMode.from_string(args.mode) if args.mode else None
+    radar = LottoQuantRadar(
+        bankroll=args.bankroll,
+        db_path=args.db,
+        mode=mode,
+        execute=(not args.no_execute),
+    )
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
