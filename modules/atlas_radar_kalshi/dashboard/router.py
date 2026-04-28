@@ -44,7 +44,7 @@ from ..state.journal import Journal
 from ..metrics import compute as compute_perf, prometheus_text
 
 # Visible en /ui/radar: si no coincide tras pull, reiniciar proceso :8791.
-RADAR_UI_BUILD = "20260428-edge-labels-v2"
+RADAR_UI_BUILD = "20260429-watchdog-health-v1"
 
 
 # ===========================================================================
@@ -512,6 +512,12 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 "last_event_ts": float(getattr(h, "last_event_ts", 0.0)),
                 "last_decision_ts": float(getattr(h, "last_decision_ts", 0.0)),
                 "last_order_ts": float(getattr(h, "last_order_ts", 0.0)),
+                "watchdog_stale_sec": float(
+                    getattr(h, "watchdog_stale_sec", 120.0)
+                ),
+                "seconds_since_activity": float(
+                    getattr(h, "seconds_since_activity", 0.0)
+                ),
             }
         else:
             health_out = {
@@ -519,6 +525,8 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 "last_event_ts": 0.0,
                 "last_decision_ts": 0.0,
                 "last_order_ts": 0.0,
+                "watchdog_stale_sec": 120.0,
+                "seconds_since_activity": 0.0,
             }
         session_out = {
             "decisions": len(state.decisions),
@@ -560,6 +568,14 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "last_event_ts": getattr(h, "last_event_ts", 0.0),
             "last_decision_ts": getattr(h, "last_decision_ts", 0.0),
             "last_order_ts": getattr(h, "last_order_ts", 0.0),
+            "watchdog_stale_sec": float(getattr(h, "watchdog_stale_sec", 120.0)),
+            "seconds_since_activity": float(
+                getattr(h, "seconds_since_activity", 0.0)
+            ),
+            "note": (
+                "degraded=feed inactivo > umbral; no bloquea entradas en código; "
+                "ordenes=0 suele ser gating/conf/liquidez/riesgo."
+            ),
         }
 
     @router.get("/api/radar/prometheus")
@@ -1030,7 +1046,15 @@ async function refresh(){
       $('#hx_degraded').textContent = deg ? 'DEGRADED' : 'OK';
       $('#hx_degraded').className = 'v ' + (deg ? 'neg' : 'pos');
       const hel = $('#hx_last');
-      if(hel) hel.textContent = 'últ. evento hace ' + fmtRel(hh.last_event_ts);
+      if(hel) {
+        if(hh.degraded && hh.seconds_since_activity != null) {
+          const lim = hh.watchdog_stale_sec ?? 120;
+          hel.textContent = 'feed: sin actividad ' + Math.round(hh.seconds_since_activity)
+            + 's (lím ' + Math.round(lim) + 's) · degraded no bloquea gating';
+        } else {
+          hel.textContent = 'últ. evento hace ' + fmtRel(hh.last_event_ts);
+        }
+      }
     }
     if($('#q_line')) $('#q_line').textContent = (ses.queue_depth??0) + ' / ' + (ses.queue_dropped??0);
     if($('#edge_mm')){

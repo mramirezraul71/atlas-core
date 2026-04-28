@@ -12,10 +12,10 @@ Combina:
 - ``ExitManager`` (TP/SL/time-stop/forced-exit)
 - ``Journal`` (auditoría)
 
-Watchdog + heartbeat + auto-recovery están integrados; si falla un
-proveedor, el sistema entra en *modo degradado* (sin nuevas entradas,
-sólo gestión de salidas y cancelaciones) hasta que vuelva a estar
-sano.
+Watchdog: si no hay actividad reciente del feed (ver ``_watchdog``), marca
+``health.degraded``. Eso **no** bloquea nuevas entradas en el pipeline
+actual; afecta salidas forzadas (``ExitManager`` con ``data_degraded``)
+y el aviso en UI. La ausencia de órdenes suele venir del gating/riesgo.
 """
 from __future__ import annotations
 
@@ -47,6 +47,9 @@ class Health:
     last_decision_ts: float = 0.0
     last_order_ts: float = 0.0
     degraded: bool = False
+    # Diagnóstico watchdog (se rellenan en _watchdog)
+    watchdog_stale_sec: float = 60.0
+    seconds_since_activity: float = 0.0
 
     def tick(self, kind: str) -> None:
         now = time.time()
@@ -137,6 +140,7 @@ class Orchestrator:
         self._journal_all_decisions = (
             os.getenv("RADAR_JOURNAL_ALL_DECISIONS", "0") == "1"
         )
+        self._last_degraded_log_ts: float = 0.0
 
     # ------------------------------------------------------------------
     async def start(self) -> None:
@@ -182,8 +186,33 @@ class Orchestrator:
         """
         while not self._stop.is_set():
             await asyncio.sleep(5)
-            stale = time.time() - max(self.health.last_event_ts, 1) > 60
-            self.health.degraded = stale
+            stale_sec = max(
+                10.0,
+                float(os.getenv("RADAR_WATCHDOG_STALE_SEC", "120")),
+            )
+            self.health.watchdog_stale_sec = stale_sec
+            # Actividad: el feed principal marca eventos; las decisiones
+            # refuerzan (si el cola tarda, sigue contando "vida" del bucle).
+            act_ts = max(
+                self.health.last_event_ts,
+                self.health.last_decision_ts,
+            )
+            if act_ts <= 0.0:
+                act_ts = 1.0
+            age = time.time() - act_ts
+            self.health.seconds_since_activity = max(0.0, age)
+            self.health.degraded = age > stale_sec
+            if self.health.degraded:
+                now = time.time()
+                if now - self._last_degraded_log_ts >= 90.0:
+                    self._last_degraded_log_ts = now
+                    self.log.warning(
+                        "Watchdog: degraded=True (sin actividad >%.0fs; "
+                        "ahora=%.0fs; last_event=%.1f last_decision=%.1f). "
+                        "Ajusta RADAR_WATCHDOG_STALE_SEC o revisa scanner/feed.",
+                        stale_sec, age, self.health.last_event_ts,
+                        self.health.last_decision_ts,
+                    )
             # publicar al state para que /api/radar/{metrics,risk,health} sirvan datos
             try:
                 self.state.exec_metrics = self.executor.metrics.to_dict()  # type: ignore[attr-defined]
