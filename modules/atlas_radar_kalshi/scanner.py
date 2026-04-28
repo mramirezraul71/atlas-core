@@ -242,8 +242,9 @@ class KalshiScanner:
                 r.raise_for_status()
                 data = r.json()
 
+            markets = data.get("markets", []) or []
             new = []
-            for m in data.get("markets", []):
+            for m in markets:
                 t = m.get("ticker")
                 if t and t not in self._tickers:
                     self._tickers.add(t)
@@ -253,6 +254,40 @@ class KalshiScanner:
                             kind="new_market", market_ticker=t, payload=m
                         ))
                         self._new_market_events_emitted += 1
+            # Fallback resiliente: en feed público, algunos tickers no devuelven
+            # orderbook_fp utilizable; emitimos eventos tipo ticker desde /markets
+            # para mantener decisiones vivas y evitar "scanner degradado" por silencio.
+            emit_cap = max(
+                0, int(os.getenv("RADAR_MARKET_TICKER_EMIT_MAX", "120"))
+            )
+            emitted = 0
+            for m in markets:
+                if emitted >= emit_cap:
+                    break
+                t = m.get("ticker")
+                if not t:
+                    continue
+                payload = {
+                    "yes_bid": m.get("yes_bid"),
+                    "yes_ask": m.get("yes_ask"),
+                    "yes_bid_dollars": m.get("yes_bid_dollars"),
+                    "yes_ask_dollars": m.get("yes_ask_dollars"),
+                    "yes_bid_size": m.get("yes_bid_size") or 1,
+                    "yes_ask_size": m.get("yes_ask_size") or 1,
+                }
+                # Si el market no trae ni bid ni ask, saltar.
+                if all(
+                    payload.get(k) in (None, "", 0)
+                    for k in ("yes_bid", "yes_ask", "yes_bid_dollars", "yes_ask_dollars")
+                ):
+                    continue
+                if self._enqueue_event(
+                    MarketEvent(kind="ticker", market_ticker=t, payload=payload)
+                ):
+                    self._record_history(t, payload)
+                    emitted += 1
+            if emitted:
+                self.log.debug("Fallback /markets->ticker emitidos=%d", emitted)
             if new:
                 self.log.info("Nuevos mercados detectados: %s", new[:5])
             return new
