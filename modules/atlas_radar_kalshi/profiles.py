@@ -3,6 +3,31 @@
 from __future__ import annotations
 
 RADAR_PROFILE_PRESETS: dict[str, dict[str, dict[str, float | int]]] = {
+    # Calibración en paper (feed REST/Kalshi público, libros 1-cara): gating
+    # permisivo; riesgo acotado pero sin cortar por DD pequeño como aggressive.
+    "paper_calib": {
+        "gate": {
+            "edge_net_min": 0.012,
+            "confidence_min": 0.32,
+            "spread_max_ticks": 10,
+            "min_depth_yes": 1,
+            "min_depth_no": 1,
+            "max_quote_age_ms": 60000,
+            "max_latency_ms": 2000,
+            "cooldown_seconds": 15,
+        },
+        "risk": {
+            "kelly_fraction": 0.12,
+            "max_position_pct": 0.02,
+            "max_market_exposure_pct": 0.12,
+            "max_total_exposure_pct": 0.45,
+            "daily_dd_limit_pct": 0.10,
+            "weekly_dd_limit_pct": 0.18,
+            "max_consecutive_losses": 8,
+            "max_open_positions": 12,
+            "max_orders_per_minute": 18,
+        },
+    },
     # Perfil robusto para feed público/paper.
     "paper_safe": {
         "gate": {

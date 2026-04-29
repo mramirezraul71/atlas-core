@@ -165,6 +165,35 @@ class RadarRuntimeConfigBody(BaseModel):
         default=None,
         description="Edge neto mínimo tras costos (gating), p. ej. 0.03 = 3%.",
     )
+    confidence_min: Optional[float] = Field(
+        default=None,
+        description="Confianza mínima del ensemble/LLM para permitir entrada.",
+    )
+    spread_max_ticks: Optional[int] = Field(
+        default=None,
+        description="Spread máximo permitido por el gate.",
+    )
+    min_depth_yes: Optional[int] = Field(
+        default=None,
+        description="Profundidad mínima YES para permitir entrada.",
+    )
+    min_depth_no: Optional[int] = Field(
+        default=None,
+        description="Profundidad mínima NO para permitir entrada.",
+    )
+    max_open_positions: Optional[int] = Field(
+        default=None,
+        description="Límite runtime de posiciones abiertas.",
+    )
+
+    max_orders_per_minute: Optional[int] = Field(
+        default=None,
+        description="Limite runtime de ordenes por minuto.",
+    )
+    max_total_exposure_pct: Optional[float] = Field(
+        default=None,
+        description="Exposicion total maxima runtime (0.90 = 90%).",
+    )
 
     @field_validator("environment")
     @classmethod
@@ -226,6 +255,33 @@ class RadarRuntimeConfigBody(BaseModel):
             return v
         if not 0.0 <= v <= 0.5:
             raise ValueError("edge_net_min debe estar entre 0.0 y 0.5")
+        return v
+
+    @field_validator("confidence_min")
+    @classmethod
+    def _v_confidence_min(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("confidence_min debe estar entre 0.0 y 1.0")
+        return v
+
+    @field_validator("spread_max_ticks", "min_depth_yes", "min_depth_no", "max_open_positions", "max_orders_per_minute")
+    @classmethod
+    def _v_positive_ints(cls, v: Optional[int]) -> Optional[int]:
+        if v is None:
+            return v
+        if int(v) < 1:
+            raise ValueError("Los valores enteros del gate/riesgo deben ser >= 1")
+        return int(v)
+
+    @field_validator("max_total_exposure_pct")
+    @classmethod
+    def _v_max_total_exposure_pct(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        if not 0.01 <= v <= 1.0:
+            raise ValueError("max_total_exposure_pct debe estar entre 0.01 y 1.0")
         return v
 
 
@@ -593,7 +649,10 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                     status_code=400,
                     detail="Política de remediación activa: execution_mode debe ser paper.",
                 )
-            selected_profile = "balanced"
+            # Solo se endurece 'aggressive' → 'balanced'. paper_calib / paper_safe
+            # se respetan para calibración en paper con credenciales opcionales.
+            if selected_profile == "aggressive":
+                selected_profile = "balanced"
         if selected_profile not in RADAR_PROFILE_PRESETS:
             selected_profile = "paper_safe"
         p_gate = RADAR_PROFILE_PRESETS[selected_profile]["gate"]
@@ -699,6 +758,27 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 orch.gating.cfg = orch.gating.cfg.model_copy(
                     update={"edge_net_min": payload.edge_net_min}
                 )
+            if orch is not None:
+                gate_updates: dict[str, Any] = {}
+                if payload.confidence_min is not None:
+                    gate_updates["confidence_min"] = payload.confidence_min
+                if payload.spread_max_ticks is not None:
+                    gate_updates["spread_max_ticks"] = payload.spread_max_ticks
+                if payload.min_depth_yes is not None:
+                    gate_updates["min_depth_yes"] = payload.min_depth_yes
+                if payload.min_depth_no is not None:
+                    gate_updates["min_depth_no"] = payload.min_depth_no
+                if gate_updates:
+                    orch.gating.cfg = orch.gating.cfg.model_copy(update=gate_updates)
+                risk_updates: dict[str, Any] = {}
+                if payload.max_open_positions is not None:
+                    risk_updates["max_open_positions"] = payload.max_open_positions
+                if payload.max_orders_per_minute is not None:
+                    risk_updates["max_orders_per_minute"] = payload.max_orders_per_minute
+                if payload.max_total_exposure_pct is not None:
+                    risk_updates["max_total_exposure_pct"] = payload.max_total_exposure_pct
+                if risk_updates:
+                    orch.risk.limits = orch.risk.limits.model_copy(update=risk_updates)
 
         if payload.persist_env:
             updates = {
@@ -719,6 +799,20 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 updates["RADAR_KELLY_FRACTION"] = str(payload.kelly_fraction)
             if payload.edge_net_min is not None:
                 updates["RADAR_EDGE_NET_MIN"] = str(payload.edge_net_min)
+            if payload.confidence_min is not None:
+                updates["RADAR_CONFIDENCE_MIN"] = str(payload.confidence_min)
+            if payload.spread_max_ticks is not None:
+                updates["RADAR_SPREAD_MAX"] = str(payload.spread_max_ticks)
+            if payload.min_depth_yes is not None:
+                updates["RADAR_MIN_DEPTH_YES"] = str(payload.min_depth_yes)
+            if payload.min_depth_no is not None:
+                updates["RADAR_MIN_DEPTH_NO"] = str(payload.min_depth_no)
+            if payload.max_open_positions is not None:
+                updates["RADAR_MAX_OPEN"] = str(payload.max_open_positions)
+            if payload.max_orders_per_minute is not None:
+                updates["RADAR_MAX_OPM"] = str(payload.max_orders_per_minute)
+            if payload.max_total_exposure_pct is not None:
+                updates["RADAR_MAX_TOTAL_EXP"] = str(payload.max_total_exposure_pct)
             try:
                 for env_path in _env_file_paths():
                     if payload.clear_profile_overrides:
@@ -1277,6 +1371,7 @@ _RADAR_HTML = r"""<!doctype html>
       <input id="cfg_paper" type="number" min="1" step="1" value="1000" />
       <label for="cfg_profile">Perfil</label>
       <select id="cfg_profile">
+        <option value="paper_calib">paper_calib (calibrar paper, menos exigente)</option>
         <option value="paper_safe">paper_safe</option>
         <option value="balanced">balanced</option>
         <option value="aggressive">aggressive</option>
