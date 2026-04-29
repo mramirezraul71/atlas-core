@@ -18164,3 +18164,397 @@ Traceback (most recent call last):
   File "C:\Users\r6957\AppData\Local\Programs\Python\Python311\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
     self._sock.shutdown(socket.SHUT_RDWR)
 ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-27 16:17:41,343 - atlas.nexus - INFO - ============================================================
+2026-04-27 16:17:41,343 - atlas.nexus - INFO - ATLAS NEXUS - Initializing...
+2026-04-27 16:17:41,343 - atlas.nexus - INFO - ============================================================
+2026-04-27 16:17:41,343 - atlas.nexus - INFO - Environment: development
+2026-04-27 16:17:41,343 - atlas.nexus - INFO - Root Path: C:\ATLAS_NEXUS
+2026-04-27 16:17:41,343 - atlas.nexus - INFO - 
+Initializing Neural Router...
+2026-04-27 16:17:41,358 - directives_manager - INFO - Estructura de directivas inicializada en: C:\ATLAS_PUSH\nexus\atlas_nexus\brain\..\directives
+2026-04-27 16:17:41,358 - atlas.brain.router - INFO - Directives manager initialized
+2026-04-27 16:17:41,358 - atlas.brain.router - INFO - Neural Router initialized
+2026-04-27 16:17:41,358 - atlas.brain.router - INFO - Available providers: Ollama=True, OpenAI=True, Anthropic=True
+2026-04-27 16:17:41,358 - atlas.nexus - INFO - 
+Initializing Tools Registry...
+2026-04-27 16:17:41,359 - atlas.tools - INFO - Registered tool: web_search (web)
+2026-04-27 16:17:41,359 - atlas.tools - INFO - Registered tool: web_scrape (web)
+2026-04-27 16:17:41,359 - atlas.tools - INFO - Registered tool: file_read (files)
+2026-04-27 16:17:41,359 - atlas.tools - INFO - Registered tool: file_write (files)
+2026-04-27 16:17:41,359 - atlas.tools - INFO - Registered tool: system_command (system)
+2026-04-27 16:17:41,359 - atlas.tools - INFO - Registered tool: pip_install (system)
+2026-04-27 16:17:41,360 - atlas.tools - INFO - Registered tool: data_analysis (data)
+2026-04-27 16:17:41,360 - atlas.tools - INFO - Registered tool: send_message (communication)
+2026-04-27 16:17:41,360 - atlas.tools - INFO - Tools Registry initialized with 8 tools
+2026-04-27 16:17:41,360 - atlas.nexus - INFO - 
+Initializing Autonomous Engine...
+2026-04-27 16:17:41,360 - atlas.brain.autonomous - INFO - Autonomous Engine initialized
+2026-04-27 16:17:41,360 - atlas.nexus - INFO - 
+============================================================
+2026-04-27 16:17:41,360 - atlas.nexus - INFO - ATLAS NEXUS - Ready!
+2026-04-27 16:17:41,360 - atlas.nexus - INFO - ============================================================
+
+2026-04-27 16:53:20,066 - atlas.nexus - INFO - ============================================================
+2026-04-27 16:53:20,067 - atlas.nexus - INFO - ATLAS NEXUS - Initializing...
+2026-04-27 16:53:20,067 - atlas.nexus - INFO - ============================================================
+2026-04-27 16:53:20,067 - atlas.nexus - INFO - Environment: development
+2026-04-27 16:53:20,067 - atlas.nexus - INFO - Root Path: C:\ATLAS_NEXUS
+2026-04-27 16:53:20,067 - atlas.nexus - INFO - 
+Initializing Neural Router...
+2026-04-27 16:53:20,073 - directives_manager - INFO - Estructura de directivas inicializada en: C:\ATLAS_PUSH\nexus\atlas_nexus\brain\..\directives
+2026-04-27 16:53:20,074 - atlas.brain.router - INFO - Directives manager initialized
+2026-04-27 16:53:20,074 - atlas.brain.router - INFO - Neural Router initialized
+2026-04-27 16:53:20,074 - atlas.brain.router - INFO - Available providers: Ollama=True, OpenAI=True, Anthropic=True
+2026-04-27 16:53:20,074 - atlas.nexus - INFO - 
+Initializing Tools Registry...
+2026-04-27 16:53:20,074 - atlas.tools - INFO - Registered tool: web_search (web)
+2026-04-27 16:53:20,074 - atlas.tools - INFO - Registered tool: web_scrape (web)
+2026-04-27 16:53:20,074 - atlas.tools - INFO - Registered tool: file_read (files)
+2026-04-27 16:53:20,074 - atlas.tools - INFO - Registered tool: file_write (files)
+2026-04-27 16:53:20,074 - atlas.tools - INFO - Registered tool: system_command (system)
+2026-04-27 16:53:20,074 - atlas.tools - INFO - Registered tool: pip_install (system)
+2026-04-27 16:53:20,075 - atlas.tools - INFO - Registered tool: data_analysis (data)
+2026-04-27 16:53:20,075 - atlas.tools - INFO - Registered tool: send_message (communication)
+2026-04-27 16:53:20,075 - atlas.tools - INFO - Tools Registry initialized with 8 tools
+2026-04-27 16:53:20,075 - atlas.nexus - INFO - 
+Initializing Autonomous Engine...
+2026-04-27 16:53:20,075 - atlas.brain.autonomous - INFO - Autonomous Engine initialized
+2026-04-27 16:53:20,075 - atlas.nexus - INFO - 
+============================================================
+2026-04-27 16:53:20,075 - atlas.nexus - INFO - ATLAS NEXUS - Ready!
+2026-04-27 16:53:20,075 - atlas.nexus - INFO - ============================================================
+
+2026-04-28 04:17:57,369 - atlas.nexus - INFO - ============================================================
+2026-04-28 04:17:57,369 - atlas.nexus - INFO - ATLAS NEXUS - Initializing...
+2026-04-28 04:17:57,369 - atlas.nexus - INFO - ============================================================
+2026-04-28 04:17:57,369 - atlas.nexus - INFO - Environment: development
+2026-04-28 04:17:57,369 - atlas.nexus - INFO - Root Path: C:\ATLAS_NEXUS
+2026-04-28 04:17:57,370 - atlas.nexus - INFO - 
+Initializing Neural Router...
+2026-04-28 04:17:57,396 - directives_manager - INFO - Estructura de directivas inicializada en: C:\ATLAS_PUSH\nexus\atlas_nexus\brain\..\directives
+2026-04-28 04:17:57,396 - atlas.brain.router - INFO - Directives manager initialized
+2026-04-28 04:17:57,396 - atlas.brain.router - INFO - Neural Router initialized
+2026-04-28 04:17:57,396 - atlas.brain.router - INFO - Available providers: Ollama=True, OpenAI=True, Anthropic=True
+2026-04-28 04:17:57,397 - atlas.nexus - INFO - 
+Initializing Tools Registry...
+2026-04-28 04:17:57,397 - atlas.tools - INFO - Registered tool: web_search (web)
+2026-04-28 04:17:57,397 - atlas.tools - INFO - Registered tool: web_scrape (web)
+2026-04-28 04:17:57,397 - atlas.tools - INFO - Registered tool: file_read (files)
+2026-04-28 04:17:57,397 - atlas.tools - INFO - Registered tool: file_write (files)
+2026-04-28 04:17:57,397 - atlas.tools - INFO - Registered tool: system_command (system)
+2026-04-28 04:17:57,398 - atlas.tools - INFO - Registered tool: pip_install (system)
+2026-04-28 04:17:57,398 - atlas.tools - INFO - Registered tool: data_analysis (data)
+2026-04-28 04:17:57,398 - atlas.tools - INFO - Registered tool: send_message (communication)
+2026-04-28 04:17:57,398 - atlas.tools - INFO - Tools Registry initialized with 8 tools
+2026-04-28 04:17:57,398 - atlas.nexus - INFO - 
+Initializing Autonomous Engine...
+2026-04-28 04:17:57,398 - atlas.brain.autonomous - INFO - Autonomous Engine initialized
+2026-04-28 04:17:57,398 - atlas.nexus - INFO - 
+============================================================
+2026-04-28 04:17:57,398 - atlas.nexus - INFO - ATLAS NEXUS - Ready!
+2026-04-28 04:17:57,398 - atlas.nexus - INFO - ============================================================
+
+2026-04-28 04:46:45,607 - atlas.nexus - INFO - ============================================================
+2026-04-28 04:46:45,608 - atlas.nexus - INFO - ATLAS NEXUS - Initializing...
+2026-04-28 04:46:45,608 - atlas.nexus - INFO - ============================================================
+2026-04-28 04:46:45,608 - atlas.nexus - INFO - Environment: development
+2026-04-28 04:46:45,608 - atlas.nexus - INFO - Root Path: C:\ATLAS_NEXUS
+2026-04-28 04:46:45,608 - atlas.nexus - INFO - 
+Initializing Neural Router...
+2026-04-28 04:46:45,617 - directives_manager - INFO - Estructura de directivas inicializada en: C:\ATLAS_PUSH\nexus\atlas_nexus\brain\..\directives
+2026-04-28 04:46:45,619 - atlas.brain.router - INFO - Directives manager initialized
+2026-04-28 04:46:45,620 - atlas.brain.router - INFO - Neural Router initialized
+2026-04-28 04:46:45,620 - atlas.brain.router - INFO - Available providers: Ollama=True, OpenAI=True, Anthropic=True
+2026-04-28 04:46:45,620 - atlas.nexus - INFO - 
+Initializing Tools Registry...
+2026-04-28 04:46:45,621 - atlas.tools - INFO - Registered tool: web_search (web)
+2026-04-28 04:46:45,621 - atlas.tools - INFO - Registered tool: web_scrape (web)
+2026-04-28 04:46:45,621 - atlas.tools - INFO - Registered tool: file_read (files)
+2026-04-28 04:46:45,621 - atlas.tools - INFO - Registered tool: file_write (files)
+2026-04-28 04:46:45,621 - atlas.tools - INFO - Registered tool: system_command (system)
+2026-04-28 04:46:45,621 - atlas.tools - INFO - Registered tool: pip_install (system)
+2026-04-28 04:46:45,621 - atlas.tools - INFO - Registered tool: data_analysis (data)
+2026-04-28 04:46:45,622 - atlas.tools - INFO - Registered tool: send_message (communication)
+2026-04-28 04:46:45,622 - atlas.tools - INFO - Tools Registry initialized with 8 tools
+2026-04-28 04:46:45,622 - atlas.nexus - INFO - 
+Initializing Autonomous Engine...
+2026-04-28 04:46:45,622 - atlas.brain.autonomous - INFO - Autonomous Engine initialized
+2026-04-28 04:46:45,622 - atlas.nexus - INFO - 
+============================================================
+2026-04-28 04:46:45,622 - atlas.nexus - INFO - ATLAS NEXUS - Ready!
+2026-04-28 04:46:45,622 - atlas.nexus - INFO - ============================================================
+
+2026-04-28 15:27:12,302 - atlas.nexus - INFO - ============================================================
+2026-04-28 15:27:12,302 - atlas.nexus - INFO - ATLAS NEXUS - Initializing...
+2026-04-28 15:27:12,303 - atlas.nexus - INFO - ============================================================
+2026-04-28 15:27:12,303 - atlas.nexus - INFO - Environment: development
+2026-04-28 15:27:12,303 - atlas.nexus - INFO - Root Path: C:\ATLAS_NEXUS
+2026-04-28 15:27:12,303 - atlas.nexus - INFO - 
+Initializing Neural Router...
+2026-04-28 15:27:12,311 - directives_manager - INFO - Estructura de directivas inicializada en: C:\ATLAS_PUSH\nexus\atlas_nexus\brain\..\directives
+2026-04-28 15:27:12,311 - atlas.brain.router - INFO - Directives manager initialized
+2026-04-28 15:27:12,311 - atlas.brain.router - INFO - Neural Router initialized
+2026-04-28 15:27:12,311 - atlas.brain.router - INFO - Available providers: Ollama=True, OpenAI=True, Anthropic=True
+2026-04-28 15:27:12,311 - atlas.nexus - INFO - 
+Initializing Tools Registry...
+2026-04-28 15:27:12,311 - atlas.tools - INFO - Registered tool: web_search (web)
+2026-04-28 15:27:12,311 - atlas.tools - INFO - Registered tool: web_scrape (web)
+2026-04-28 15:27:12,312 - atlas.tools - INFO - Registered tool: file_read (files)
+2026-04-28 15:27:12,312 - atlas.tools - INFO - Registered tool: file_write (files)
+2026-04-28 15:27:12,312 - atlas.tools - INFO - Registered tool: system_command (system)
+2026-04-28 15:27:12,312 - atlas.tools - INFO - Registered tool: pip_install (system)
+2026-04-28 15:27:12,312 - atlas.tools - INFO - Registered tool: data_analysis (data)
+2026-04-28 15:27:12,312 - atlas.tools - INFO - Registered tool: send_message (communication)
+2026-04-28 15:27:12,312 - atlas.tools - INFO - Tools Registry initialized with 8 tools
+2026-04-28 15:27:12,312 - atlas.nexus - INFO - 
+Initializing Autonomous Engine...
+2026-04-28 15:27:12,312 - atlas.brain.autonomous - INFO - Autonomous Engine initialized
+2026-04-28 15:27:12,313 - atlas.nexus - INFO - 
+============================================================
+2026-04-28 15:27:12,313 - atlas.nexus - INFO - ATLAS NEXUS - Ready!
+2026-04-28 15:27:12,313 - atlas.nexus - INFO - ============================================================
+
+2026-04-29 02:53:22,339 - atlas.nexus - INFO - ============================================================
+2026-04-29 02:53:22,339 - atlas.nexus - INFO - ATLAS NEXUS - Initializing...
+2026-04-29 02:53:22,340 - atlas.nexus - INFO - ============================================================
+2026-04-29 02:53:22,340 - atlas.nexus - INFO - Environment: development
+2026-04-29 02:53:22,340 - atlas.nexus - INFO - Root Path: C:\ATLAS_NEXUS
+2026-04-29 02:53:22,340 - atlas.nexus - INFO - 
+Initializing Neural Router...
+2026-04-29 02:53:22,354 - directives_manager - INFO - Estructura de directivas inicializada en: C:\ATLAS_PUSH\nexus\atlas_nexus\brain\..\directives
+2026-04-29 02:53:22,355 - atlas.brain.router - INFO - Directives manager initialized
+2026-04-29 02:53:22,355 - atlas.brain.router - INFO - Neural Router initialized
+2026-04-29 02:53:22,355 - atlas.brain.router - INFO - Available providers: Ollama=True, OpenAI=True, Anthropic=True
+2026-04-29 02:53:22,355 - atlas.nexus - INFO - 
+Initializing Tools Registry...
+2026-04-29 02:53:22,355 - atlas.tools - INFO - Registered tool: web_search (web)
+2026-04-29 02:53:22,355 - atlas.tools - INFO - Registered tool: web_scrape (web)
+2026-04-29 02:53:22,355 - atlas.tools - INFO - Registered tool: file_read (files)
+2026-04-29 02:53:22,356 - atlas.tools - INFO - Registered tool: file_write (files)
+2026-04-29 02:53:22,356 - atlas.tools - INFO - Registered tool: system_command (system)
+2026-04-29 02:53:22,356 - atlas.tools - INFO - Registered tool: pip_install (system)
+2026-04-29 02:53:22,356 - atlas.tools - INFO - Registered tool: data_analysis (data)
+2026-04-29 02:53:22,356 - atlas.tools - INFO - Registered tool: send_message (communication)
+2026-04-29 02:53:22,356 - atlas.tools - INFO - Tools Registry initialized with 8 tools
+2026-04-29 02:53:22,356 - atlas.nexus - INFO - 
+Initializing Autonomous Engine...
+2026-04-29 02:53:22,356 - atlas.brain.autonomous - INFO - Autonomous Engine initialized
+2026-04-29 02:53:22,356 - atlas.nexus - INFO - 
+============================================================
+2026-04-29 02:53:22,356 - atlas.nexus - INFO - ATLAS NEXUS - Ready!
+2026-04-29 02:53:22,356 - atlas.nexus - INFO - ============================================================
+
+2026-04-29 02:53:23,083 - atlas.nexus - INFO - Starting API Server on 0.0.0.0:8000
+2026-04-29 02:53:23,093 - directives.directives_manager - INFO - Estructura de directivas inicializada en: C:\ATLAS_PUSH\nexus\atlas_nexus\directives
+2026-04-29 02:53:23,116 - directives.directives_api - INFO - API de Directivas registrada exitosamente
+2026-04-29 02:53:23,117 - atlas.api - INFO - Directives API registered successfully
+2026-04-29 02:54:47,134 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 02:57:44,816 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 04:49:34,745 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:00:19,328 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:01:17,111 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:13:08,586 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:17:08,285 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:30:38,203 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:37:57,786 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:43:31,277 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:52:02,048 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:58:19,555 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 05:59:09,483 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 06:01:09,993 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 06:09:17,757 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 06:45:48,089 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 06:49:34,958 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 07:01:34,339 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 07:20:49,684 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 07:39:16,438 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
+2026-04-29 07:43:58,122 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\events.py", line 94, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Se ha forzado la interrupción de una conexión existente por el host remoto
