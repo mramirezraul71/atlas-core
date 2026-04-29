@@ -207,7 +207,8 @@ def test_backtest_buckets_multiple_snapshots_per_day(tmp_path):
     from lotto_quant.data.database import LottoQuantDB
 
     db = LottoQuantDB()
-    day = datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc)
+    # Keep the timestamp away from midnight UTC to avoid local TZ day flips.
+    day = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
     _seed_snapshot(db, game_id="G-A", name="A", ticket_price=5.0,
                    prize_tiers=_positive_ev_tiers(), snapshot_ts=day)
     _seed_snapshot(db, game_id="G-A", name="A", ticket_price=5.0,
@@ -243,6 +244,7 @@ def test_backtest_workspace_db_isolated_from_source(tmp_path):
     """Backtest writes go to workspace_db, NOT the source DB."""
     from lotto_quant.backtest import BacktestConfig, BacktestEngine
     from lotto_quant.data.database import LottoQuantDB
+    from lotto_quant.execution.broker import ensure_broker_tables
 
     src = LottoQuantDB()
     ts = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
@@ -255,6 +257,7 @@ def test_backtest_workspace_db_isolated_from_source(tmp_path):
     BacktestEngine(cfg).run()
 
     # Source must remain free of any execution rows
+    ensure_broker_tables(src)
     cur = src._cursor()
     cur.execute("SELECT COUNT(*) FROM exec_orders")
     src_orders = cur.fetchone()[0]

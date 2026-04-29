@@ -312,6 +312,15 @@ class BacktestEngine:
             win_rate=self._win_rate(daily_results),
             per_game_pnl=dict(per_game_pnl),
         )
+        try:
+            ws_db._commit()
+        except Exception:
+            pass
+        try:
+            if hasattr(ws_db, "close"):
+                ws_db.close()
+        except Exception:
+            pass
         return result
 
     # ── helpers ───────────────────────────────────────────────────
