@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atlas Code-Quant · v1.0.0</title>
+  <script>
+    const _QVER = '20260416c';
+    window.QUANT_ACCOUNT_SCOPE = 'paper';
+    window.QUANT_ACCOUNT_ID = '';
+    // Detecta la base de los assets según el puerto desde el que se sirve
+    const _QBASE = (location.port !== '8791') ? '/static' : '/quant-static';
+    document.write('<link rel="stylesheet" href="'+_QBASE+'/css/dash.css?v='+_QVER+'"/>');
+    document.write('<link rel="icon" href="data:,">');
+  </script>
+</head>
+<body>
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <a href="/ui" class="back-btn" title="Volver a Atlas">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        Atlas
+      </a>
+      <span class="topbar-sep">|</span>
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">ATLAS <em>CODE-QUANT</em></span>
+      <span class="version-badge">v1.1.4</span>
+    </div>
+    <div class="topbar-status">
+      <span class="status-dot" id="ws-dot" title="WebSocket"></span>
+      <span class="stat-chip" id="chip-ws-mode">WS: RECONNECT</span>
+      <span class="stat-chip" id="chip-uptime">--</span>
+      <span class="stat-chip accent" id="chip-equity">--</span>
+      <span class="stat-chip" id="chip-positions">0 pos</span>
+      <span class="stat-chip" id="chip-source">Tradier</span>
+      <span class="stat-chip" id="chip-sync">SYNC --</span>
+      <button class="btn-icon" id="btn-emergency" title="Emergency Stop">&#9632;</button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <!-- SIDEBAR -->
+    <nav class="sidebar">
+      <ul class="nav-list">
+        <li class="nav-item active" data-view="overview">
+          <span class="nav-icon">&#9636;</span><span class="nav-label">Overview</span>
+        </li>
+        <li class="nav-item" data-view="positions">
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Posiciones</span>
+        </li>
+        <li class="nav-item" data-view="scanner">
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Scanner</span>
+        </li>
+        <li class="nav-item" data-view="backtest">
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Backtest</span>
+        </li>
+        <li class="nav-item" data-view="journal">
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Journal</span>
+        </li>
+        <li class="nav-item" data-view="rl">
+          <span class="nav-icon">&#9670;</span><span class="nav-label">RL Engine</span>
+        </li>
+        <li class="nav-item" data-view="visual">
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Visual</span>
+        </li>
+        <li class="nav-item" data-view="alerts">
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Alertas</span>
+        </li>
+        <li class="nav-item" data-view="analytics">
+          <span class="nav-icon">&#9672;</span><span class="nav-label">Analytics</span>
+        </li>
+        <li class="nav-item" onclick="window.open('http://'+location.hostname+':8795/options/ui','_self')" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+          <span class="nav-icon" style="color:var(--accent)">&#9651;</span><span class="nav-label" style="color:var(--accent)">OptionStrat ↗</span>
+        </li>
+      </ul>
+      <div class="sidebar-footer">
+        <span id="sidebar-time">--:--:--</span>
+      </div>
+    </nav>
+
+    <!-- MAIN -->
+    <main class="main-content" id="main-content">
+
+      <!-- ── OVERVIEW ─────────────────────────────────────────────── -->
+      <section class="view active" id="view-overview">
+        <div class="view-header">
+          <h1 class="view-title">Overview</h1>
+          <div class="view-actions">
+            <span class="stat-chip" id="ov-source-badge">Operativa --</span>
+            <span class="stat-chip" id="ov-history-badge">Histórico --</span>
+            <span class="stat-chip" id="ov-sim-badge">Sim --</span>
+            <select class="select-sm" id="ov-symbol">
+              <option>BTC/USDT</option>
+              <option>ETH/USDT</option>
+              <option>SOL/USDT</option>
+            </select>
+            <button class="btn-sm" id="ov-refresh">&#8635; Refresh</button>
+          </div>
+        </div>
+
+        <!-- KPI row -->
+        <div class="kpi-row" id="kpi-row">
+          <div class="kpi-card">
+            <span class="kpi-label">Equity</span>
+            <span class="kpi-value" id="kpi-equity">--</span>
+            <span class="kpi-sub" id="kpi-equity-delta">--</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Sharpe</span>
+            <span class="kpi-value" id="kpi-sharpe">--</span>
+            <span class="kpi-sub">anualizado</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Drawdown</span>
+            <span class="kpi-value red" id="kpi-dd">--</span>
+            <span class="kpi-sub">máximo</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Win Rate</span>
+            <span class="kpi-value" id="kpi-wr">--</span>
+            <span class="kpi-sub" id="kpi-trades">-- trades</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Kelly</span>
+            <span class="kpi-value accent" id="kpi-kelly">--</span>
+            <span class="kpi-sub">quarter-kelly</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Calmar</span>
+            <span class="kpi-value" id="kpi-calmar">--</span>
+            <span class="kpi-sub">retorno/dd</span>
+          </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="charts-row">
+          <div class="chart-panel wide">
+            <div class="chart-header">
+              <span class="chart-title">Equity Curve</span>
+              <div class="chart-controls">
+                <button class="btn-xs active" data-range="1D">1D</button>
+                <button class="btn-xs" data-range="1W">1W</button>
+                <button class="btn-xs" data-range="1M">1M</button>
+                <button class="btn-xs" data-range="ALL">ALL</button>
+              </div>
+            </div>
+            <div class="chart-body" id="chart-equity"></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">PnL Distribución</span></div>
+            <div class="chart-body"><canvas id="chart-pnl-dist"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Second charts row -->
+        <div class="charts-row">
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">Drawdown</span></div>
+            <div class="chart-body" id="chart-drawdown"></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">Monte Carlo (200 paths)</span></div>
+            <div class="chart-body"><canvas id="chart-mc"></canvas></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">Win/Loss Streak</span></div>
+            <div class="chart-body"><canvas id="chart-streak"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Third charts row -->
+        <div class="charts-row">
+          <div class="chart-panel wide">
+            <div class="chart-header"><span class="chart-title">Heatmap de Performance (día × hora)</span></div>
+            <div class="chart-body" style="min-height:200px"><canvas id="chart-heatmap"></canvas></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">Sharpe Rolling 20</span></div>
+            <div class="chart-body"><canvas id="chart-rolling-sharpe"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Signal feed -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Feed de Señales</span>
+            <span class="live-badge">LIVE</span>
+          </div>
+          <div class="panel-body">
+            <table class="data-tbl">
+              <thead><tr>
+                <th>Tiempo</th><th>Símbolo</th><th>Estrategia</th>
+                <th>Señal</th><th>Confianza</th><th>Kelly %</th><th>ATR SL/TP</th>
+              </tr></thead>
+              <tbody id="signal-feed-body">
+                <tr class="empty-row"><td colspan="7">Esperando señales…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── POSICIONES ─────────────────────────────────────────────── -->
+      <section class="view" id="view-positions">
+        <div class="view-header">
+          <h1 class="view-title">Posiciones Abiertas</h1>
+          <div class="view-actions">
+            <span class="stat-chip" id="pos-source-badge">Fuente --</span>
+            <span class="stat-chip" id="pos-sync-badge">Sync --</span>
+            <button class="btn-sm" id="pos-refresh">&#8635; Refresh</button>
+          </div>
+        </div>
+        <div class="kpi-row" id="pos-kpi-row">
+          <div class="kpi-card">
+            <span class="kpi-label">Posiciones</span>
+            <span class="kpi-value" id="pos-count">0</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">PnL no realizado</span>
+            <span class="kpi-value" id="pos-unrealized">--</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Exposición</span>
+            <span class="kpi-value" id="pos-exposure">--</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Circuit Breaker</span>
+            <span class="kpi-value" id="pos-cb">OK</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Exit Now</span>
+            <span class="kpi-value" id="pos-exit-now">0</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">De-risk</span>
+            <span class="kpi-value" id="pos-de-risk">0</span>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-body">
+            <table class="data-tbl" id="positions-tbl">
+              <thead><tr>
+                <th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Actual</th>
+                <th>Unidades</th><th>PnL $</th><th>PnL %</th><th>Log Ret</th>
+                <th>SL</th><th>TP</th><th>ATR</th><th>R abierto</th>
+                <th>Salida</th><th>Urgencia</th><th>Criterio</th>
+              </tr></thead>
+              <tbody id="positions-body">
+                <tr class="empty-row"><td colspan="15">Sin posiciones abiertas</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── SCANNER ─────────────────────────────────────────────── -->
+      <section class="view" id="view-scanner">
+        <div class="view-header">
+          <h1 class="view-title">Opportunity Scanner</h1>
+          <div class="view-actions">
+            <button class="btn-sm" id="scanner-start">&#9654; Start</button>
+            <button class="btn-sm red" id="scanner-stop">&#9632; Stop</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Oportunidades detectadas</span>
+            <span class="stat-chip" id="scanner-status-chip">--</span>
+          </div>
+          <div class="panel-body">
+            <table class="data-tbl">
+              <thead><tr>
+                <th>Símbolo</th><th>Estrategia</th><th>Score</th><th>Señal</th>
+                <th>Prob. Win</th><th>VaR 95%</th><th>Tiempo</th>
+              </tr></thead>
+              <tbody id="scanner-body">
+                <tr class="empty-row"><td colspan="7">Scanner inactivo</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── BACKTEST ─────────────────────────────────────────────── -->
+      <section class="view" id="view-backtest">
+        <div class="view-header">
+          <h1 class="view-title">Backtesting</h1>
+        </div>
+        <div class="two-col">
+          <!-- Config panel -->
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Configuración</span></div>
+            <div class="panel-body form-grid">
+              <label>Símbolo
+                <input class="input-sm" id="bt-symbol" value="BTC/USDT" />
+              </label>
+              <label>Timeframe
+                <select class="select-sm" id="bt-tf">
+                  <option>1h</option><option>4h</option><option>1d</option><option>15m</option>
+                </select>
+              </label>
+              <label>Estrategia
+                <select class="select-sm" id="bt-strategy">
+                  <option value="ma_cross">Momentum MA Cross</option>
+                  <option value="ml_rf">ML Random Forest</option>
+                  <option value="ml_gb">ML Gradient Boost</option>
+                  <option value="rl_ppo">RL PPO</option>
+                </select>
+              </label>
+              <label>Capital inicial ($)
+                <input class="input-sm" id="bt-capital" value="10000" type="number" />
+              </label>
+              <label>Barras históricas
+                <input class="input-sm" id="bt-bars" value="500" type="number" />
+              </label>
+              <label>Walk-forward folds
+                <input class="input-sm" id="bt-folds" value="5" type="number" />
+              </label>
+              <label class="full-col checkbox-label">
+                <input type="checkbox" id="bt-kelly" checked /> Kelly sizing
+              </label>
+              <label class="full-col checkbox-label">
+                <input type="checkbox" id="bt-atr" checked /> ATR stops
+              </label>
+              <label class="full-col checkbox-label">
+                <input type="checkbox" id="bt-montecarlo" checked /> Monte Carlo (1000 paths)
+              </label>
+              <button class="btn-primary full-col" id="bt-run">&#9654; Ejecutar Backtest</button>
+            </div>
+          </div>
+
+          <!-- Results panel -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Resultados</span>
+              <span class="stat-chip" id="bt-status">idle</span>
+            </div>
+            <div class="panel-body">
+              <div class="metrics-grid" id="bt-metrics">
+                <div class="metric-item"><span class="m-label">Total Return</span><span class="m-value" id="bm-total-ret">--</span></div>
+                <div class="metric-item"><span class="m-label">Log Return</span><span class="m-value" id="bm-log-ret">--</span></div>
+                <div class="metric-item"><span class="m-label">Sharpe</span><span class="m-value" id="bm-sharpe">--</span></div>
+                <div class="metric-item"><span class="m-label">Sortino</span><span class="m-value" id="bm-sortino">--</span></div>
+                <div class="metric-item"><span class="m-label">Calmar</span><span class="m-value" id="bm-calmar">--</span></div>
+                <div class="metric-item"><span class="m-label">Max DD</span><span class="m-value red" id="bm-maxdd">--</span></div>
+                <div class="metric-item"><span class="m-label">Win Rate</span><span class="m-value" id="bm-wr">--</span></div>
+                <div class="metric-item"><span class="m-label">Profit Factor</span><span class="m-value" id="bm-pf">--</span></div>
+                <div class="metric-item"><span class="m-label">Trades</span><span class="m-value" id="bm-trades">--</span></div>
+                <div class="metric-item"><span class="m-label">VaR 95%</span><span class="m-value red" id="bm-var">--</span></div>
+                <div class="metric-item"><span class="m-label">CVaR 95%</span><span class="m-value red" id="bm-cvar">--</span></div>
+                <div class="metric-item"><span class="m-label">Kelly ×0.25</span><span class="m-value accent" id="bm-kelly">--</span></div>
+              </div>
+              <div id="bt-chart-equity" class="chart-body mt-sm" style="height:180px"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trades table -->
+        <div class="panel mt-sm" id="bt-trades-panel" style="display:none">
+          <div class="panel-header">
+            <span class="panel-title">Trades (últimos 50)</span>
+            <a class="btn-sm" id="bt-report-link" href="#" target="_blank">&#8599; HTML Report</a>
+          </div>
+          <div class="panel-body">
+            <table class="data-tbl">
+              <thead><tr>
+                <th>#</th><th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Salida</th>
+                <th>PnL $</th><th>PnL %</th><th>Log Ret</th><th>Razón</th>
+              </tr></thead>
+              <tbody id="bt-trades-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── JOURNAL ─────────────────────────────────────────────── -->
+      <section class="view" id="view-journal">
+        <div class="view-header">
+          <h1 class="view-title">Trading Journal</h1>
+          <button class="btn-sm" id="journal-refresh">&#8635; Refresh</button>
+        </div>
+        <div class="kpi-row" id="journal-kpi"></div>
+        <div class="charts-row">
+          <div class="chart-panel wide">
+            <div class="chart-header"><span class="chart-title">PnL Acumulado (Journal)</span></div>
+            <div class="chart-body"><canvas id="chart-journal-pnl"></canvas></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">Por Estrategia</span></div>
+            <div class="chart-body"><canvas id="chart-journal-strat"></canvas></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-body">
+            <table class="data-tbl">
+              <thead><tr>
+                <th>Fecha</th><th>Símbolo</th><th>Estrategia</th><th>Lado</th>
+                <th>PnL</th><th>Duración</th><th>Razón</th>
+              </tr></thead>
+              <tbody id="journal-body">
+                <tr class="empty-row"><td colspan="7">Sin entradas</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── RL ENGINE ─────────────────────────────────────────────── -->
+      <section class="view" id="view-rl">
+        <div class="view-header">
+          <h1 class="view-title">RL Engine</h1>
+        </div>
+        <div class="two-col">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Retraining Scheduler</span></div>
+            <div class="panel-body">
+              <div class="metrics-grid" id="rl-status-grid">
+                <div class="metric-item"><span class="m-label">Símbolo</span><span class="m-value" id="rl-symbol">--</span></div>
+                <div class="metric-item"><span class="m-label">Estado</span><span class="m-value" id="rl-state">--</span></div>
+                <div class="metric-item"><span class="m-label">Último retrain</span><span class="m-value" id="rl-last">--</span></div>
+                <div class="metric-item"><span class="m-label">Próximo retrain</span><span class="m-value" id="rl-next">--</span></div>
+                <div class="metric-item"><span class="m-label">Sharpe mejor modelo</span><span class="m-value accent" id="rl-sharpe">--</span></div>
+                <div class="metric-item"><span class="m-label">Trials Optuna</span><span class="m-value" id="rl-trials">--</span></div>
+              </div>
+              <div class="form-row mt-sm">
+                <select class="select-sm" id="rl-symbol-sel">
+                  <option>BTC/USDT</option><option>ETH/USDT</option><option>SOL/USDT</option>
+                </select>
+                <button class="btn-sm" id="rl-status-btn">&#8635; Status</button>
+                <button class="btn-primary" id="rl-trigger-btn">&#9654; Forzar Retrain</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Modelos disponibles</span></div>
+            <div class="panel-body">
+              <div id="rl-models-list" class="model-list">
+                <span class="empty-text">Sin modelos entrenados</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel mt-sm">
+          <div class="panel-header"><span class="panel-title">Log de retraining</span></div>
+          <div class="panel-body">
+            <div class="log-box" id="rl-log-box">Esperando actividad…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── VISUAL ─────────────────────────────────────────────── -->
+      <section class="view" id="view-visual">
+        <div class="view-header">
+          <h1 class="view-title">Visual State</h1>
+          <button class="btn-sm" id="visual-capture">&#9654; Capturar</button>
+        </div>
+        <div class="two-col">
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Estado de cámara</span>
+              <span id="visual-safety-badge" class="mode-badge">--</span>
+            </div>
+            <div class="panel-body">
+              <div class="metrics-grid">
+                <div class="metric-item"><span class="m-label">Brightness</span><span class="m-value" id="vs-brightness">--</span></div>
+                <div class="metric-item"><span class="m-label">Sharpness</span><span class="m-value" id="vs-sharpness">--</span></div>
+                <div class="metric-item"><span class="m-label">Pantallas detectadas</span><span class="m-value" id="vs-screens">--</span></div>
+                <div class="metric-item"><span class="m-label">Color dominante</span><span class="m-value" id="vs-color">--</span></div>
+                <div class="metric-item"><span class="m-label">Precios extraídos</span><span class="m-value accent" id="vs-prices">--</span></div>
+                <div class="metric-item"><span class="m-label">Patrón detectado</span><span class="m-value" id="vs-pattern">--</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Feature Vector (20D)</span></div>
+            <div class="panel-body">
+              <canvas id="chart-visual-features"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── ALERTAS ─────────────────────────────────────────────── -->
+      <section class="view" id="view-alerts">
+        <div class="view-header">
+          <h1 class="view-title">Sistema de Alertas</h1>
+          <button class="btn-sm" id="alerts-test-btn">&#9993; Enviar prueba</button>
+        </div>
+        <div class="two-col">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Estado AlertDispatcher</span></div>
+            <div class="panel-body">
+              <div class="metrics-grid" id="alerts-status-grid">
+                <div class="metric-item"><span class="m-label">Telegram</span><span class="m-value" id="al-telegram">--</span></div>
+                <div class="metric-item"><span class="m-label">WhatsApp</span><span class="m-value" id="al-whatsapp">--</span></div>
+                <div class="metric-item"><span class="m-label">Cola pendiente</span><span class="m-value" id="al-queue">--</span></div>
+                <div class="metric-item"><span class="m-label">Enviadas hoy</span><span class="m-value accent" id="al-sent">--</span></div>
+                <div class="metric-item"><span class="m-label">Min nivel</span><span class="m-value" id="al-level">--</span></div>
+                <div class="metric-item"><span class="m-label">Cooldown</span><span class="m-value" id="al-cooldown">--</span></div>
+              </div>
+              <button class="btn-sm mt-sm" id="alerts-refresh-btn">&#8635; Refresh</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Historial de alertas</span></div>
+            <div class="panel-body">
+              <div class="log-box" id="alerts-log">Sin alertas registradas</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── ANALYTICS ─────────────────────────────────────────────── -->
+      <section class="view" id="view-analytics">
+        <div class="view-header">
+          <h1 class="view-title">Analytics</h1>
+          <div class="view-actions">
+            <span class="stat-chip" id="ac-last-update" style="font-size:10px">--</span>
+            <button class="btn-sm" id="ac-refresh">&#8635; Refresh</button>
+          </div>
+        </div>
+
+        <!-- Robot status widget -->
+        <div id="ac-robot-status" style="margin-bottom:12px"></div>
+
+        <!-- Row 1: Equity Curve (wide) + R-Multiple Distribution -->
+        <div class="charts-row">
+          <div class="chart-panel wide">
+            <div class="chart-header"><span class="chart-title">Equity Curve + Drawdown</span></div>
+            <div class="chart-body" style="min-height:220px"><canvas id="ac-equity-curve"></canvas></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">R-Multiple Distribution</span></div>
+            <div class="chart-body" style="min-height:220px"><canvas id="ac-r-distribution"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Row 2: Learning Curve + IC Heatmap -->
+        <div class="charts-row">
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">IC por Scanner Method</span></div>
+            <div class="chart-body" style="min-height:200px"><canvas id="ac-learning-curve"></canvas></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">IC Heatmap — Radar de Edge</span></div>
+            <div class="chart-body" style="min-height:200px"><canvas id="ac-ic-heatmap"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Row 3: Daily PnL Calendar (wide) + Policy Evolution -->
+        <div class="charts-row">
+          <div class="chart-panel wide">
+            <div class="chart-header"><span class="chart-title">Daily P&L Calendar</span></div>
+            <div class="chart-body" id="ac-pnl-calendar" style="min-height:160px"></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">Policy Evolution — Cerebro Adaptativo</span></div>
+            <div class="chart-body" style="min-height:200px"><canvas id="ac-policy-evolution"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- CDN al final del body: no bloquean el render -->
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js" defer></script>
+  <script>
+    const _S = _QBASE;
+    const _MODULES = ['api', 'charts', 'atlas_charts', 'app'];
+
+    function loadAtlasScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = false;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.body.appendChild(s);
+      });
+    }
+
+    window.addEventListener('load', async () => {
+      for (const f of _MODULES) {
+        await loadAtlasScript(`${_S}/js/${f}.js?v=${_QVER}`);
+      }
+    }, { once: true });
+  </script>
+</body>
+</html>

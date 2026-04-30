@@ -1,0 +1,59 @@
+from __future__ import annotations
+
+
+def test_nexus_core_primitives_import():
+    from modules.nexus_core import (
+        ScreenCalib,
+        ScreenCalibSample,
+        ScreenGazeController,
+        get_default_screen_calib_path,
+        grasp,
+        load_calib,
+        look_at_screen,
+        navigate_to,
+        pulse_check,
+        reach_pose,
+        release,
+        save_calib,
+    )
+
+    assert callable(navigate_to)
+    assert callable(reach_pose)
+    assert callable(look_at_screen)
+    assert callable(grasp)
+    assert callable(release)
+    assert callable(pulse_check)
+    assert callable(save_calib)
+    assert callable(load_calib)
+    assert callable(get_default_screen_calib_path)
+    assert ScreenCalib is not None
+    assert ScreenCalibSample is not None
+    assert ScreenGazeController is not None
+
+
+def test_global_vision_primitives_import():
+    from modules.global_vision import (perimeter_check, scan_network,
+                                       stream_proxy)
+
+    assert callable(scan_network)
+    assert callable(stream_proxy)
+    assert callable(perimeter_check)
+
+
+def test_finanzas_disabled_by_default():
+    from modules.finanzas import execute_trade, grasp_market_data
+
+    r = grasp_market_data("SPY", "1m")
+    assert r.get("ok") is False
+    assert r.get("error") in ("trading_disabled", "market_data_provider_not_configured")
+    r2 = execute_trade("SPY", "buy", 1, "market")
+    assert r2.get("ok") is False
+
+
+def test_productividad_schedule_event_offline(monkeypatch, tmp_path):
+    monkeypatch.setenv("PRODUCTIVITY_DB_PATH", str(tmp_path / "prod.sqlite"))
+    from modules.productividad import schedule_event
+
+    r = schedule_event("Test", "mañana 9:00", "desc")
+    assert r.get("ok") is True
+    assert r.get("event_id")

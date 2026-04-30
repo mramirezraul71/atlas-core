@@ -1,22 +1,24 @@
-﻿import tkinter as tk
-from tkinter import scrolledtext
+﻿import subprocess
+import threading
+import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-import threading
-import subprocess
-import os
+from tkinter import scrolledtext
 
 from dotenv import load_dotenv
+
 from modules.rauli_doctor import run_doctor
 from modules.snapshot_engine import snapshot
 
 LOG_FILE = Path(r"C:\ATLAS\logs\atlas.log")
+
 
 def log(msg: str):
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{ts}] {msg}\n")
+
 
 class AtlasGUI:
     def __init__(self):
@@ -30,18 +32,22 @@ class AtlasGUI:
         self.status_lbl = tk.Label(self.top, text="ATLAS listo", anchor="w")
         self.status_lbl.pack(side="left")
 
-        tk.Button(self.top, text="Doctor", command=self._doctor).pack(side="right", padx=4)
-        tk.Button(self.top, text="Snapshot", command=self._snapshot).pack(side="right", padx=4)
+        tk.Button(self.top, text="Doctor", command=self._doctor).pack(
+            side="right", padx=4
+        )
+        tk.Button(self.top, text="Snapshot", command=self._snapshot).pack(
+            side="right", padx=4
+        )
 
         self.text = scrolledtext.ScrolledText(self.root, wrap="word")
         self.text.pack(fill="both", expand=True, padx=8, pady=6)
 
         self.entry = tk.Entry(self.root)
-        self.entry.pack(fill="x", padx=8, pady=(0,6))
+        self.entry.pack(fill="x", padx=8, pady=(0, 6))
         self.entry.bind("<Return>", lambda e: self._send())
 
         self.btn = tk.Button(self.root, text="Enviar", command=self._send)
-        self.btn.pack(anchor="e", padx=8, pady=(0,8))
+        self.btn.pack(anchor="e", padx=8, pady=(0, 8))
 
         self._write("ATLAS: Ventana lista. Escribe 'help' para comandos.\n")
         log("ATLAS_GUI: iniciada")
@@ -74,7 +80,9 @@ class AtlasGUI:
             return
 
         if c == "status":
-            self._write("ATLAS: OK | logs=C:\\ATLAS\\logs\\atlas.log | snapshots=C:\\ATLAS\\snapshots\n")
+            self._write(
+                "ATLAS: OK | logs=C:\\ATLAS\\logs\\atlas.log | snapshots=C:\\ATLAS\\snapshots\n"
+            )
             return
 
         if c.startswith("snapshot"):
@@ -99,6 +107,7 @@ class AtlasGUI:
 
     def _doctor(self):
         self._write("ATLAS: Ejecutando doctor...\n")
+
         def job():
             try:
                 out = run_doctor()
@@ -106,6 +115,7 @@ class AtlasGUI:
             except Exception as e:
                 self._write(f"ERROR doctor: {e}\n")
                 log(f"ERROR doctor: {e}")
+
         threading.Thread(target=job, daemon=True).start()
 
     def _snapshot(self, label="manual"):
@@ -118,6 +128,7 @@ class AtlasGUI:
 
     def _run_rauli(self):
         self._write("ATLAS: Lanzando RAULI (flutter run -d windows)...\n")
+
         def job():
             try:
                 # Ajusta esta ruta si tu proyecto está en otro lado:
@@ -130,12 +141,15 @@ class AtlasGUI:
             except Exception as e:
                 self._write(f"ERROR run rauli: {e}\n")
                 log(f"ERROR run rauli: {e}")
+
         threading.Thread(target=job, daemon=True).start()
+
 
 def main():
     # Carga config
     load_dotenv(r"C:\ATLAS\config\.env")
     AtlasGUI().root.mainloop()
+
 
 if __name__ == "__main__":
     main()

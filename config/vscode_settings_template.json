@@ -1,0 +1,8 @@
+{
+  "// ATLAS": "Copia este archivo a .vscode/settings.json para que Cline/editor usen env. No incluyas claves aquí.",
+  "// Uso": "Asegura que OPENAI_API_KEY, ANTHROPIC_API_KEY, etc. estén en el entorno (ej. .env cargado antes de abrir Cursor)",
+  "cline.general.enableExtension": true,
+  "cline.apiKeys.useEnv": true,
+  "cursor.general.useOwnApiKeys": true,
+  "editor.formatOnSave": true
+}

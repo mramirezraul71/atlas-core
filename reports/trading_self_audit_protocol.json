@@ -1,0 +1,1615 @@
+{
+  "generated_at": "2026-03-28T10:40:13.169813+00:00",
+  "topic": "atlas_quant_trading_self_audit_protocol",
+  "current_focus": "post_trade_learning",
+  "summary": "ATLAS debe auto-auditar todo el proceso de trading de forma logica y secuencial. El scanner, la validacion de entrada, la calidad de ejecucion, la gestion viva de posiciones y la gobernanza de salida ya quedaron en una linea base endurecida y en la fase actual el foco esta en post_trade_learning, pero el algoritmo queda abierto para extenderse a entrada, ejecucion, gestion de posicion, salida y aprendizaje post-trade.",
+  "analysis_schema": [
+    {
+      "step": "detect_internal_degradation",
+      "goal": "Detectar si la etapa esta deteriorando calidad, riesgo o consistencia operativa.",
+      "questions": [
+        "que metricas se estan alejando del comportamiento sano esperado",
+        "que sintomas se repiten en resultados, logs, journal o dashboards",
+        "si el problema es puntual, sistemico o de regimen"
+      ],
+      "outputs": [
+        "alerta de degradacion",
+        "lista inicial de sintomas"
+      ]
+    },
+    {
+      "step": "collect_internal_evidence",
+      "goal": "Levantar evidencia local suficiente antes de inferir una causa raiz.",
+      "questions": [
+        "que variables, decisiones y resultados reales produce hoy la etapa",
+        "que campos faltan para atribuir resultado, calidad o riesgo",
+        "que diferencias hay entre lo planeado, lo emitido y lo ejecutado"
+      ],
+      "outputs": [
+        "evidencia interna versionada",
+        "huecos de trazabilidad"
+      ]
+    },
+    {
+      "step": "research_external_benchmarks",
+      "goal": "Buscar referencias serias en red para contrastar criterios y practicas reconocidas.",
+      "questions": [
+        "que metricas usan sistemas o literatura reconocida para esta etapa",
+        "que filtros, guardrails o regimenes suelen aplicar",
+        "que errores tipicos se observan cuando esta etapa falla"
+      ],
+      "outputs": [
+        "benchmark externo",
+        "lista de practicas comparables"
+      ]
+    },
+    {
+      "step": "compare_internal_vs_external",
+      "goal": "Comparar lo que hace ATLAS contra el benchmark externo y contra el resultado obtenido.",
+      "questions": [
+        "que hace ATLAS de forma consistente con el benchmark",
+        "que omite ATLAS o usa con peso incorrecto",
+        "que metricas sobran, faltan o estan mal conectadas al resultado"
+      ],
+      "outputs": [
+        "gap analysis",
+        "mapa de desalineaciones"
+      ]
+    },
+    {
+      "step": "diagnose_root_cause",
+      "goal": "Separar causa raiz de sintomas superficiales.",
+      "questions": [
+        "el problema nace en criterio, datos, gobernanza, ejecucion o mezcla de capas",
+        "que parte del dano explica mas perdida o mas ruido",
+        "que cambio pequeno moveria mas el resultado"
+      ],
+      "outputs": [
+        "causa raiz priorizada",
+        "suposiciones explicitadas"
+      ]
+    },
+    {
+      "step": "design_corrective_action",
+      "goal": "Definir correcciones medibles, reversibles y con criterio de exito claro.",
+      "questions": [
+        "que pesos, vetos, validaciones o limites deben cambiar",
+        "que debe bloquearse de inmediato y que puede ir a observacion",
+        "como se medira si la correccion mejora o empeora la etapa"
+      ],
+      "outputs": [
+        "plan de remediacion",
+        "criterios before_after"
+      ]
+    },
+    {
+      "step": "monitor_after_change",
+      "goal": "Seguir el comportamiento despues del cambio para evitar conclusiones prematuras.",
+      "questions": [
+        "mejora la calidad esperada sin generar efectos secundarios peores",
+        "el cambio aguanta una sesion seria o solo una prueba corta",
+        "que metricas deben permanecer en verde para sostener el ajuste"
+      ],
+      "outputs": [
+        "seguimiento post-cambio",
+        "riesgos residuales"
+      ]
+    },
+    {
+      "step": "persist_learning",
+      "goal": "Guardar la conclusion y su evidencia para aprendizaje acumulativo.",
+      "questions": [
+        "que debe registrarse en memoria, bitacora e informe",
+        "que aprendizaje es reusable por otras etapas",
+        "que condiciones obligan a revisar o revertir despues"
+      ],
+      "outputs": [
+        "nota persistida",
+        "politica candidata"
+      ]
+    },
+    {
+      "step": "promote_or_revert_policy",
+      "goal": "Promover solo lo que resiste evidencia y revertir lo fragil.",
+      "questions": [
+        "la mejora es sostenida y atribuible",
+        "hay criterio de no-go o rollback si el dano reaparece",
+        "queda el siguiente foco listo para auditar con el mismo metodo"
+      ],
+      "outputs": [
+        "decision promote_hold_revert",
+        "siguiente foco de auditoria"
+      ]
+    }
+  ],
+  "process_guardrails": [
+    "no promover cambios a live solo por una prueba puntual",
+    "no aceptar mejoras sin trazabilidad y comparativa before_after",
+    "no confundir indicador tactico con criterio estructural",
+    "no cerrar una etapa sin dejar memoria persistida y criterios de seguimiento",
+    "no extender el algoritmo a la siguiente etapa si la anterior sigue ciega"
+  ],
+  "implementation_scorecard_metrics": [
+    {
+      "name": "process_compliance_score",
+      "goal": "Medir cuanto del marco metodologico ya esta realmente implantado por etapa."
+    },
+    {
+      "name": "artifact_coverage_score",
+      "goal": "Medir si cada avance deja huella en protocolo, informes y archivos reutilizables."
+    },
+    {
+      "name": "memory_persistence_score",
+      "goal": "Medir si ATLAS esta reteniendo los cambios en memoria y bitacora."
+    },
+    {
+      "name": "external_benchmark_coverage_score",
+      "goal": "Medir cuantas etapas auditadas estan respaldadas por confrontacion externa seria."
+    },
+    {
+      "name": "observability_feedback_score",
+      "goal": "Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina."
+    },
+    {
+      "name": "test_guardrail_score",
+      "goal": "Medir cuanta proteccion automatizada existe sobre lo ya implantado."
+    },
+    {
+      "name": "implementation_usefulness_score",
+      "goal": "Medir si ya existe evidencia operativa suficiente para afirmar que los cambios sirven de algo."
+    }
+  ],
+  "external_benchmark_scan_flow": [
+    {
+      "step": "detect_stage_question",
+      "goal": "Identificar que etapa del proceso de trading necesita contraste externo y con que pregunta concreta.",
+      "outputs": [
+        "stage_target",
+        "benchmark_question"
+      ]
+    },
+    {
+      "step": "select_source_family",
+      "goal": "Elegir primero literatura y documentos regulatorios o institucionales antes que opinion informal.",
+      "source_priority": [
+        "papers_academicos",
+        "regulatory_guidance",
+        "broker_execution_quality_docs",
+        "tool_or_feed_docs"
+      ],
+      "outputs": [
+        "source_family",
+        "candidate_urls"
+      ]
+    },
+    {
+      "step": "scan_sources",
+      "goal": "Escanear cada pagina buscando metricas, guardrails, fallos tipicos y condiciones de uso.",
+      "extract_fields": [
+        "metricas_clave",
+        "benchmarks",
+        "failure_modes",
+        "guardrails",
+        "limits_or_disclaimers"
+      ],
+      "outputs": [
+        "source_notes",
+        "quoted_or_paraphrased_evidence"
+      ]
+    },
+    {
+      "step": "compare_against_atlas",
+      "goal": "Comparar lo extraido con la implementacion real de ATLAS y con el resultado observado.",
+      "outputs": [
+        "atlas_matches",
+        "atlas_gaps",
+        "wrong_weights_or_missing_gates"
+      ]
+    },
+    {
+      "step": "translate_to_action",
+      "goal": "Convertir la comparacion en criterios medibles, reversibles y trazables dentro del algoritmo.",
+      "outputs": [
+        "new_metrics",
+        "new_gates",
+        "new_reports_or_tests"
+      ]
+    },
+    {
+      "step": "persist_external_learning",
+      "goal": "Guardar la experiencia externa util para que ATLAS la vuelva a usar por etapa.",
+      "outputs": [
+        "source_registry_update",
+        "memory_note",
+        "follow_up_stage"
+      ]
+    }
+  ],
+  "external_benchmark_sources": [
+    {
+      "title": "Time Series Momentum",
+      "url": "https://elmwealth.com/wp-content/uploads/2017/06/timeseriesmomentum.pdf",
+      "domain": "elmwealth.com",
+      "source_type": "paper",
+      "used_for": [
+        "scanner_selection",
+        "trajectory_persistence"
+      ]
+    },
+    {
+      "title": "Momentum: Evidence and Insights 30 Years Late",
+      "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4602426",
+      "domain": "papers.ssrn.com",
+      "source_type": "paper",
+      "used_for": [
+        "scanner_selection",
+        "momentum_benchmark"
+      ]
+    },
+    {
+      "title": "Residual Momentum",
+      "url": "https://repub.eur.nl/pub/22252/ResidualMomentum-2011.pdf",
+      "domain": "repub.eur.nl",
+      "source_type": "paper",
+      "used_for": [
+        "scanner_selection",
+        "residual_momentum"
+      ]
+    },
+    {
+      "title": "Momentum Crashes",
+      "url": "https://www.nber.org/papers/w20439.pdf",
+      "domain": "nber.org",
+      "source_type": "paper",
+      "used_for": [
+        "scanner_selection",
+        "crash_risk"
+      ]
+    },
+    {
+      "title": "Volatility Managed Portfolios",
+      "url": "https://conference.nber.org/confer/2016/LTAMs16/Moreira_Muir.pdf",
+      "domain": "conference.nber.org",
+      "source_type": "paper",
+      "used_for": [
+        "scanner_selection",
+        "volatility_regime"
+      ]
+    },
+    {
+      "title": "Do Industries Explain Momentum?",
+      "url": "https://spinup-000d1a-wp-offload-media.s3.amazonaws.com/faculty/wp-content/uploads/sites/3/2019/09/DoIndustriesExplainMomentum.pdf",
+      "domain": "spinup-000d1a-wp-offload-media.s3.amazonaws.com",
+      "source_type": "paper",
+      "used_for": [
+        "scanner_selection",
+        "sector_industry_confirmation"
+      ]
+    },
+    {
+      "title": "Short-Term Return Reversal: The Long and the Short of It",
+      "url": "https://econen.sufe.edu.cn/_upload/article/files/d3/34/c6aa75294353b29e32728df8b04e/01c74230-970a-454a-8483-265efa7c6ba1.pdf",
+      "domain": "econen.sufe.edu.cn",
+      "source_type": "paper",
+      "used_for": [
+        "scanner_selection",
+        "entry_validation",
+        "short_horizon_noise"
+      ]
+    },
+    {
+      "title": "Illiquidity and Stock Returns: Cross-Section and Time-Series Effects",
+      "url": "https://w4.stern.nyu.edu/finance/docs/WP/2000/pdf/wpa00041.pdf",
+      "domain": "w4.stern.nyu.edu",
+      "source_type": "paper",
+      "used_for": [
+        "scanner_selection",
+        "entry_validation",
+        "liquidity_filters"
+      ]
+    },
+    {
+      "title": "Legal Information \u2014 yfinance",
+      "url": "https://ericpien.github.io/yfinance/getting_started/legal.html",
+      "domain": "ericpien.github.io",
+      "source_type": "documentation",
+      "used_for": [
+        "scanner_selection",
+        "data_feed_limitations"
+      ]
+    },
+    {
+      "title": "FINRA Regulatory Notice 21-23",
+      "url": "https://www.finra.org/sites/default/files/2021-06/Regulatory-Notice-21-23.pdf",
+      "domain": "finra.org",
+      "source_type": "regulatory",
+      "used_for": [
+        "entry_validation",
+        "execution_quality",
+        "best_execution_factors"
+      ]
+    },
+    {
+      "title": "Transaction Cost Analysis and Implementation Shortfall",
+      "url": "https://pages.stern.nyu.edu/~jhasbrou/STPP/drafts/STPPms13b.pdf",
+      "domain": "pages.stern.nyu.edu",
+      "source_type": "reference_text",
+      "used_for": [
+        "entry_validation",
+        "execution_quality",
+        "arrival_price_benchmark"
+      ]
+    },
+    {
+      "title": "Commitment to Execution Quality",
+      "url": "https://www.fidelity.com/trading/execution-quality/overview",
+      "domain": "fidelity.com",
+      "source_type": "broker_execution_doc",
+      "used_for": [
+        "entry_validation",
+        "execution_quality",
+        "effective_spread",
+        "price_improvement"
+      ]
+    },
+    {
+      "title": "Proper Position Size",
+      "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/the-2-percent-rule.html",
+      "domain": "cmegroup.com",
+      "source_type": "education_reference",
+      "used_for": [
+        "position_management",
+        "position_sizing_discipline",
+        "risk_per_trade"
+      ]
+    },
+    {
+      "title": "Beginners' Guide to Asset Allocation, Diversification, and Rebalancing",
+      "url": "https://www.investor.gov/sites/investorgov/files/2019-02/Beginners-Guide-to-Asset-Allocation.pdf",
+      "domain": "investor.gov",
+      "source_type": "regulatory_education",
+      "used_for": [
+        "position_management",
+        "portfolio_concentration",
+        "diversification_discipline"
+      ]
+    },
+    {
+      "title": "Things to Know About Order Types",
+      "url": "https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/active-trader/things-to-know.pdf",
+      "domain": "fidelity.com",
+      "source_type": "broker_execution_doc",
+      "used_for": [
+        "exit_governance",
+        "stop_loss_orders",
+        "trailing_stop_design"
+      ]
+    },
+    {
+      "title": "Trade Log",
+      "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/trade-log.html",
+      "domain": "cmegroup.com",
+      "source_type": "education_reference",
+      "used_for": [
+        "post_trade_learning",
+        "trade_review_loop",
+        "journaling_discipline"
+      ]
+    }
+  ],
+  "lifecycle": [
+    {
+      "stage": "scanner_selection",
+      "status": "baseline_hardened",
+      "goal": "Seleccionar activos y direcciones con trayectoria mas robusta y expectativa mas sana.",
+      "checks": [
+        "verificar que selection_score no premie solo hit rate local",
+        "medir expectancy, profit_factor y sample_size por metodo y timeframe",
+        "comparar impulso temporal, fuerza relativa y contexto sectorial",
+        "separar ruido intradia de trayectoria swing",
+        "validar el feed de datos para el horizonte usado"
+      ],
+      "outputs": [
+        "ranking corregido",
+        "metricas faltantes",
+        "veto de criterios fragiles"
+      ],
+      "analysis_schema_ref": "TRADING_ANALYSIS_SCHEMA"
+    },
+    {
+      "stage": "entry_validation",
+      "status": "baseline_hardened",
+      "goal": "Validar que la entrada elegida siga siendo valida al momento del ticket.",
+      "checks": [
+        "confirmar que el setup no se haya degradado desde el scan",
+        "confirmar estructura de precio, liquidez y spread",
+        "verificar que la entrada respete el contexto de tendencia y volatilidad"
+      ],
+      "outputs": [
+        "entrada aprobada o bloqueada",
+        "motivo estructurado de entrada"
+      ],
+      "analysis_schema_ref": "TRADING_ANALYSIS_SCHEMA"
+    },
+    {
+      "stage": "execution_quality",
+      "status": "baseline_hardened",
+      "goal": "Asegurar que la orden enviada coincide con la tesis y no introduce deterioro evitable.",
+      "checks": [
+        "comparar decision planificada vs orden real",
+        "detectar duplicados, reentradas y stacking no autorizados",
+        "medir slippage, latencia y reconciliacion"
+      ],
+      "outputs": [
+        "diagnostico de calidad de ejecucion",
+        "alertas de desvio operativo"
+      ],
+      "analysis_schema_ref": "TRADING_ANALYSIS_SCHEMA"
+    },
+    {
+      "stage": "position_management",
+      "status": "baseline_hardened",
+      "goal": "Gestionar el riesgo una vez abierta la posicion.",
+      "checks": [
+        "vigilar deterioro del setup frente al plan",
+        "medir excursion favorable y adversa",
+        "comparar exposicion viva con limites del libro"
+      ],
+      "outputs": [
+        "ajustes de riesgo",
+        "decision de mantener, reducir o cerrar"
+      ],
+      "analysis_schema_ref": "TRADING_ANALYSIS_SCHEMA"
+    },
+    {
+      "stage": "exit_governance",
+      "status": "baseline_hardened",
+      "goal": "Salir por criterio, no por ruido ni improvisacion.",
+      "checks": [
+        "medir si el motivo de salida coincide con la tesis original",
+        "comparar salidas por objetivo, invalidez o tiempo",
+        "detectar si los peores trades se dejan correr demasiado"
+      ],
+      "outputs": [
+        "clasificacion de salida",
+        "causa raiz del cierre"
+      ],
+      "analysis_schema_ref": "TRADING_ANALYSIS_SCHEMA"
+    },
+    {
+      "stage": "post_trade_learning",
+      "status": "active_focus",
+      "goal": "Convertir lo ocurrido en conocimiento util y reusable.",
+      "checks": [
+        "registrar resultado, contexto y causa raiz",
+        "comparar expectativa prometida vs resultado real",
+        "actualizar memoria, bitacora y politicas si la evidencia se sostiene"
+      ],
+      "outputs": [
+        "nota de aprendizaje persistida",
+        "politica promovida o descartada"
+      ],
+      "analysis_schema_ref": "TRADING_ANALYSIS_SCHEMA"
+    }
+  ],
+  "stage_map": [
+    {
+      "status": "baseline_hardened",
+      "goal": "Seleccionar activos y direcciones con trayectoria mas robusta y expectativa mas sana.",
+      "core_question": "Que criterios de seleccion anticipan mejor la trayectoria futura con payoff sano y muestra defendible.",
+      "internal_evidence": [
+        "ranking del scanner",
+        "metricas por metodo y timeframe",
+        "rechazos, aceptaciones y score breakdown",
+        "correlacion posterior con pnl abierto y cerrado"
+      ],
+      "external_benchmark_focus": [
+        "momentum multi-horizonte",
+        "trend following",
+        "residual momentum",
+        "volatility managed selection",
+        "crash-risk control"
+      ],
+      "failure_modes": [
+        "premiar hit rate local por encima de expectativa",
+        "mezclar intradia y swing sin separacion",
+        "no filtrar regimen de volatilidad ni contexto sectorial"
+      ],
+      "corrective_actions": [
+        "recalibrar selection_score",
+        "vetar profit factor y muestra debiles",
+        "separar motores intradia y swing",
+        "a\u00f1adir filtros de regimen y confirmacion estructural"
+      ],
+      "success_metrics": [
+        "mejor expectativa por candidato",
+        "menor burst de entradas fragiles",
+        "menor dano en longs"
+      ],
+      "stage": "scanner_selection",
+      "analysis_schema": [
+        {
+          "step": "detect_internal_degradation",
+          "goal": "Detectar si la etapa esta deteriorando calidad, riesgo o consistencia operativa.",
+          "questions": [
+            "que metricas se estan alejando del comportamiento sano esperado",
+            "que sintomas se repiten en resultados, logs, journal o dashboards",
+            "si el problema es puntual, sistemico o de regimen"
+          ],
+          "outputs": [
+            "alerta de degradacion",
+            "lista inicial de sintomas"
+          ]
+        },
+        {
+          "step": "collect_internal_evidence",
+          "goal": "Levantar evidencia local suficiente antes de inferir una causa raiz.",
+          "questions": [
+            "que variables, decisiones y resultados reales produce hoy la etapa",
+            "que campos faltan para atribuir resultado, calidad o riesgo",
+            "que diferencias hay entre lo planeado, lo emitido y lo ejecutado"
+          ],
+          "outputs": [
+            "evidencia interna versionada",
+            "huecos de trazabilidad"
+          ]
+        },
+        {
+          "step": "research_external_benchmarks",
+          "goal": "Buscar referencias serias en red para contrastar criterios y practicas reconocidas.",
+          "questions": [
+            "que metricas usan sistemas o literatura reconocida para esta etapa",
+            "que filtros, guardrails o regimenes suelen aplicar",
+            "que errores tipicos se observan cuando esta etapa falla"
+          ],
+          "outputs": [
+            "benchmark externo",
+            "lista de practicas comparables"
+          ]
+        },
+        {
+          "step": "compare_internal_vs_external",
+          "goal": "Comparar lo que hace ATLAS contra el benchmark externo y contra el resultado obtenido.",
+          "questions": [
+            "que hace ATLAS de forma consistente con el benchmark",
+            "que omite ATLAS o usa con peso incorrecto",
+            "que metricas sobran, faltan o estan mal conectadas al resultado"
+          ],
+          "outputs": [
+            "gap analysis",
+            "mapa de desalineaciones"
+          ]
+        },
+        {
+          "step": "diagnose_root_cause",
+          "goal": "Separar causa raiz de sintomas superficiales.",
+          "questions": [
+            "el problema nace en criterio, datos, gobernanza, ejecucion o mezcla de capas",
+            "que parte del dano explica mas perdida o mas ruido",
+            "que cambio pequeno moveria mas el resultado"
+          ],
+          "outputs": [
+            "causa raiz priorizada",
+            "suposiciones explicitadas"
+          ]
+        },
+        {
+          "step": "design_corrective_action",
+          "goal": "Definir correcciones medibles, reversibles y con criterio de exito claro.",
+          "questions": [
+            "que pesos, vetos, validaciones o limites deben cambiar",
+            "que debe bloquearse de inmediato y que puede ir a observacion",
+            "como se medira si la correccion mejora o empeora la etapa"
+          ],
+          "outputs": [
+            "plan de remediacion",
+            "criterios before_after"
+          ]
+        },
+        {
+          "step": "monitor_after_change",
+          "goal": "Seguir el comportamiento despues del cambio para evitar conclusiones prematuras.",
+          "questions": [
+            "mejora la calidad esperada sin generar efectos secundarios peores",
+            "el cambio aguanta una sesion seria o solo una prueba corta",
+            "que metricas deben permanecer en verde para sostener el ajuste"
+          ],
+          "outputs": [
+            "seguimiento post-cambio",
+            "riesgos residuales"
+          ]
+        },
+        {
+          "step": "persist_learning",
+          "goal": "Guardar la conclusion y su evidencia para aprendizaje acumulativo.",
+          "questions": [
+            "que debe registrarse en memoria, bitacora e informe",
+            "que aprendizaje es reusable por otras etapas",
+            "que condiciones obligan a revisar o revertir despues"
+          ],
+          "outputs": [
+            "nota persistida",
+            "politica candidata"
+          ]
+        },
+        {
+          "step": "promote_or_revert_policy",
+          "goal": "Promover solo lo que resiste evidencia y revertir lo fragil.",
+          "questions": [
+            "la mejora es sostenida y atribuible",
+            "hay criterio de no-go o rollback si el dano reaparece",
+            "queda el siguiente foco listo para auditar con el mismo metodo"
+          ],
+          "outputs": [
+            "decision promote_hold_revert",
+            "siguiente foco de auditoria"
+          ]
+        }
+      ],
+      "guardrails": [
+        "no promover cambios a live solo por una prueba puntual",
+        "no aceptar mejoras sin trazabilidad y comparativa before_after",
+        "no confundir indicador tactico con criterio estructural",
+        "no cerrar una etapa sin dejar memoria persistida y criterios de seguimiento",
+        "no extender el algoritmo a la siguiente etapa si la anterior sigue ciega"
+      ]
+    },
+    {
+      "status": "baseline_hardened",
+      "goal": "Validar que la entrada elegida siga siendo valida al momento del ticket.",
+      "core_question": "La tesis seleccionada sigue viva en el momento exacto de entrada o ya se deterioro.",
+      "internal_evidence": [
+        "precio de decision vs precio de ticket",
+        "spread, liquidez y slippage esperado",
+        "estructura de precio al disparo",
+        "motivo de bloqueo o aprobacion"
+      ],
+      "external_benchmark_focus": [
+        "microestructura",
+        "confirmacion de breakout o pullback",
+        "volatility adjusted entries",
+        "liquidity filters"
+      ],
+      "failure_modes": [
+        "entrar tarde sobre extension agotada",
+        "ignorar spread, liquidez o gap de informacion",
+        "perseguir un setup ya roto"
+      ],
+      "corrective_actions": [
+        "gates de deterioro de setup",
+        "umbrales de spread y liquidez",
+        "confirmacion final de estructura antes del submit"
+      ],
+      "success_metrics": [
+        "menor slippage de entrada",
+        "menor entrada sobre extremos agotados",
+        "mayor conversion de scan sano a ticket sano"
+      ],
+      "stage": "entry_validation",
+      "analysis_schema": [
+        {
+          "step": "detect_internal_degradation",
+          "goal": "Detectar si la etapa esta deteriorando calidad, riesgo o consistencia operativa.",
+          "questions": [
+            "que metricas se estan alejando del comportamiento sano esperado",
+            "que sintomas se repiten en resultados, logs, journal o dashboards",
+            "si el problema es puntual, sistemico o de regimen"
+          ],
+          "outputs": [
+            "alerta de degradacion",
+            "lista inicial de sintomas"
+          ]
+        },
+        {
+          "step": "collect_internal_evidence",
+          "goal": "Levantar evidencia local suficiente antes de inferir una causa raiz.",
+          "questions": [
+            "que variables, decisiones y resultados reales produce hoy la etapa",
+            "que campos faltan para atribuir resultado, calidad o riesgo",
+            "que diferencias hay entre lo planeado, lo emitido y lo ejecutado"
+          ],
+          "outputs": [
+            "evidencia interna versionada",
+            "huecos de trazabilidad"
+          ]
+        },
+        {
+          "step": "research_external_benchmarks",
+          "goal": "Buscar referencias serias en red para contrastar criterios y practicas reconocidas.",
+          "questions": [
+            "que metricas usan sistemas o literatura reconocida para esta etapa",
+            "que filtros, guardrails o regimenes suelen aplicar",
+            "que errores tipicos se observan cuando esta etapa falla"
+          ],
+          "outputs": [
+            "benchmark externo",
+            "lista de practicas comparables"
+          ]
+        },
+        {
+          "step": "compare_internal_vs_external",
+          "goal": "Comparar lo que hace ATLAS contra el benchmark externo y contra el resultado obtenido.",
+          "questions": [
+            "que hace ATLAS de forma consistente con el benchmark",
+            "que omite ATLAS o usa con peso incorrecto",
+            "que metricas sobran, faltan o estan mal conectadas al resultado"
+          ],
+          "outputs": [
+            "gap analysis",
+            "mapa de desalineaciones"
+          ]
+        },
+        {
+          "step": "diagnose_root_cause",
+          "goal": "Separar causa raiz de sintomas superficiales.",
+          "questions": [
+            "el problema nace en criterio, datos, gobernanza, ejecucion o mezcla de capas",
+            "que parte del dano explica mas perdida o mas ruido",
+            "que cambio pequeno moveria mas el resultado"
+          ],
+          "outputs": [
+            "causa raiz priorizada",
+            "suposiciones explicitadas"
+          ]
+        },
+        {
+          "step": "design_corrective_action",
+          "goal": "Definir correcciones medibles, reversibles y con criterio de exito claro.",
+          "questions": [
+            "que pesos, vetos, validaciones o limites deben cambiar",
+            "que debe bloquearse de inmediato y que puede ir a observacion",
+            "como se medira si la correccion mejora o empeora la etapa"
+          ],
+          "outputs": [
+            "plan de remediacion",
+            "criterios before_after"
+          ]
+        },
+        {
+          "step": "monitor_after_change",
+          "goal": "Seguir el comportamiento despues del cambio para evitar conclusiones prematuras.",
+          "questions": [
+            "mejora la calidad esperada sin generar efectos secundarios peores",
+            "el cambio aguanta una sesion seria o solo una prueba corta",
+            "que metricas deben permanecer en verde para sostener el ajuste"
+          ],
+          "outputs": [
+            "seguimiento post-cambio",
+            "riesgos residuales"
+          ]
+        },
+        {
+          "step": "persist_learning",
+          "goal": "Guardar la conclusion y su evidencia para aprendizaje acumulativo.",
+          "questions": [
+            "que debe registrarse en memoria, bitacora e informe",
+            "que aprendizaje es reusable por otras etapas",
+            "que condiciones obligan a revisar o revertir despues"
+          ],
+          "outputs": [
+            "nota persistida",
+            "politica candidata"
+          ]
+        },
+        {
+          "step": "promote_or_revert_policy",
+          "goal": "Promover solo lo que resiste evidencia y revertir lo fragil.",
+          "questions": [
+            "la mejora es sostenida y atribuible",
+            "hay criterio de no-go o rollback si el dano reaparece",
+            "queda el siguiente foco listo para auditar con el mismo metodo"
+          ],
+          "outputs": [
+            "decision promote_hold_revert",
+            "siguiente foco de auditoria"
+          ]
+        }
+      ],
+      "guardrails": [
+        "no promover cambios a live solo por una prueba puntual",
+        "no aceptar mejoras sin trazabilidad y comparativa before_after",
+        "no confundir indicador tactico con criterio estructural",
+        "no cerrar una etapa sin dejar memoria persistida y criterios de seguimiento",
+        "no extender el algoritmo a la siguiente etapa si la anterior sigue ciega"
+      ]
+    },
+    {
+      "status": "baseline_hardened",
+      "goal": "Asegurar que la orden enviada coincide con la tesis y no introduce deterioro evitable.",
+      "core_question": "La capa de ejecucion esta preservando la tesis o la esta degradando con errores operativos.",
+      "internal_evidence": [
+        "decision planificada vs orden emitida",
+        "duplicados, reentradas y stacking",
+        "latencia, rechazos y reconciliacion",
+        "estado del broker y del canonical snapshot"
+      ],
+      "external_benchmark_focus": [
+        "order quality controls",
+        "duplicate prevention",
+        "pre-trade risk checks",
+        "reconciliation discipline"
+      ],
+      "failure_modes": [
+        "duplicados o stacking no autorizado",
+        "desalineacion entre orden y tesis",
+        "falsa sensacion de sincronizacion"
+      ],
+      "corrective_actions": [
+        "guards pre-submit",
+        "reconciliacion obligatoria",
+        "validacion de metadata y trazabilidad por estrategia"
+      ],
+      "success_metrics": [
+        "cero duplicados no autorizados",
+        "cero trades untracked",
+        "sync_status sano sostenido"
+      ],
+      "stage": "execution_quality",
+      "analysis_schema": [
+        {
+          "step": "detect_internal_degradation",
+          "goal": "Detectar si la etapa esta deteriorando calidad, riesgo o consistencia operativa.",
+          "questions": [
+            "que metricas se estan alejando del comportamiento sano esperado",
+            "que sintomas se repiten en resultados, logs, journal o dashboards",
+            "si el problema es puntual, sistemico o de regimen"
+          ],
+          "outputs": [
+            "alerta de degradacion",
+            "lista inicial de sintomas"
+          ]
+        },
+        {
+          "step": "collect_internal_evidence",
+          "goal": "Levantar evidencia local suficiente antes de inferir una causa raiz.",
+          "questions": [
+            "que variables, decisiones y resultados reales produce hoy la etapa",
+            "que campos faltan para atribuir resultado, calidad o riesgo",
+            "que diferencias hay entre lo planeado, lo emitido y lo ejecutado"
+          ],
+          "outputs": [
+            "evidencia interna versionada",
+            "huecos de trazabilidad"
+          ]
+        },
+        {
+          "step": "research_external_benchmarks",
+          "goal": "Buscar referencias serias en red para contrastar criterios y practicas reconocidas.",
+          "questions": [
+            "que metricas usan sistemas o literatura reconocida para esta etapa",
+            "que filtros, guardrails o regimenes suelen aplicar",
+            "que errores tipicos se observan cuando esta etapa falla"
+          ],
+          "outputs": [
+            "benchmark externo",
+            "lista de practicas comparables"
+          ]
+        },
+        {
+          "step": "compare_internal_vs_external",
+          "goal": "Comparar lo que hace ATLAS contra el benchmark externo y contra el resultado obtenido.",
+          "questions": [
+            "que hace ATLAS de forma consistente con el benchmark",
+            "que omite ATLAS o usa con peso incorrecto",
+            "que metricas sobran, faltan o estan mal conectadas al resultado"
+          ],
+          "outputs": [
+            "gap analysis",
+            "mapa de desalineaciones"
+          ]
+        },
+        {
+          "step": "diagnose_root_cause",
+          "goal": "Separar causa raiz de sintomas superficiales.",
+          "questions": [
+            "el problema nace en criterio, datos, gobernanza, ejecucion o mezcla de capas",
+            "que parte del dano explica mas perdida o mas ruido",
+            "que cambio pequeno moveria mas el resultado"
+          ],
+          "outputs": [
+            "causa raiz priorizada",
+            "suposiciones explicitadas"
+          ]
+        },
+        {
+          "step": "design_corrective_action",
+          "goal": "Definir correcciones medibles, reversibles y con criterio de exito claro.",
+          "questions": [
+            "que pesos, vetos, validaciones o limites deben cambiar",
+            "que debe bloquearse de inmediato y que puede ir a observacion",
+            "como se medira si la correccion mejora o empeora la etapa"
+          ],
+          "outputs": [
+            "plan de remediacion",
+            "criterios before_after"
+          ]
+        },
+        {
+          "step": "monitor_after_change",
+          "goal": "Seguir el comportamiento despues del cambio para evitar conclusiones prematuras.",
+          "questions": [
+            "mejora la calidad esperada sin generar efectos secundarios peores",
+            "el cambio aguanta una sesion seria o solo una prueba corta",
+            "que metricas deben permanecer en verde para sostener el ajuste"
+          ],
+          "outputs": [
+            "seguimiento post-cambio",
+            "riesgos residuales"
+          ]
+        },
+        {
+          "step": "persist_learning",
+          "goal": "Guardar la conclusion y su evidencia para aprendizaje acumulativo.",
+          "questions": [
+            "que debe registrarse en memoria, bitacora e informe",
+            "que aprendizaje es reusable por otras etapas",
+            "que condiciones obligan a revisar o revertir despues"
+          ],
+          "outputs": [
+            "nota persistida",
+            "politica candidata"
+          ]
+        },
+        {
+          "step": "promote_or_revert_policy",
+          "goal": "Promover solo lo que resiste evidencia y revertir lo fragil.",
+          "questions": [
+            "la mejora es sostenida y atribuible",
+            "hay criterio de no-go o rollback si el dano reaparece",
+            "queda el siguiente foco listo para auditar con el mismo metodo"
+          ],
+          "outputs": [
+            "decision promote_hold_revert",
+            "siguiente foco de auditoria"
+          ]
+        }
+      ],
+      "guardrails": [
+        "no promover cambios a live solo por una prueba puntual",
+        "no aceptar mejoras sin trazabilidad y comparativa before_after",
+        "no confundir indicador tactico con criterio estructural",
+        "no cerrar una etapa sin dejar memoria persistida y criterios de seguimiento",
+        "no extender el algoritmo a la siguiente etapa si la anterior sigue ciega"
+      ]
+    },
+    {
+      "status": "baseline_hardened",
+      "goal": "Gestionar el riesgo una vez abierta la posicion.",
+      "core_question": "La posicion viva sigue comportandose como la tesis esperaba o ya esta degradandose.",
+      "internal_evidence": [
+        "mae, mfe y hold time",
+        "cambios de volatilidad y correlacion",
+        "exposicion por simbolo, sector y libro",
+        "cambios de score o tesis durante la vida del trade"
+      ],
+      "external_benchmark_focus": [
+        "position sizing discipline",
+        "volatility scaling",
+        "portfolio heat",
+        "drawdown containment"
+      ],
+      "failure_modes": [
+        "dejar crecer perdedores",
+        "no reducir riesgo cuando el setup se invalida",
+        "sobreconcentracion del libro"
+      ],
+      "corrective_actions": [
+        "limites de exposicion",
+        "reglas de reduccion y invalidacion",
+        "seguimiento de excursion favorable y adversa"
+      ],
+      "success_metrics": [
+        "menor perdida media",
+        "menor concentracion toxica",
+        "mejor relacion riesgo-retorno viva"
+      ],
+      "stage": "position_management",
+      "analysis_schema": [
+        {
+          "step": "detect_internal_degradation",
+          "goal": "Detectar si la etapa esta deteriorando calidad, riesgo o consistencia operativa.",
+          "questions": [
+            "que metricas se estan alejando del comportamiento sano esperado",
+            "que sintomas se repiten en resultados, logs, journal o dashboards",
+            "si el problema es puntual, sistemico o de regimen"
+          ],
+          "outputs": [
+            "alerta de degradacion",
+            "lista inicial de sintomas"
+          ]
+        },
+        {
+          "step": "collect_internal_evidence",
+          "goal": "Levantar evidencia local suficiente antes de inferir una causa raiz.",
+          "questions": [
+            "que variables, decisiones y resultados reales produce hoy la etapa",
+            "que campos faltan para atribuir resultado, calidad o riesgo",
+            "que diferencias hay entre lo planeado, lo emitido y lo ejecutado"
+          ],
+          "outputs": [
+            "evidencia interna versionada",
+            "huecos de trazabilidad"
+          ]
+        },
+        {
+          "step": "research_external_benchmarks",
+          "goal": "Buscar referencias serias en red para contrastar criterios y practicas reconocidas.",
+          "questions": [
+            "que metricas usan sistemas o literatura reconocida para esta etapa",
+            "que filtros, guardrails o regimenes suelen aplicar",
+            "que errores tipicos se observan cuando esta etapa falla"
+          ],
+          "outputs": [
+            "benchmark externo",
+            "lista de practicas comparables"
+          ]
+        },
+        {
+          "step": "compare_internal_vs_external",
+          "goal": "Comparar lo que hace ATLAS contra el benchmark externo y contra el resultado obtenido.",
+          "questions": [
+            "que hace ATLAS de forma consistente con el benchmark",
+            "que omite ATLAS o usa con peso incorrecto",
+            "que metricas sobran, faltan o estan mal conectadas al resultado"
+          ],
+          "outputs": [
+            "gap analysis",
+            "mapa de desalineaciones"
+          ]
+        },
+        {
+          "step": "diagnose_root_cause",
+          "goal": "Separar causa raiz de sintomas superficiales.",
+          "questions": [
+            "el problema nace en criterio, datos, gobernanza, ejecucion o mezcla de capas",
+            "que parte del dano explica mas perdida o mas ruido",
+            "que cambio pequeno moveria mas el resultado"
+          ],
+          "outputs": [
+            "causa raiz priorizada",
+            "suposiciones explicitadas"
+          ]
+        },
+        {
+          "step": "design_corrective_action",
+          "goal": "Definir correcciones medibles, reversibles y con criterio de exito claro.",
+          "questions": [
+            "que pesos, vetos, validaciones o limites deben cambiar",
+            "que debe bloquearse de inmediato y que puede ir a observacion",
+            "como se medira si la correccion mejora o empeora la etapa"
+          ],
+          "outputs": [
+            "plan de remediacion",
+            "criterios before_after"
+          ]
+        },
+        {
+          "step": "monitor_after_change",
+          "goal": "Seguir el comportamiento despues del cambio para evitar conclusiones prematuras.",
+          "questions": [
+            "mejora la calidad esperada sin generar efectos secundarios peores",
+            "el cambio aguanta una sesion seria o solo una prueba corta",
+            "que metricas deben permanecer en verde para sostener el ajuste"
+          ],
+          "outputs": [
+            "seguimiento post-cambio",
+            "riesgos residuales"
+          ]
+        },
+        {
+          "step": "persist_learning",
+          "goal": "Guardar la conclusion y su evidencia para aprendizaje acumulativo.",
+          "questions": [
+            "que debe registrarse en memoria, bitacora e informe",
+            "que aprendizaje es reusable por otras etapas",
+            "que condiciones obligan a revisar o revertir despues"
+          ],
+          "outputs": [
+            "nota persistida",
+            "politica candidata"
+          ]
+        },
+        {
+          "step": "promote_or_revert_policy",
+          "goal": "Promover solo lo que resiste evidencia y revertir lo fragil.",
+          "questions": [
+            "la mejora es sostenida y atribuible",
+            "hay criterio de no-go o rollback si el dano reaparece",
+            "queda el siguiente foco listo para auditar con el mismo metodo"
+          ],
+          "outputs": [
+            "decision promote_hold_revert",
+            "siguiente foco de auditoria"
+          ]
+        }
+      ],
+      "guardrails": [
+        "no promover cambios a live solo por una prueba puntual",
+        "no aceptar mejoras sin trazabilidad y comparativa before_after",
+        "no confundir indicador tactico con criterio estructural",
+        "no cerrar una etapa sin dejar memoria persistida y criterios de seguimiento",
+        "no extender el algoritmo a la siguiente etapa si la anterior sigue ciega"
+      ]
+    },
+    {
+      "status": "baseline_hardened",
+      "goal": "Salir por criterio, no por ruido ni improvisacion.",
+      "core_question": "La salida se ejecuta por una regla sana y coherente con la tesis original.",
+      "internal_evidence": [
+        "motivo de salida",
+        "pnl realizado por tipo de salida",
+        "hold time real vs planeado",
+        "invalidez, target o timeout"
+      ],
+      "external_benchmark_focus": [
+        "time stop discipline",
+        "invalidation exits",
+        "profit target governance",
+        "trailing stop design"
+      ],
+      "failure_modes": [
+        "cortar demasiado pronto ganadores",
+        "dejar correr demasiado perdedores",
+        "salir sin relacion con la tesis"
+      ],
+      "corrective_actions": [
+        "clasificacion estructurada de exits",
+        "reglas por invalidez, objetivo y tiempo",
+        "comparativa de eficiencia de salida"
+      ],
+      "success_metrics": [
+        "mejor payoff realizado",
+        "menor fuga de ganadores",
+        "menor tiempo muerto en trades rotos"
+      ],
+      "stage": "exit_governance",
+      "analysis_schema": [
+        {
+          "step": "detect_internal_degradation",
+          "goal": "Detectar si la etapa esta deteriorando calidad, riesgo o consistencia operativa.",
+          "questions": [
+            "que metricas se estan alejando del comportamiento sano esperado",
+            "que sintomas se repiten en resultados, logs, journal o dashboards",
+            "si el problema es puntual, sistemico o de regimen"
+          ],
+          "outputs": [
+            "alerta de degradacion",
+            "lista inicial de sintomas"
+          ]
+        },
+        {
+          "step": "collect_internal_evidence",
+          "goal": "Levantar evidencia local suficiente antes de inferir una causa raiz.",
+          "questions": [
+            "que variables, decisiones y resultados reales produce hoy la etapa",
+            "que campos faltan para atribuir resultado, calidad o riesgo",
+            "que diferencias hay entre lo planeado, lo emitido y lo ejecutado"
+          ],
+          "outputs": [
+            "evidencia interna versionada",
+            "huecos de trazabilidad"
+          ]
+        },
+        {
+          "step": "research_external_benchmarks",
+          "goal": "Buscar referencias serias en red para contrastar criterios y practicas reconocidas.",
+          "questions": [
+            "que metricas usan sistemas o literatura reconocida para esta etapa",
+            "que filtros, guardrails o regimenes suelen aplicar",
+            "que errores tipicos se observan cuando esta etapa falla"
+          ],
+          "outputs": [
+            "benchmark externo",
+            "lista de practicas comparables"
+          ]
+        },
+        {
+          "step": "compare_internal_vs_external",
+          "goal": "Comparar lo que hace ATLAS contra el benchmark externo y contra el resultado obtenido.",
+          "questions": [
+            "que hace ATLAS de forma consistente con el benchmark",
+            "que omite ATLAS o usa con peso incorrecto",
+            "que metricas sobran, faltan o estan mal conectadas al resultado"
+          ],
+          "outputs": [
+            "gap analysis",
+            "mapa de desalineaciones"
+          ]
+        },
+        {
+          "step": "diagnose_root_cause",
+          "goal": "Separar causa raiz de sintomas superficiales.",
+          "questions": [
+            "el problema nace en criterio, datos, gobernanza, ejecucion o mezcla de capas",
+            "que parte del dano explica mas perdida o mas ruido",
+            "que cambio pequeno moveria mas el resultado"
+          ],
+          "outputs": [
+            "causa raiz priorizada",
+            "suposiciones explicitadas"
+          ]
+        },
+        {
+          "step": "design_corrective_action",
+          "goal": "Definir correcciones medibles, reversibles y con criterio de exito claro.",
+          "questions": [
+            "que pesos, vetos, validaciones o limites deben cambiar",
+            "que debe bloquearse de inmediato y que puede ir a observacion",
+            "como se medira si la correccion mejora o empeora la etapa"
+          ],
+          "outputs": [
+            "plan de remediacion",
+            "criterios before_after"
+          ]
+        },
+        {
+          "step": "monitor_after_change",
+          "goal": "Seguir el comportamiento despues del cambio para evitar conclusiones prematuras.",
+          "questions": [
+            "mejora la calidad esperada sin generar efectos secundarios peores",
+            "el cambio aguanta una sesion seria o solo una prueba corta",
+            "que metricas deben permanecer en verde para sostener el ajuste"
+          ],
+          "outputs": [
+            "seguimiento post-cambio",
+            "riesgos residuales"
+          ]
+        },
+        {
+          "step": "persist_learning",
+          "goal": "Guardar la conclusion y su evidencia para aprendizaje acumulativo.",
+          "questions": [
+            "que debe registrarse en memoria, bitacora e informe",
+            "que aprendizaje es reusable por otras etapas",
+            "que condiciones obligan a revisar o revertir despues"
+          ],
+          "outputs": [
+            "nota persistida",
+            "politica candidata"
+          ]
+        },
+        {
+          "step": "promote_or_revert_policy",
+          "goal": "Promover solo lo que resiste evidencia y revertir lo fragil.",
+          "questions": [
+            "la mejora es sostenida y atribuible",
+            "hay criterio de no-go o rollback si el dano reaparece",
+            "queda el siguiente foco listo para auditar con el mismo metodo"
+          ],
+          "outputs": [
+            "decision promote_hold_revert",
+            "siguiente foco de auditoria"
+          ]
+        }
+      ],
+      "guardrails": [
+        "no promover cambios a live solo por una prueba puntual",
+        "no aceptar mejoras sin trazabilidad y comparativa before_after",
+        "no confundir indicador tactico con criterio estructural",
+        "no cerrar una etapa sin dejar memoria persistida y criterios de seguimiento",
+        "no extender el algoritmo a la siguiente etapa si la anterior sigue ciega"
+      ]
+    },
+    {
+      "status": "active_focus",
+      "goal": "Convertir lo ocurrido en conocimiento util y reusable.",
+      "core_question": "El sistema esta aprendiendo de forma acumulativa o solo acumulando eventos sin criterio.",
+      "internal_evidence": [
+        "journal y canonico enriquecidos",
+        "memoria y bitacora con contexto suficiente",
+        "politicas promovidas, descartadas o revertidas",
+        "comparativa expectativa vs resultado"
+      ],
+      "external_benchmark_focus": [
+        "trading review loops",
+        "model governance",
+        "evidence-based adaptation",
+        "policy promotion and rollback"
+      ],
+      "failure_modes": [
+        "persistir eventos sin aprendizaje",
+        "cambiar reglas sin evidencia acumulada",
+        "no cerrar el loop between result and policy"
+      ],
+      "corrective_actions": [
+        "plantilla unica de aprendizaje",
+        "reporte before_after",
+        "criterio formal de promote_hold_revert"
+      ],
+      "success_metrics": [
+        "memoria util y consultable",
+        "politicas con evidencia",
+        "aprendizaje reusable entre etapas"
+      ],
+      "stage": "post_trade_learning",
+      "analysis_schema": [
+        {
+          "step": "detect_internal_degradation",
+          "goal": "Detectar si la etapa esta deteriorando calidad, riesgo o consistencia operativa.",
+          "questions": [
+            "que metricas se estan alejando del comportamiento sano esperado",
+            "que sintomas se repiten en resultados, logs, journal o dashboards",
+            "si el problema es puntual, sistemico o de regimen"
+          ],
+          "outputs": [
+            "alerta de degradacion",
+            "lista inicial de sintomas"
+          ]
+        },
+        {
+          "step": "collect_internal_evidence",
+          "goal": "Levantar evidencia local suficiente antes de inferir una causa raiz.",
+          "questions": [
+            "que variables, decisiones y resultados reales produce hoy la etapa",
+            "que campos faltan para atribuir resultado, calidad o riesgo",
+            "que diferencias hay entre lo planeado, lo emitido y lo ejecutado"
+          ],
+          "outputs": [
+            "evidencia interna versionada",
+            "huecos de trazabilidad"
+          ]
+        },
+        {
+          "step": "research_external_benchmarks",
+          "goal": "Buscar referencias serias en red para contrastar criterios y practicas reconocidas.",
+          "questions": [
+            "que metricas usan sistemas o literatura reconocida para esta etapa",
+            "que filtros, guardrails o regimenes suelen aplicar",
+            "que errores tipicos se observan cuando esta etapa falla"
+          ],
+          "outputs": [
+            "benchmark externo",
+            "lista de practicas comparables"
+          ]
+        },
+        {
+          "step": "compare_internal_vs_external",
+          "goal": "Comparar lo que hace ATLAS contra el benchmark externo y contra el resultado obtenido.",
+          "questions": [
+            "que hace ATLAS de forma consistente con el benchmark",
+            "que omite ATLAS o usa con peso incorrecto",
+            "que metricas sobran, faltan o estan mal conectadas al resultado"
+          ],
+          "outputs": [
+            "gap analysis",
+            "mapa de desalineaciones"
+          ]
+        },
+        {
+          "step": "diagnose_root_cause",
+          "goal": "Separar causa raiz de sintomas superficiales.",
+          "questions": [
+            "el problema nace en criterio, datos, gobernanza, ejecucion o mezcla de capas",
+            "que parte del dano explica mas perdida o mas ruido",
+            "que cambio pequeno moveria mas el resultado"
+          ],
+          "outputs": [
+            "causa raiz priorizada",
+            "suposiciones explicitadas"
+          ]
+        },
+        {
+          "step": "design_corrective_action",
+          "goal": "Definir correcciones medibles, reversibles y con criterio de exito claro.",
+          "questions": [
+            "que pesos, vetos, validaciones o limites deben cambiar",
+            "que debe bloquearse de inmediato y que puede ir a observacion",
+            "como se medira si la correccion mejora o empeora la etapa"
+          ],
+          "outputs": [
+            "plan de remediacion",
+            "criterios before_after"
+          ]
+        },
+        {
+          "step": "monitor_after_change",
+          "goal": "Seguir el comportamiento despues del cambio para evitar conclusiones prematuras.",
+          "questions": [
+            "mejora la calidad esperada sin generar efectos secundarios peores",
+            "el cambio aguanta una sesion seria o solo una prueba corta",
+            "que metricas deben permanecer en verde para sostener el ajuste"
+          ],
+          "outputs": [
+            "seguimiento post-cambio",
+            "riesgos residuales"
+          ]
+        },
+        {
+          "step": "persist_learning",
+          "goal": "Guardar la conclusion y su evidencia para aprendizaje acumulativo.",
+          "questions": [
+            "que debe registrarse en memoria, bitacora e informe",
+            "que aprendizaje es reusable por otras etapas",
+            "que condiciones obligan a revisar o revertir despues"
+          ],
+          "outputs": [
+            "nota persistida",
+            "politica candidata"
+          ]
+        },
+        {
+          "step": "promote_or_revert_policy",
+          "goal": "Promover solo lo que resiste evidencia y revertir lo fragil.",
+          "questions": [
+            "la mejora es sostenida y atribuible",
+            "hay criterio de no-go o rollback si el dano reaparece",
+            "queda el siguiente foco listo para auditar con el mismo metodo"
+          ],
+          "outputs": [
+            "decision promote_hold_revert",
+            "siguiente foco de auditoria"
+          ]
+        }
+      ],
+      "guardrails": [
+        "no promover cambios a live solo por una prueba puntual",
+        "no aceptar mejoras sin trazabilidad y comparativa before_after",
+        "no confundir indicador tactico con criterio estructural",
+        "no cerrar una etapa sin dejar memoria persistida y criterios de seguimiento",
+        "no extender el algoritmo a la siguiente etapa si la anterior sigue ciega"
+      ]
+    }
+  ],
+  "scanner_selection_focus": {
+    "current_focus": "scanner_selection",
+    "key_findings": [
+      "El scanner actual esta inspirado en momentum y trend-following validos, pero el ranking esta sesgado hacia metricas locales y recientes.",
+      "selection_score sobrepremia local_win_rate y no incorpora con suficiente peso expectancy, profit_factor y sample_size.",
+      "predicted_move_pct mide amplitud volatilidad-escalada, no trayectoria futura robusta.",
+      "Faltan filtros fuertes de crash regime, residual momentum, contexto sectorial e impulso gestionado por volatilidad.",
+      "La mezcla de horizontes intradia y swing dentro del mismo ranking puede sobrealimentar ruido y falsos positivos en longs."
+    ],
+    "likely_failures": [
+      "optimizar acierto local en vez de expectativa",
+      "no penalizar adecuadamente asimetria negativa de payoff",
+      "confundir amplitud esperada con direccion persistente",
+      "no separar suficientemente regimen intradia y regimen swing"
+    ],
+    "recommended_metrics": [
+      "expectancy_pct por metodo y timeframe",
+      "profit_factor local penalizado por muestra baja",
+      "avg_win_over_avg_loss",
+      "momentum 3m-6m-12m con control de reversi\u00f3n corta",
+      "residual momentum o confirmacion sectorial/industrial",
+      "volatility regime y volatility scaling",
+      "crash-risk veto para momentum long"
+    ]
+  },
+  "entry_validation_focus": {
+    "current_focus": "entry_validation",
+    "key_findings": [
+      "ATLAS ya describia bien la entrada en entry_plan, pero esa capa era mayormente narrativa y no un gate operativo duro.",
+      "La validacion actual dependia mas de confirmacion visual, probabilidad y playbook que de costo de ejecucion observable.",
+      "Faltaba comparar precio de decision vs precio ejecutable justo antes del ticket.",
+      "Faltaba usar spread y deriva adversa como criterio de bloqueo para no perseguir entradas deterioradas."
+    ],
+    "likely_failures": [
+      "entrar tarde cuando el precio ya consumio demasiado del edge",
+      "ignorar spread y friccion aunque la tesis siga pareciendo valida en grafico",
+      "tratar la camara como sustituto de microestructura cuando deberia ser una confirmacion adicional"
+    ],
+    "recommended_metrics": [
+      "entry_reference_price",
+      "adverse_drift_pct",
+      "spread_pct",
+      "drift_vs_expected_move_pct",
+      "arrival-price benchmark before submit",
+      "slippage realizado por familia y timeframe"
+    ],
+    "implemented_p0": [
+      "entry_reference_price y thresholds de drift/spread ahora viajan en OrderRequest y order_seed",
+      "OperationCenter valida quote, spread y adverse drift antes de preview/submit en equities",
+      "auto-cycle transmite precio de referencia y expected_move desde el scanner"
+    ]
+  },
+  "execution_quality_focus": {
+    "current_focus": "execution_quality",
+    "key_findings": [
+      "ATLAS ya ejecutaba ordenes y guardias P0 evitaban varios errores criticos, pero la calidad de ejecucion seguia embebida en payloads crudos.",
+      "Faltaba una lectura estructurada de plan vs request_payload vs broker response.",
+      "La etapa no distinguia con claridad entre ejecucion sana, degradada o simplemente respondida.",
+      "La ausencia de ruta, mismatches de payload o status dudosos del broker debian quedar explicitados para aprendizaje posterior."
+    ],
+    "likely_failures": [
+      "asumir que una respuesta del broker implica ejecucion sana",
+      "no detectar desalineacion entre orden planificada y orden emitida",
+      "no registrar degradacion operativa aunque la orden haya sido enviada"
+    ],
+    "recommended_metrics": [
+      "symbol_match",
+      "side_match",
+      "quantity_match",
+      "preview_match",
+      "mode_match",
+      "order_id_present",
+      "broker_status_ok",
+      "slippage_realizado",
+      "reconciliation_after_send"
+    ],
+    "implemented_p0": [
+      "OperationCenter ahora emite execution_quality separado del blob de execution",
+      "se comparan planned_order, request_payload y broker response",
+      "ATLAS ya puede etiquetar una ejecucion como degraded aunque no quede bloqueada retrospectivamente"
+    ]
+  },
+  "position_management_focus": {
+    "current_focus": "position_management",
+    "key_findings": [
+      "El journal y el tracker ya contienen datos suficientes para medir deterioro de tesis, hold time y calor del libro, pero esa lectura no estaba aterrizada como bloque operativo.",
+      "ATLAS necesitaba una vista viva de adverse excursion, stale losers y concentracion por simbolo o familia para no descubrir el dano demasiado tarde.",
+      "La gestion actual del libro carecia de una watchlist estructurada que priorizara posiciones por perdida en R, deriva de tesis y tiempo estancado.",
+      "Sin esta capa, el sistema puede abrir y ejecutar mejor, pero aun asi dejar que el libro se deteriore por concentracion o por perdedores lentos."
+    ],
+    "likely_failures": [
+      "dejar crecer perdedores por falta de limites vivos",
+      "no detectar sobreconcentracion por simbolo o familia hasta que el libro ya esta cargado",
+      "confundir una posicion abierta con una tesis todavia sana"
+    ],
+    "recommended_metrics": [
+      "open_r_multiple",
+      "holding_hours",
+      "thesis_drift_pct",
+      "symbol_heat_pct",
+      "strategy_heat_pct",
+      "stale_loser_count",
+      "adverse_positions_count"
+    ],
+    "implemented_p0": [
+      "journal y operation/status ahora exponen un snapshot dedicado de position_management",
+      "ATLAS ya puede detectar stale losers, tesis deterioradas y exceso de calor por simbolo",
+      "se genera una watchlist accionable del libro abierto sin tocar el schema de runtime"
+    ]
+  },
+  "exit_governance_focus": {
+    "current_focus": "exit_governance",
+    "key_findings": [
+      "ATLAS ya puede detectar posiciones deterioradas, pero aun no traducia esa evidencia en una recomendacion estructurada de salida.",
+      "Faltaba una capa que diferenciara entre invalidacion, time-stop, proteccion de beneficio y simple observacion.",
+      "Sin gobierno de salida, una buena deteccion de deterioro puede quedarse en diagnostico sin accion."
+    ],
+    "likely_failures": [
+      "dejar trades rotos abiertos por no formalizar el criterio de invalidacion",
+      "tomar beneficios o recortes de forma inconsistente",
+      "mezclar de-risking de concentracion con una salida completa por tesis rota"
+    ],
+    "recommended_metrics": [
+      "exit_now_count",
+      "de_risk_count",
+      "take_profit_count",
+      "time_stop_candidates",
+      "thesis_invalidated_candidates",
+      "profit_protection_candidates"
+    ],
+    "implemented_p0": [
+      "operation/status ahora expone exit_governance separado de position_management",
+      "ATLAS ya clasifica recomendaciones en exit_now, de_risk, take_profit u hold",
+      "las recomendaciones quedan trazadas con reason y urgency en vez de depender de lectura manual"
+    ]
+  },
+  "post_trade_learning_focus": {
+    "current_focus": "post_trade_learning",
+    "key_findings": [
+      "ATLAS ya dispone de trades cerrados, post_mortem parciales y sesgos adaptativos, pero faltaba una lectura compacta que convirtiera cierre en politica candidata.",
+      "El aprendizaje posterior al trade no debe limitarse a persistir eventos; debe resumir cobertura de post-mortem, causas raiz y estrategias que piden revision.",
+      "Sin esta capa, el sistema puede cerrar mejor pero aun asi no reutilizar de forma disciplinada lo que ya ocurrio."
+    ],
+    "likely_failures": [
+      "guardar post-mortem sin traducirlo a accion futura",
+      "no detectar estrategias que acumulan dano repetido",
+      "confundir almacenamiento historico con aprendizaje operativo"
+    ],
+    "recommended_metrics": [
+      "post_mortem_coverage_pct",
+      "root_cause_breakdown",
+      "strategy_learning_pnl",
+      "policy_candidate_count",
+      "closed_trades",
+      "learning_reuse_readiness"
+    ],
+    "implemented_p0": [
+      "operation/status ahora expone post_trade_learning con causas raiz y candidatos de politica",
+      "ATLAS ya puede resumir que estrategias merecen review_reduce_or_disable segun trades cerrados",
+      "la cobertura de post_mortem ya entra como se\u00f1al visible del aprendizaje real"
+    ]
+  }
+}

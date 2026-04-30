@@ -1,0 +1,146 @@
+# ATLAS — Plan de Medidas y Mantenimiento del Sistema
+
+## Estado del Sistema (Feb 2026)
+Nivel: 9.5/10 | Valoración: $645K | Branch: `intent-input-rename`
+
+---
+
+## MEDIDAS IMPLEMENTADAS (Historial de Correcciones)
+
+### Fix 1 — Rutas relativas en services_repair (APLICADO)
+- **Archivo**: `modules/humanoid/quality/pots/services_repair.py`
+- **Problema**: POT fallaba al 4/12 pasos — ruta relativa `scripts/restart_service_clean.ps1`
+- **Fix**: Rutas absolutas desde `__file__`; Robot se reinicia vía `start_nexus_services.py`
+- **Commit**: `4709b20e`
+
+### Fix 2 — Timeout agresivo en health check Robot (APLICADO)
+- **Archivo**: `modules/humanoid/ans/checks/nexus_services_health.py`
+- **Problema**: Timeout 5s → falso positivo cuando Robot hacía inferencia pesada
+- **Fix**: Timeout 12s + 3 reintentos con delay 2s
+- **Commit**: `4709b20e`
+
+### Fix 3 — kill_zombie mataba Robot activo (APLICADO)
+- **Archivo**: `modules/humanoid/quality/pots/services_repair.py`
+- **Problema**: POT mataba procesos en 8002 aunque el Robot respondía
+- **Fix**: Probe HTTP antes de matar; solo mata si no responde
+- **Commit**: `4709b20e`
+
+### Fix 4 — Circuit breaker en dispatcher (APLICADO)
+- **Archivo**: `modules/humanoid/quality/dispatcher.py`
+- **Problema**: `services_repair` se re-disparaba sin límite → bucle infinito
+- **Fix**: Circuit breaker 5 min cooldown, escalando a 10 min en fallos consecutivos
+- **Commit**: `4709b20e`
+
+### Fix 5 — Errno 22 en autodiagnóstico (APLICADO)
+- **Archivo**: `scripts/atlas_autodiagnostic.py`
+- **Problema**: `print()` fallaba en consola detached de Windows
+- **Fix**: `_safe_print()` que captura `OSError`/`UnicodeEncodeError`
+- **Commit**: `4709b20e`
+
+### Fix 6 — TTS anti-superposición cross-tab (APLICADO)
+- **Archivos**: `atlas_adapter/static/dashboard.html`, `atlas_adapter/static/workspace.html`
+- **Problema**: Voz TTS se superponía cuando el usuario escribía en cualquier pestaña
+- **Fix**: `localStorage` mute global 30s después de cualquier interacción de usuario
+- **Commit**: `bdf872b0`
+
+---
+
+## SCRIPTS DE MANTENIMIENTO
+
+### Limpieza de Caché
+```powershell
+# Modo seco (ver qué se limpiaría sin borrar):
+python scripts/atlas_clean_cache.py
+
+# Ejecución real (limpia __pycache__, WAL huérfanos, logs rotados >3 días):
+python scripts/atlas_clean_cache.py --execute
+
+# Limpieza agresiva (incluye WAL activos):
+python scripts/atlas_clean_cache.py --execute --all
+```
+
+### Arranque Completo con Verificación
+```powershell
+# Verificar estado actual (sin modificar nada):
+.\scripts\atlas_start_full.ps1 -StatusOnly
+
+# Arranque normal (solo arranca servicios caídos):
+.\scripts\atlas_start_full.ps1
+
+# Arranque con limpieza de caché previa:
+.\scripts\atlas_start_full.ps1 -CleanCache
+
+# Solo verificar/reiniciar Robot:
+.\scripts\atlas_start_full.ps1 -Robot
+
+# Limpieza agresiva + arranque forzado:
+.\scripts\atlas_start_full.ps1 -CleanCache -All -Force
+```
+
+### Higiene del Repositorio
+```bash
+# Solo escanear:
+python scripts/repo_hygiene.py --scan
+
+# Limpiar tracking de logs/snapshots:
+python scripts/repo_hygiene.py --fix --commit
+```
+
+---
+
+## PLAN DE MEDIDAS PENDIENTES (Backlog)
+
+### PRIORIDAD ALTA
+- [ ] **Embeddings en memory_engine**: `recall_by_similarity(query, limit)` con Ollama
+- [ ] **Tests de regresión CGE**: Verificar que el Concurrent Goal Engine funciona end-to-end
+- [ ] **Monitoreo de circuit breaker**: Panel en dashboard que muestre estado del CB del dispatcher
+
+### PRIORIDAD MEDIA
+- [ ] **Rotación automática de logs**: Integrar `logging.handlers.RotatingFileHandler` en todos los módulos con logs
+- [ ] **Health check del CGE**: Verificar que `cge_health.py` reporta correctamente en el ANS
+- [ ] **TTS: Prueba de no superposición**: Test automatizado que verifique que el mute localStorage funciona
+
+### PRIORIDAD BAJA
+- [ ] **Cleanup automático programado**: Tarea scheduler que llame a `atlas_clean_cache.py` semanal
+- [ ] **Dashboard de estado de POTs**: Visualización de circuit breakers en tiempo real
+
+---
+
+## DIAGNÓSTICO RÁPIDO (Cuando algo falla)
+
+```powershell
+# 1. Ver estado de servicios
+.\scripts\atlas_start_full.ps1 -StatusOnly
+
+# 2. Ver últimas líneas de logs clave
+Get-Content logs\ops_bus.log -Tail 50
+Get-Content logs\autodiagnostic.log -Tail 30
+
+# 3. Restart limpio de Robot
+.\scripts\atlas_start_full.ps1 -Robot -CleanCache
+
+# 4. Ver circuit breakers activos (Python)
+python -c "
+import sys; sys.path.insert(0,'C:/ATLAS_PUSH')
+from modules.humanoid.quality.dispatcher import get_dispatcher
+d = get_dispatcher()
+print(d._circuit_breaker)
+"
+
+# 5. Ver últimas 20 entradas del bitácora ANS
+python -c "
+import json; data = json.load(open('logs/ans_evolution_bitacora.json'))
+for e in data[-20:]: print(e)
+"
+```
+
+---
+
+## REGLAS DE MANTENIMIENTO (Aplicar siempre)
+
+1. **Antes de modificar** cualquier servicio → verificar que está corriendo
+2. **Después de cambios** en Python → reiniciar el servicio afectado
+3. **Después de cambios** en HTML/JS → Ctrl+F5 en las pestañas del navegador
+4. **Limpieza de caché** → ejecutar después de merges grandes o cuando servicios se comportan raro
+5. **Nunca** hacer push sin revisar `git status` primero
+6. **Si un POT falla repetidamente** → ver el circuit breaker antes de reintentar manualmente

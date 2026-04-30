@@ -1,0 +1,28 @@
+{
+  "metrics": {
+    "total_trades": 56,
+    "winning_trades": 56,
+    "win_rate_pct": 100.0,
+    "profit_factor": 999.0,
+    "sharpe_ratio": 0.0,
+    "max_single_loss": 494.2712185795611,
+    "max_drawdown_pct": 0.0,
+    "total_profit": 35193.02473251424,
+    "total_loss": 0.0,
+    "avg_win": 628.4468702234686,
+    "avg_loss": 0.0,
+    "avg_hold_minutes": 0.0,
+    "trades_per_day": 7.0,
+    "roi_pct": 351.9302473251425,
+    "magnet_accuracy_pct": 73.21428571428571,
+    "on_magnet_win_rate_pct": 100.0,
+    "afternoon_pin_pct": 100.0,
+    "consecutive_losses": 0,
+    "capital_final": 45193.02473251425
+  },
+  "files": {
+    "metrics_csv": "data\\backtest\\backtest_results\\iron_butterfly_fixed\\iron_butterfly_results.csv",
+    "magnet_csv": "data\\backtest\\backtest_results\\iron_butterfly_fixed\\magnet_strike_accuracy.csv",
+    "html_report": "data\\backtest\\backtest_results\\iron_butterfly_fixed\\equity_curve.html"
+  }
+}

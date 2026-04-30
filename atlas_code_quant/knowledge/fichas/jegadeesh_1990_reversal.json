@@ -1,0 +1,40 @@
+{
+  "id": "jegadeesh_1990_reversal",
+  "title": "Evidence of Predictable Behavior of Security Returns",
+  "authors": [
+    "Narasimhan Jegadeesh"
+  ],
+  "year": 1990,
+  "source": "Journal of Finance",
+  "url": "https://www.jstor.org/stable/2328880",
+  "category": "CAT2",
+  "topic": "short_term_reversal",
+  "subtopics": [
+    "weekly_reversal",
+    "bid_ask_bounce",
+    "microstructure"
+  ],
+  "timeframes": [
+    "intraday",
+    "short"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "portfolio_sort",
+  "key_findings": "Los retornos a 1 semana muestran autocorrelación negativa (reversión). Los activos que más subieron esta semana tienden a bajar la siguiente. El efecto es parcialmente explicado por bid-ask bounce y microestructura.",
+  "limitations": "El efecto de reversión de 1 semana es frágil fuera de sample. Muy sensible a costos de transacción. No recomendado para estrategias con holding > 2 días.",
+  "atlas_utility": "Sustenta rsi_pullback_trend: el pullback dentro de tendencia explota la reversión de corto plazo pero solo cuando la tendencia dominante sigue activa. Evitar reversión pura.",
+  "confidence_level": "medium",
+  "scanner_methods": [
+    "rsi_pullback_trend"
+  ],
+  "tags": [
+    "reversal",
+    "short_term",
+    "weekly",
+    "bid_ask",
+    "fragile"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.912170+00:00"
+}

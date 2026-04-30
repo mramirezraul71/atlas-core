@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-03-04T09:17:36",
+  "total_routes": 507,
+  "route_count_by_module": {
+    "atlas_adapter.atlas_http_api": 344,
+    "modules.humanoid.ans.api": 28,
+    "modules.humanoid.world_model.api": 26,
+    "autonomous.api_routes": 20,
+    "modules.humanoid.quality.tutorias.api": 19,
+    "modules.humanoid.cognitive.api": 14,
+    "modules.humanoid.directives.api": 12,
+    "modules.humanoid.memory_engine.libro_vida_api": 10,
+    "modules.humanoid.quality.api": 8,
+    "modules.humanoid.api": 6,
+    "modules.humanoid.metalearn.api": 5,
+    "modules.humanoid.governance.api": 5,
+    "fastapi.applications": 4,
+    "modules.humanoid.ga.api": 3,
+    "modules.humanoid.nervous.api": 2,
+    "modules.humanoid.tools.api": 1
+  },
+  "duplicate_candidates": []
+}

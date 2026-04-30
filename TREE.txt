@@ -1,0 +1,186 @@
+atlas_code_quant/
+|-- api/
+|   |-- __init__.py
+|   |-- main.py
+|   |-- schemas.py
+|   `-- routers/
+|       |-- __init__.py
+|       `-- xgboost_router.py
+|-- backtest/
+|   |-- __init__.py
+|   `-- lean_simulator.py
+|-- backtesting/
+|   |-- __init__.py
+|   |-- engine.py
+|   |-- reporter.py
+|   `-- winning_probability.py
+|-- calibration/
+|   |-- physical_calibration.py
+|   |-- test_runner.py
+|   `-- voice_feedback.py
+|-- config/
+|   |-- __init__.py
+|   `-- settings.py
+|-- context/
+|   |-- __init__.py
+|   |-- market_context_engine.py
+|   |-- market_regime_classifier.py
+|   `-- price_cycle_analysis.py
+|-- data/
+|   |-- feed.py
+|   |-- realtime_feed.py
+|   |-- signal_validator.py
+|   |-- var_monitor.py
+|   `-- [runtime state and snapshots...]
+|-- execution/
+|   |-- __init__.py
+|   |-- account_manager.py
+|   |-- live_loop.py
+|   |-- mode_switcher.py
+|   |-- option_selector.py
+|   |-- pdt_controller.py
+|   |-- position_manager.py
+|   |-- signal_executor.py
+|   |-- tradier_controls.py
+|   |-- tradier_execution.py
+|   `-- tradier_pdt_ledger.py
+|-- hardware/
+|   |-- __init__.py
+|   |-- camera_interface.py
+|   |-- control_interface.py
+|   |-- ros2_bridge.py
+|   `-- serial_controller.py
+|-- healing/
+|   |-- __init__.py
+|   |-- error_agent.py
+|   `-- self_healing.py
+|-- journal/
+|   |-- __init__.py
+|   |-- db.py
+|   |-- models.py
+|   |-- service.py
+|   `-- sync.py
+|-- knowledge/
+|   |-- knowledge_base.py
+|   |-- sources_catalog.py
+|   `-- fichas/
+|       `-- [academic source jsons...]
+|-- learning/
+|   |-- __init__.py
+|   |-- adaptive_policy.py
+|   |-- atlas_learning_brain.py
+|   |-- duckdb_analytics.py
+|   |-- event_store.py
+|   |-- ic_signal_tracker.py
+|   |-- indicator_lab.py
+|   |-- journal_data_quality.py
+|   |-- learning_orchestrator.py
+|   |-- metrics_engine.py
+|   |-- ml_signal_ranker.py
+|   |-- motif_lab.py
+|   |-- policy_manager.py
+|   |-- retraining_scheduler.py
+|   |-- rl_env.py
+|   |-- rl_trainer.py
+|   |-- strategy_evolver.py
+|   |-- tin_models.py
+|   |-- trade_events.py
+|   |-- trading_implementation_scorecard.py
+|   |-- trading_self_audit_protocol.py
+|   |-- ts_baselines.py
+|   |-- visual_state_builder.py
+|   `-- xgboost_signal/
+|       |-- __init__.py
+|       |-- audit_report.py
+|       |-- backtest_engine.py
+|       |-- exit_advisor.py
+|       |-- feature_builder.py
+|       |-- model_loader.py
+|       |-- model_trainer.py
+|       `-- signal_scorer.py
+|-- models/
+|   |-- __init__.py
+|   |-- features.py
+|   |-- regime_classifier.py
+|   |-- signals.py
+|   `-- trainer.py
+|-- monitoring/
+|   |-- __init__.py
+|   |-- advanced_monitor.py
+|   |-- atlas_supervisor_ai.py
+|   |-- canonical_snapshot.py
+|   `-- strategy_tracker.py
+|-- notifications/
+|   |-- __init__.py
+|   |-- briefing_service.py
+|   |-- dispatcher.py
+|   |-- models.py
+|   |-- payloads.py
+|   |-- prioritization.py
+|   |-- renderers.py
+|   |-- scheduler.py
+|   `-- storage.py
+|-- operations/
+|   |-- __init__.py
+|   |-- alert_dispatcher.py
+|   |-- auton_executor.py
+|   |-- brain_bridge.py
+|   |-- chart_execution.py
+|   |-- chart_plan_builder.py
+|   |-- journal_pro.py
+|   |-- operation_center.py
+|   |-- readiness_eval.py
+|   |-- readiness_payload_builder.py
+|   |-- sensor_vision.py
+|   |-- startup_visual_connect.py
+|   |-- strategy_playbooks.py
+|   `-- vision_calibration.py
+|-- options/
+|   |-- __init__.py
+|   |-- strategy_engine.py
+|   `-- strategy_templates.py
+|-- paper/
+|   |-- __init__.py
+|   `-- paper_broker.py
+|-- pipeline/
+|   |-- __init__.py
+|   |-- indicators.py
+|   `-- tradier_stream.py
+|-- production/
+|   |-- grafana_dashboard.py
+|   `-- telegram_alerts.py
+|-- risk/
+|   `-- kelly_engine.py
+|-- scanner/
+|   |-- __init__.py
+|   |-- asset_classifier.py
+|   |-- crypto_universe.py
+|   |-- etf_universe.py
+|   |-- futures_universe.py
+|   |-- index_universe.py
+|   |-- opportunity_scanner.py
+|   `-- universe_catalog.py
+|-- scripts/
+|   |-- build_trading_implementation_scorecard.py
+|   |-- record_trading_self_audit_note.py
+|   `-- run_daily_learning.py
+|-- selector/
+|   `-- strategy_selector.py
+|-- strategies/
+|   |-- ma_cross.py
+|   `-- rl_strategy.py
+|-- strategy/
+|   |-- __init__.py
+|   |-- momentum.py
+|   |-- signal_generator.py
+|   `-- visual_triggers.py
+|-- tests/
+|   `-- [884 tests collected]
+|-- vision/
+|   |-- __init__.py
+|   |-- chart_ocr.py
+|   |-- insta360_capture.py
+|   |-- visual_pipeline.py
+|   `-- yolo_detector.py
+|-- atlas_quant_core.py
+`-- main.py

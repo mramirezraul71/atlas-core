@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 2s
+  evaluation_interval: 2s
+
+scrape_configs:
+  - job_name: atlas-quant
+    static_configs:
+      - targets:
+          - host.docker.internal:8795   # métricas embebidas del API Quant en el host
+    metrics_path: /metrics
+    scrape_timeout: 4s

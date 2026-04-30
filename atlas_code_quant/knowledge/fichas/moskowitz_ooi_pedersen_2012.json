@@ -1,0 +1,45 @@
+{
+  "id": "moskowitz_ooi_pedersen_2012",
+  "title": "Time Series Momentum",
+  "authors": [
+    "Tobias Moskowitz",
+    "Yao Hua Ooi",
+    "Lasse Heje Pedersen"
+  ],
+  "year": 2012,
+  "source": "Journal of Financial Economics",
+  "url": "https://www.nber.org/papers/w18169.pdf",
+  "category": "CAT2",
+  "topic": "momentum",
+  "subtopics": [
+    "time_series_momentum",
+    "trend_following",
+    "multi_asset"
+  ],
+  "timeframes": [
+    "swing",
+    "medium"
+  ],
+  "markets": [
+    "equity",
+    "futures",
+    "fx",
+    "commodities"
+  ],
+  "method": "portfolio_sort_time_series",
+  "key_findings": "Los activos con retorno positivo en los últimos 12 meses tienden a continuar en el mes siguiente (momentum temporal/absoluto). El efecto es universal en 58 instrumentos y 25 años. El retorno proviene principalmente de la tendencia del activo, no de su ranking vs. el universo.",
+  "limitations": "Sufrió crashes significativos en 2009 y 2020. La prima de momentum puede estar ligada a riesgo de cola. Requiere diversificación para ser estable.",
+  "atlas_utility": "Sustenta trend_ema_stack y breakout_donchian. El momentum temporal (¿el activo está subiendo?) es distinto del cross-seccional (¿está subiendo más que otros?). ATLAS usa ambos.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "trend_ema_stack",
+    "breakout_donchian"
+  ],
+  "tags": [
+    "time_series_momentum",
+    "trend",
+    "multi_asset",
+    "absolute_momentum"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.911171+00:00"
+}

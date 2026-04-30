@@ -3,6 +3,7 @@ from pathlib import Path
 
 LOG_FILE = Path(r"C:\ATLAS\logs\atlas.log")
 
+
 def log(message: str):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     entry = f"[{ts}] {message}\n"

@@ -1,0 +1,18 @@
+tunnel: "11111111-2222-3333-4444-555555555555"
+credentials-file: "C:\\ATLAS_PUSH\\config\\cloudflared\\11111111-2222-3333-4444-555555555555.json"
+protocol: quic
+loglevel: info
+transport-loglevel: info
+logfile: "C:\\ATLAS_PUSH\\logs\\cloudflared_access.log"
+metrics: "127.0.0.1:50333"
+
+ingress:
+  - hostname: "panaderia.atlas-demo.cf"
+    service: "http://127.0.0.1:3001"
+  - hostname: "panaderia-api.atlas-demo.cf"
+    service: "http://127.0.0.1:3001"
+  - hostname: "vision.atlas-demo.cf"
+    service: "http://127.0.0.1:3000"
+  - hostname: "atlas-dashboard.atlas-demo.cf"
+    service: "http://127.0.0.1:8791"
+  - service: "http_status:404"

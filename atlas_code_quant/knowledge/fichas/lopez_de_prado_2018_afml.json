@@ -1,0 +1,44 @@
+{
+  "id": "lopez_de_prado_2018_afml",
+  "title": "Advances in Financial Machine Learning",
+  "authors": [
+    "Marcos Lopez de Prado"
+  ],
+  "year": 2018,
+  "source": "Wiley",
+  "url": "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086",
+  "category": "CAT5",
+  "topic": "ml_finance",
+  "subtopics": [
+    "feature_engineering",
+    "backtesting_pitfalls",
+    "deflated_sharpe",
+    "MTRL",
+    "bars_alternatives"
+  ],
+  "timeframes": [
+    "all"
+  ],
+  "markets": [
+    "equity",
+    "futures",
+    "fx"
+  ],
+  "method": "ml_framework",
+  "key_findings": "La mayoría de backtests en finanzas sufren de múltiples testing, selección de muestra y look-ahead bias. El Deflated Sharpe Ratio ajusta por overfitting y número de pruebas. Bars de tick/volume/dollar son superiores a bars de tiempo para ML en finanzas. MTRL: mínimo 12 meses OOS para evaluar un sistema antes de ir a live.",
+  "limitations": "La implementación práctica requiere infraestructura de datos robusta. Las barras alternativas no siempre están disponibles en APIs retail.",
+  "atlas_utility": "Marco para la decisión live/no-live. Define los criterios del TSAP: Deflated Sharpe > 0, MTRL >= 3 meses OOS, n_trades suficiente. Justifica no ir a live antes de 6 meses de paper con evidencia real.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "ml_directional"
+  ],
+  "tags": [
+    "ML",
+    "backtesting",
+    "deflated_sharpe",
+    "MTRL",
+    "live_criteria",
+    "overfitting"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.918688+00:00"
+}

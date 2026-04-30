@@ -1,0 +1,58 @@
+Second-wave patch: integrate market_open_config.json into risk runtime
+
+Integrate market_open_config.json as the operational source of truth for risk
+and schedule parameters consumed via config.settings.TradingConfig.
+
+Summary:
+- Central loader _apply_market_open_operational_config reads
+  atlas_code_quant/config/market_open_config.json once per TradingConfig init
+  (and refresh_market_open_operational_config() can re-read the file without
+  touching other subsystems).
+- From JSON risk (when the corresponding env is not explicit): max_positions
+  -> market_open_max_positions; kelly_fraction -> kelly_fraction;
+  max_risk_per_trade -> equity_kelly_max_risk_per_trade_pct;
+  max_position_pct -> kelly_max_position_pct; daily_loss_limit ->
+  market_open_daily_loss_limit_pct.
+- From JSON schedule_et (when env does not override): market_open,
+  market_close, scan_interval_min -> market_open_scan_interval_min alongside
+  existing schedule fields used by the market hours gate.
+- Helpers validate HH:MM and numeric ranges; _finalize_market_open_operational_clamps
+  applies final safe caps.
+- _sync_risk_fields_from_explicit_env re-applies explicit env at the start of
+  each load so precedence env > JSON > defaults is effective even when process
+  env is set before TradingConfig is instantiated (dataclass defaults for
+  _fenv/_ienv are fixed at import).
+
+Precedence (per field):
+- Explicit non-empty process environment variable > market_open_config.json >
+  code/dataclass defaults.
+- Documented in market_open_config.json under _precedence and in the method
+  docstring.
+
+Error handling:
+- Missing/unreadable JSON or non-object root: logger.warning, no crash on boot,
+  market_open_config_loaded=False, keep env/defaults.
+- Single invalid field: logger.warning for that field, keep the field's
+  already-resolved value, apply the rest of the file.
+
+Files touched:
+- atlas_code_quant/config/settings.py
+- atlas_code_quant/config/market_open_config.json
+- atlas_code_quant/api/main.py (market_open_operational snapshot on readiness
+  fast + diagnostic payloads only)
+- atlas_code_quant/operations/operation_center.py (default for
+  max_risk_per_trade_pct normalization from settings.equity_kelly_max_risk_per_trade_pct
+  instead of literal 0.02; guard logic unchanged)
+- atlas_code_quant/tests/test_market_open_config_runtime.py (new)
+
+Validation:
+- python -m pytest atlas_code_quant/tests/test_market_open_config_runtime.py atlas_code_quant/tests/test_auto_cycle_audit_fixes.py -q
+  -> 9 passed
+- python -m pytest atlas_code_quant/tests/test_equity_sizing_kelly.py atlas_code_quant/tests/test_operation_center_core_contract.py -q
+  -> 9 passed
+
+Important:
+- Does not change the market hours gate semantics, max_open_positions guard
+  logic, Kelly sizing implementation (kelly_sizer / signal_executor), ML runtime,
+  scanner, execution, or journal behavior beyond reading the same settings
+  fields from an expanded, validated configuration source.

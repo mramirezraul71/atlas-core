@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "atlas_fault_event.schema.json",
+  "title": "ATLAS Fault Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "timestamp",
+    "component_id",
+    "domain",
+    "severity",
+    "fault_code",
+    "symptom",
+    "recoverability",
+    "status"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 8
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "component_id": {
+      "type": "string",
+      "minLength": 2
+    },
+    "domain": {
+      "type": "string",
+      "enum": [
+        "gateway_core",
+        "cognitive_core",
+        "robotics_core",
+        "workspace_core",
+        "autonomy_core",
+        "memory_core",
+        "operations_core",
+        "integration_core",
+        "quant_core",
+        "runtime_core",
+        "shared_modules",
+        "shared_core",
+        "simulation_core",
+        "tooling_core",
+        "training_core",
+        "unclassified"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "warning",
+        "degraded",
+        "critical",
+        "emergency"
+      ]
+    },
+    "fault_code": {
+      "type": "string",
+      "minLength": 3
+    },
+    "symptom": {
+      "type": "string",
+      "minLength": 3
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "recoverability": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "bounded_auto",
+        "manual_required",
+        "unsafe_to_retry"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "detected",
+        "classified",
+        "recovering",
+        "validated",
+        "rolled_back",
+        "degraded_mode",
+        "closed"
+      ]
+    },
+    "recommended_action": {
+      "type": "string"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "snapshot_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "bitacora_required": {
+      "type": "boolean",
+      "default": true
+    },
+    "telegram_required": {
+      "type": "boolean",
+      "default": false
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    }
+  }
+}

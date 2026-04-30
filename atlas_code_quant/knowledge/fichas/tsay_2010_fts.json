@@ -1,0 +1,45 @@
+{
+  "id": "tsay_2010_fts",
+  "title": "Analysis of Financial Time Series",
+  "authors": [
+    "Ruey S. Tsay"
+  ],
+  "year": 2010,
+  "source": "Wiley",
+  "url": "https://www.wiley.com/en-us/Analysis+of+Financial+Time+Series%2C+3rd+Edition-p-9780470414354",
+  "category": "CAT5",
+  "topic": "time_series_analysis",
+  "subtopics": [
+    "ARIMA",
+    "GARCH",
+    "volatility_modeling",
+    "autocorrelation",
+    "heteroskedasticity"
+  ],
+  "timeframes": [
+    "short",
+    "swing",
+    "medium"
+  ],
+  "markets": [
+    "equity",
+    "fx"
+  ],
+  "method": "econometric_modeling",
+  "key_findings": "Los retornos financieros muestran heterocedasticidad condicional (ARCH/GARCH). La volatilidad es cluster: períodos de alta volatilidad siguen a períodos de alta volatilidad. Los modelos GARCH mejoran la estimación de riesgo y son útiles para sizing dinámico.",
+  "limitations": "Los modelos ARIMA/GARCH capturan dependencias lineales. Patrones no-lineales requieren modelos más complejos. En alta frecuencia, la microestructura contamina los residuos.",
+  "atlas_utility": "Base para el KellyRiskEngine: la volatilidad condicional (GARCH-like) mejora el sizing. Justifica ATR como proxy de volatilidad en horizon corto. El clustering de volatilidad sugiere reducir tamaño en períodos de VIX elevado.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "trend_ema_stack",
+    "breakout_donchian"
+  ],
+  "tags": [
+    "GARCH",
+    "ARIMA",
+    "volatility",
+    "time_series",
+    "sizing"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.916680+00:00"
+}

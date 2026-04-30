@@ -1,8 +1,9 @@
-﻿import os
+﻿import json
+import os
 import re
-import json
 from datetime import datetime
 from pathlib import Path
+
 
 # =========================
 # Paths / Config
@@ -11,34 +12,40 @@ def _env(name: str, default: str) -> str:
     v = os.getenv(name)
     return v.strip() if v and v.strip() else default
 
-ATLAS_ROOT = Path(_env("ATLAS_ROOT", r"C:\ATLAS"))
-VAULT_DIR  = Path(_env("ATLAS_VAULT_DIR", str(ATLAS_ROOT / "ATLAS_VAULT")))
-NOTES_DIR  = Path(_env("ATLAS_NOTES_DIR", str(VAULT_DIR / "NOTES")))
-LOGS_DIR   = Path(_env("ATLAS_LOGS_DIR", str(ATLAS_ROOT / "logs")))
-SNAPS_DIR  = Path(_env("ATLAS_SNAPS_DIR", str(ATLAS_ROOT / "snapshots")))
 
-LOG_FILE   = Path(_env("ATLAS_LOG_FILE", str(LOGS_DIR / "atlas.log")))
+ATLAS_ROOT = Path(_env("ATLAS_ROOT", r"C:\ATLAS"))
+VAULT_DIR = Path(_env("ATLAS_VAULT_DIR", str(ATLAS_ROOT / "ATLAS_VAULT")))
+NOTES_DIR = Path(_env("ATLAS_NOTES_DIR", str(VAULT_DIR / "NOTES")))
+LOGS_DIR = Path(_env("ATLAS_LOGS_DIR", str(ATLAS_ROOT / "logs")))
+SNAPS_DIR = Path(_env("ATLAS_SNAPS_DIR", str(ATLAS_ROOT / "snapshots")))
+
+LOG_FILE = Path(_env("ATLAS_LOG_FILE", str(LOGS_DIR / "atlas.log")))
+
 
 def _ensure_dirs():
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     SNAPS_DIR.mkdir(parents=True, exist_ok=True)
 
+
 def _now_stamp():
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
+
 def _safe_name(s: str) -> str:
     s = s.strip().replace('"', "").replace("'", "")
-    s = re.sub(r"[^\w\- áéíóúÁÉÍÓÚñÑ]", "", s)
+    s = re.sub(r"[^\w\- Ã¡Ã©Ã­Ã³ÃºÃÃ‰ÃÃ“ÃšÃ±Ã‘]", "", s)
     s = re.sub(r"\s+", " ", s).strip()
     if not s:
         s = "nota"
     return s
 
+
 def _note_path(title: str) -> Path:
     title = _safe_name(title)
-    # archivo amigable (mantiene espacios). Si prefieres guiones, cambia aquí.
+    # archivo amigable (mantiene espacios). Si prefieres guiones, cambia aquÃ­.
     return NOTES_DIR / f"{title}.md"
+
 
 def _write_log(line: str):
     _ensure_dirs()
@@ -47,6 +54,7 @@ def _write_log(line: str):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{ts}] {line}\n")
 
+
 # =========================
 # Core Actions
 # =========================
@@ -54,48 +62,23 @@ def status() -> str:
     _ensure_dirs()
     return f"ATLAS: OK | logs={LOG_FILE} | snapshots={SNAPS_DIR}"
 
+
 def doctor() -> str:
     _ensure_dirs()
-    parts = []
-    parts.append(("VAULT", VAULT_DIR))
-    parts.append(("NOTES", NOTES_DIR))
-    parts.append(("LOGS", LOGS_DIR))
-    parts.append(("SNAPS", SNAPS_DIR))
-
-    ok = True
-    lines = ["ATLAS DOCTOR:"]
-    for name, p in parts:
-        try:
-            p.mkdir(parents=True, exist_ok=True)
-            test = p / ".atlas_write_test"
-            with open(test, "w", encoding="utf-8") as f:
-                f.write("ok")
-            test.unlink(missing_ok=True)
-            lines.append(f"- {name}: OK")
-        except Exception as e:
-            ok = False
-            lines.append(f"- {name}: FAIL ({e})")
-
-    if ok:
-        _write_log("doctor: OK")
-    else:
-        _write_log("doctor: FAIL")
-
-    return "\n".join(lines)
+    _write_log("doctor: removed")
+    return "ATLAS: el modulo Doctor fue eliminado."
 
 def modules_report() -> str:
     return (
-        " Módulos activos:\n"
+        " Modulos activos:\n"
         "- Telegram Bot\n"
         "- Command Router\n"
         "- Notes (Vault)\n"
         "- Snapshots\n"
         "- Logs\n"
-        "- Doctor\n"
         "- Inbox\n"
         "\nComandos:\n"
         "/status\n"
-        "/doctor\n"
         "/modules\n"
         "/snapshot etiqueta\n"
         "/note create Titulo\n"
@@ -112,6 +95,7 @@ def note_create(title: str) -> str:
     _write_log(f"note_create: {p}")
     return f"Nota OK\n{p}"
 
+
 def note_append(title: str, text: str) -> str:
     _ensure_dirs()
     p = _note_path(title)
@@ -122,6 +106,7 @@ def note_append(title: str, text: str) -> str:
         f.write(text.rstrip() + "\n")
     _write_log(f"note_append: {p}")
     return f"Nota OK\n{p}"
+
 
 def note_view(title: str, limit: int = 3500) -> str:
     _ensure_dirs()
@@ -134,6 +119,7 @@ def note_view(title: str, limit: int = 3500) -> str:
         content = content[:limit] + "\n\n(cortado)"
     return f" {p.name}\n\n{content}"
 
+
 def inbox(text: str) -> str:
     # Guarda cualquier cosa como "bandeja"
     _ensure_dirs()
@@ -142,6 +128,7 @@ def inbox(text: str) -> str:
         f.write(text.rstrip() + "\n")
     _write_log("inbox: +1")
     return f"Nota OK\n{p}"
+
 
 def snapshot(label: str = "snapshot") -> str:
     _ensure_dirs()
@@ -157,10 +144,13 @@ def snapshot(label: str = "snapshot") -> str:
         "notes_dir": str(NOTES_DIR),
         "logs_file": str(LOG_FILE),
     }
-    (snap_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    (snap_dir / "meta.json").write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     _write_log(f"snapshot: {snap_dir}")
     return f"Snapshot creado: {snap_dir}"
+
 
 # =========================
 # Text Router (Spanish friendly)
@@ -205,11 +195,17 @@ def handle(text: str) -> str:
         if rest.lower().startswith("view"):
             title = rest[4:].strip()
             return note_view(title or "Inbox")
-        return "Uso:\n/note create Titulo\n/note append Titulo | texto\n/note view Titulo"
+        return (
+            "Uso:\n/note create Titulo\n/note append Titulo | texto\n/note view Titulo"
+        )
 
     # ----- Natural Spanish (your current way) -----
     # "Atlas, crea una nota llamada X"
-    m = re.search(r"crea\s+una\s+nota\s+(llamada|con\s+el\s+t[ií]tulo)\s+(.+)$", low, re.IGNORECASE)
+    m = re.search(
+        r"crea\s+una\s+nota\s+(llamada|con\s+el\s+t[iÃ­]tulo)\s+(.+)$",
+        low,
+        re.IGNORECASE,
+    )
     if m:
         title = t.split(m.group(1), 1)[-1].strip()
         return note_create(title)
@@ -227,9 +223,74 @@ def handle(text: str) -> str:
         label = m3.group(1).strip()
         return snapshot(label)
 
-    # "Atlas, dime qué módulos tienes activos"
-    if "módulos" in low and ("activos" in low or "tienes" in low):
+    # "Atlas, dime quÃ© mÃ³dulos tienes activos"
+    if "mÃ³dulos" in low and ("activos" in low or "tienes" in low):
         return modules_report()
+
+    # ----- Repo push: subir repo de esta u otra app (Cursor/chat) -----
+    # /repo-push [app_id]   o   /repo-push
+    if low.startswith("/repo-push") or low.startswith("/repo push"):
+        rest = re.sub(r"^/repo[- ]?push\s*", "", t, flags=re.IGNORECASE).strip()
+        app_id = rest if rest else None
+        try:
+            from modules.repo_push import (list_known_apps, push_repo,
+                                           resolve_path)
+
+            repo = resolve_path(app_id=app_id, repo_path=None)
+            msg = "chore: sync (solicitado por chat)"
+            result = push_repo(repo_path=repo, message=msg)
+            return result.get("message", "OK" if result.get("ok") else "Error")
+        except Exception as e:
+            return "Error al subir repo: " + str(e)
+
+    # Natural: "sube el repo", "sube el repo de atlas_nexus", "haz push del repo (de) X"
+    if "repo" in low and (
+        "sube" in low or "push" in low or "subir" in low or "actualiza" in low
+    ):
+        app_id = None
+        m_repo = re.search(
+            r"(?:sube|subir|push|actualiza)(?:r?)\s+(?:el\s+)?repo(?:sitorio)?\s+(?:de\s+)?(\w[\w\-_]*)",
+            low,
+        )
+        if m_repo:
+            app_id = m_repo.group(1).strip()
+        try:
+            from modules.repo_push import push_repo, resolve_path
+
+            repo = resolve_path(app_id=app_id, repo_path=None)
+            result = push_repo(
+                repo_path=repo, message="chore: sync (solicitado por chat)"
+            )
+            return result.get("message", "OK" if result.get("ok") else "Error")
+        except Exception as e:
+            return "Error al subir repo: " + str(e)
+
+    # "Atlas, quÃ© repos puedo subir" / "lista de repos"
+    if ("repo" in low or "repos" in low) and (
+        "lista" in low or "cuÃ¡les" in low or "quÃ©" in low or "listar" in low
+    ):
+        try:
+            from modules.repo_push import list_known_apps
+
+            apps = list_known_apps()
+            if not apps:
+                return (
+                    "No hay apps configuradas en known_apps (config/repo_monitor.yaml)."
+                )
+            return "Repos que puedes subir: " + ", ".join(
+                "%s â†’ %s" % (k, v) for k, v in list(apps.items())[:10]
+            )
+        except Exception as e:
+            return "Error: " + str(e)
 
     # fallback to inbox
     return inbox(t)
+
+
+# -------------------------------------------------------------------
+# Backwards-compat: older modules import route_command()
+# -------------------------------------------------------------------
+def route_command(text: str) -> str:
+    return handle(text)
+
+

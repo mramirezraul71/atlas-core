@@ -1,0 +1,21 @@
+httpx>=0.27.0
+beautifulsoup4>=4.12.0
+duckdb>=0.10.0
+pydantic>=2.5.0
+numpy>=1.26.0
+pandas>=2.2.0
+streamlit>=1.35.0
+plotly>=5.22.0
+pytesseract>=0.3.10
+opencv-python-headless>=4.9.0
+scipy>=1.12.0
+hmmlearn>=0.3.0
+aiohttp>=3.9.0
+lxml>=5.2.0
+# Local AI clients (Ollama / DeepSeek / Qwen3)
+# Atlas talks to a local Ollama server via HTTP — no SDK required, but the
+# `ollama` python package can be useful for diagnostics.
+ollama>=0.2.0
+# Tests
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

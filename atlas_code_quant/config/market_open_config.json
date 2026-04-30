@@ -1,0 +1,70 @@
+{
+  "_comment": "ATLAS-Quant — Configuración Morning Market Open Test 2026-03-23",
+  "_precedence": "Por campo: variable de entorno explícita (no vacía) > este JSON > default en config/settings.py. Ver TradingConfig._apply_market_open_operational_config.",
+  "session": {
+    "name": "Morning Market Open Test — 2026-03-23",
+    "mode": "paper",
+    "broker_env": "sandbox",
+    "preview_mode": true
+  },
+  "schedule_et": {
+    "warmup_start":     "08:00",
+    "premarket_scan":   "08:30",
+    "market_open":      "09:30",
+    "market_close":     "16:00",
+    "scan_interval_min": 5
+  },
+  "symbols_priority": [
+    "SPY", "QQQ", "AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "META", "AMD", "GOOGL"
+  ],
+  "filters": {
+    "iv_rank_min":        70,
+    "iv_hv_ratio_min":    1.2,
+    "cvd_sigma_threshold": 1.0,
+    "liquidity_min_usd":  10000000,
+    "min_adx":            20,
+    "min_volume_ratio":   1.5
+  },
+  "risk": {
+    "kelly_fraction":     0.25,
+    "max_risk_per_trade": 0.01,
+    "max_positions":      3,
+    "daily_loss_limit":   0.02,
+    "max_position_pct":   0.05
+  },
+  "ocr": {
+    "min_confidence":     0.92,
+    "camera_index":       0,
+    "frame_width":        640,
+    "frame_height":       480,
+    "cpu_throttle_pct":   80
+  },
+  "regime": {
+    "lstm_seq_len":       20,
+    "min_confidence":     0.65,
+    "classes":            ["bull", "bear", "sideways"]
+  },
+  "voice": {
+    "enabled": true,
+    "language": "es",
+    "rate": 150,
+    "volume": 0.9
+  },
+  "telegram": {
+    "enabled": true,
+    "alerts_on": [
+      "scan_start", "symbol_selected", "regime_detected",
+      "signal_generated", "order_paper", "drawdown_warning",
+      "eod_report"
+    ]
+  },
+  "grafana": {
+    "url": "http://localhost:3002",
+    "metrics_port": 9090,
+    "dashboard_uid": "atlas-quant-pro-2026"
+  },
+  "eod_report": {
+    "path": "reports/morning_test_results_{date}.md",
+    "voice_verdict": true
+  }
+}

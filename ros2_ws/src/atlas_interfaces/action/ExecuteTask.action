@@ -1,0 +1,20 @@
+# Goal: execute a high-level task
+string task_id
+string goal_description
+string mode               # plan_only | controlled | auto
+int32 priority
+float64 timeout_seconds
+---
+# Result
+bool success
+string[] completed_steps
+string[] artifacts        # files created, states changed
+string summary
+string error
+---
+# Feedback
+string current_step
+int32 step_index
+int32 total_steps
+float64 progress          # 0.0 - 1.0
+string status             # planning | executing | verifying | done

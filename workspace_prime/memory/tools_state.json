@@ -1,0 +1,147 @@
+{
+  "mem0_memories": [],
+  "composio_connections": {},
+  "ollama_models": [
+    "nomic-embed-text:latest",
+    "llava:7b",
+    "deepseek-coder:6.7b",
+    "qwen2.5:7b",
+    "llama3.2:3b",
+    "deepseek-coder:1.3b",
+    "deepseek-coder:latest",
+    "llama3.2-vision:11b",
+    "codellama:latest",
+    "llama2:latest",
+    "deepseek-r1:latest",
+    "llama3:latest",
+    "llama3.1:latest",
+    "deepseek-r1:14b",
+    "qwen3:4b"
+  ],
+  "home_assistant_devices": [],
+  "n8n_workflows": [],
+  "appsmith_dashboards": [
+    {
+      "id": "dashboard_1",
+      "name": "Atlas Trading Analysis",
+      "config": {
+        "widgets": [
+          {
+            "type": "chart",
+            "title": "Análisis EUR/USD",
+            "data_source": "analysis"
+          },
+          {
+            "type": "metric",
+            "title": "Señal",
+            "value": "LARGA"
+          },
+          {
+            "type": "table",
+            "title": "Niveles Clave",
+            "data_source": "levels"
+          }
+        ]
+      },
+      "url": "http://localhost/application/atlas-trading-analysis",
+      "timestamp": "C:\\ATLAS_PUSH"
+    },
+    {
+      "id": "dashboard_2",
+      "name": "Cliente Intelligence",
+      "config": {
+        "widgets": [
+          {
+            "type": "text",
+            "content": "Análisis: Lo siento, pero como asistente de programación basado en inteligencia artificial, no estoy equipado para analizar patrones de negocios o clientes específicos. Mi función principal es proporcionar ayud"
+          },
+          {
+            "type": "metric",
+            "title": "Preferencia",
+            "value": "EUR/USD + GBP/JPY"
+          },
+          {
+            "type": "chart",
+            "title": "Rendimiento",
+            "data_source": "client_trades"
+          }
+        ]
+      },
+      "url": "http://localhost/application/cliente-intelligence",
+      "timestamp": "C:\\ATLAS_PUSH"
+    },
+    {
+      "id": "dashboard_3",
+      "name": "Atlas Trading Analysis",
+      "config": {
+        "widgets": [
+          {
+            "type": "chart",
+            "title": "Análisis EUR/USD",
+            "data_source": "analysis"
+          },
+          {
+            "type": "metric",
+            "title": "Señal",
+            "value": "LARGA"
+          },
+          {
+            "type": "table",
+            "title": "Niveles Clave",
+            "data_source": "levels"
+          }
+        ]
+      },
+      "url": "http://localhost/application/atlas-trading-analysis",
+      "timestamp": "C:\\ATLAS_PUSH"
+    },
+    {
+      "id": "dashboard_4",
+      "name": "Cliente Intelligence",
+      "config": {
+        "widgets": [
+          {
+            "type": "text",
+            "content": "Análisis: Lo siento, pero como una IA dedicada a la programación y cálculos matemáticos en Python, no estoy equipado para analizar patrones de cliente específicamente para operaciones con divisas. Te recomendar"
+          },
+          {
+            "type": "metric",
+            "title": "Preferencia",
+            "value": "EUR/USD + GBP/JPY"
+          },
+          {
+            "type": "chart",
+            "title": "Rendimiento",
+            "data_source": "client_trades"
+          }
+        ]
+      },
+      "url": "http://localhost/application/cliente-intelligence",
+      "timestamp": "C:\\ATLAS_PUSH"
+    },
+    {
+      "id": "dashboard_5",
+      "name": "ATLAS NEXUS Monitor",
+      "config": {
+        "widgets": [
+          {
+            "type": "metric",
+            "title": "Dispositivos Activos",
+            "value": 0
+          },
+          {
+            "type": "text",
+            "content": "Análisis: Análisis no disponible temporalmente"
+          },
+          {
+            "type": "table",
+            "title": "Estado Dispositivos",
+            "data_source": "iot_devices"
+          }
+        ]
+      },
+      "url": "http://localhost/application/atlas-nexus-monitor",
+      "timestamp": "C:\\ATLAS_PUSH"
+    }
+  ]
+}

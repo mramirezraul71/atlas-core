@@ -1,0 +1,65 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ATLAS: Snapshot Safe Diagnostic",
+      "type": "shell",
+      "command": "powershell -ExecutionPolicy Bypass -File .\\scripts\\atlas_snapshot_safe.ps1",
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Cortex Bridge Dry Run",
+      "type": "shell",
+      "command": "python .\\scripts\\atlas_cortex_orchestrate_event.py --sample",
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Cortex Queue Worker (Once)",
+      "type": "shell",
+      "command": "python .\\scripts\\atlas_cortex_queue_worker.py --once",
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Supervise Arms",
+      "type": "shell",
+      "command": "python .\\scripts\\atlas_supervise_arms.py",
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Validate Cross-Repo Compatibility",
+      "type": "shell",
+      "command": "python .\\scripts\\atlas_validate_cross_repo_compat.py",
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Panaderia Change Gate",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "ATLAS: Validate Cross-Repo Compatibility",
+        "ATLAS: Cortex Bridge Dry Run",
+        "ATLAS: Snapshot Safe Diagnostic",
+        "ATLAS: Supervise Arms"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Watch Panaderia -> Validate Vision",
+      "type": "shell",
+      "command": "python .\\scripts\\atlas_watch_panaderia_changes.py --interval 20",
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "ATLAS: Prepare Cloudflare Tunnel (No Start)",
+      "type": "shell",
+      "command": "powershell -ExecutionPolicy Bypass -File .\\scripts\\deploy_cloudflare_atlas.ps1 -TunnelId 11111111-2222-3333-4444-555555555555 -CloudflareZone atlas-demo.cf -SkipInstall",
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Check Cloudflare IP Guard (Sample)",
+      "type": "shell",
+      "command": "python .\\scripts\\atlas_cloudflare_check_ip.py --ip 127.0.0.1",
+      "problemMatcher": []
+    }
+  ]
+}

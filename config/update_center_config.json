@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "dry_run": true,
+  "scan_interval_sec": 1800,
+  "allowed_surfaces": [
+    "tools",
+    "software"
+  ],
+  "allowed_policy_classes": [
+    "auto_update_safe"
+  ],
+  "max_updates_per_cycle": 3,
+  "window_start": "00:00",
+  "window_end": "23:59"
+}

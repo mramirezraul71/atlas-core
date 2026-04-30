@@ -1,0 +1,52 @@
+{
+  "cameras": [
+    {
+      "id": "insta360_link2",
+      "name": "Insta360 Link 2",
+      "keywords": ["insta360", "link 2", "link2", "2cb7"],
+      "vendor_ids": ["0x2cb7", "2cb7", "2CB7", "VID_2CB7"],
+      "driver": "uvc_standard",
+      "capabilities": ["ptz", "4k", "hdr", "tracking", "gesture", "mic"],
+      "opencv_index_hint": 1,
+      "opencv_backend": "CAP_MSMF",
+      "params": {"resolution": [1920, 1080], "fps": 30}
+    },
+    {
+      "id": "insta360_link",
+      "name": "Insta360 Link",
+      "keywords": ["insta360", "link", "2cb7"],
+      "vendor_ids": ["0x2cb7", "2cb7", "2CB7", "VID_2CB7"],
+      "driver": "uvc_standard",
+      "capabilities": ["ptz", "4k", "tracking"],
+      "params": {"resolution": [1920, 1080], "fps": 30}
+    },
+    {
+      "id": "logitech_c922",
+      "name": "Logitech C922",
+      "driver": "uvc_standard",
+      "capabilities": ["1080p"],
+      "params": {"resolution": [1920, 1080], "fps": 30}
+    },
+    {
+      "id": "logitech_c920",
+      "name": "Logitech C920",
+      "driver": "uvc_standard",
+      "capabilities": ["1080p"],
+      "params": {"resolution": [1920, 1080], "fps": 30}
+    },
+    {
+      "id": "generic_webcam",
+      "name": "Webcam estándar",
+      "driver": "uvc_standard",
+      "capabilities": ["video"],
+      "params": {"resolution": [640, 480], "fps": 30}
+    }
+  ],
+  "network_templates": {
+    "dashcam_dual": {
+      "description": "Dashcam dual frontal+trasera RTSP",
+      "paths": ["/stream1", "/stream2", "/livestream/11", "/livestream/12"],
+      "type": "auto"
+    }
+  }
+}

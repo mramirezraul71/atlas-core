@@ -1,0 +1,1 @@
+# Tests visión (depth, scene)

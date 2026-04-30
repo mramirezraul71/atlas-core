@@ -1,0 +1,187 @@
+﻿# ATLAS_PUSH project config (MAX CAPACITY default)
+# Global and project configs are kept aligned to avoid precedence conflicts.
+
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+model_verbosity = "high"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "live"
+show_raw_agent_reasoning = false
+# (NUEVO) Mantener simetría de trazas; no altera tu comportamiento si tu build lo ignora.
+show_raw_agent_messages = false
+
+[windows]
+sandbox = "elevated"
+
+[features]
+shell_tool = true
+shell_snapshot = true
+unified_exec = true
+apply_patch_freeform = true
+multi_agent = true
+collaboration_modes = true
+runtime_metrics = true
+remote_models = true
+search_tool = true
+
+# ============================================================
+# PERFILES (NO se elimina nada: se mantienen tus perfiles y se añaden nuevos)
+# ============================================================
+
+[profiles.atlas_supervisor]
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+model_verbosity = "high"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "live"
+show_raw_agent_reasoning = true
+
+[profiles.atlas_safe]
+model = "gpt-5.3-codex"
+model_reasoning_effort = "high"
+model_verbosity = "medium"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "live"
+show_raw_agent_reasoning = false
+
+[profiles.atlas_realtime]
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+model_verbosity = "high"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "live"
+show_raw_agent_reasoning = false
+
+# (NUEVO) Perfiles estilo "Cursor" y Supervisor profundo adicional
+[profiles.cursor_soft]
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+model_verbosity = "high"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "live"
+show_raw_agent_reasoning = false
+show_raw_agent_messages = false
+
+[profiles.cursor_dev]
+model = "gpt-5.3-codex"
+model_reasoning_effort = "medium"
+model_verbosity = "medium"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "live"
+show_raw_agent_reasoning = false
+show_raw_agent_messages = false
+
+[profiles.atlas_supervisor_deep]
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+model_verbosity = "high"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "live"
+show_raw_agent_reasoning = true
+show_raw_agent_messages = true
+
+# ============================================================
+# HABILIDADES (CAPAS 1..8) — se agregan sin afectar tu config actual
+# Nota: algunas builds gestionan "Habilidades" desde UI; este bloque no rompe nada
+# ============================================================
+
+[skills]
+
+# 1) VELOCIDAD
+[skills.parallel_exec]
+enabled = true
+max_workers = 4
+
+[skills.incremental_reasoning]
+enabled = true
+cache_context = true
+
+[skills.response_cache]
+enabled = true
+ttl_seconds = 3600
+
+# 2) LÓGICA
+[skills.logic_validator]
+enabled = true
+strict = true
+
+[skills.reasoning_structure]
+enabled = true
+mode = "structured"  # structured | lightweight
+
+# 3) ANÁLISIS
+[skills.code_analyzer]
+enabled = true
+scope = "workspace"
+
+[skills.architecture_analyzer]
+enabled = true
+depth = "deep"  # deep | medium
+
+[skills.doc_scanner]
+enabled = true
+sources = ["workspace", "web"]
+
+# 4) COHERENCIA
+[skills.context_integrity]
+enabled = true
+
+# 5) MEMORIA (ATLAS persistente)
+[skills.memory_bridge]
+enabled = true
+provider = "atlas"
+atlas_root_default = "C:\\ATLAS"
+vault_default      = "C:\\ATLAS\\ATLAS_VAULT"
+
+# 6) AUTONOMÍA
+[skills.task_planner]
+enabled = true
+strategy = "hierarchical"
+
+[skills.self_reflection]
+enabled = true
+level = "medium"  # medium evita loops
+
+[skills.auto_repair]
+enabled = true
+mode = "safe"  # safe = no destructivo
+
+# 7) KNOWLEDGE GRAPH / MAPA MENTAL DEL REPO
+[skills.knowledge_graph]
+enabled = true
+scope = "workspace"
+persist = true
+
+# 8) GOBERNANZA (switches por ENV — para frenar sin tocar el TOML)
+# Se aplican en tu código (auto_fix.py / kernel) usando variables:
+#   ATLAS_AUTOCOMMIT=0/1
+#   ATLAS_AUTOPUSH=0/1
+#   ATLAS_FORCE_DEV=0/1
+[skills.governance]
+enabled = true
+use_env_switches = true
+
+# ============================================================
+# MCP SERVERS (no se eliminó ni cambió nada)
+# ============================================================
+
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+
+[mcp_servers.notion]
+url = "https://mcp.notion.com/mcp"
+
+[mcp_servers.playwright]
+args = ["@playwright/mcp@latest"]
+command = "npx"
+

@@ -1,0 +1,1 @@
+"""ATLAS <-> ClawdBOT bridge package."""

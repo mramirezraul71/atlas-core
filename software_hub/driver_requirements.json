@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "drivers": [
+    {
+      "id": "gpu_display_driver",
+      "name": "GPU Display Driver",
+      "critical": true,
+      "detector": {
+        "type": "video_controller",
+        "match_any": ["nvidia", "amd", "intel"]
+      }
+    },
+    {
+      "id": "network_adapter_driver",
+      "name": "Network Adapter Driver",
+      "critical": true,
+      "detector": {
+        "type": "pnp_class",
+        "device_class": "NET"
+      }
+    },
+    {
+      "id": "audio_driver",
+      "name": "Audio Driver",
+      "critical": false,
+      "detector": {
+        "type": "pnp_class",
+        "device_class": "MEDIA"
+      }
+    },
+    {
+      "id": "bluetooth_driver",
+      "name": "Bluetooth Driver",
+      "critical": false,
+      "detector": {
+        "type": "pnp_class",
+        "device_class": "Bluetooth"
+      }
+    }
+  ]
+}

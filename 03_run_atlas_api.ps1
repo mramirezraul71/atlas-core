@@ -2,28 +2,46 @@ param(
   [Parameter(Mandatory=$true)][string]$RepoPath,
   [int]$AtlasPort = 8791,
   [string]$BindHost = "127.0.0.1",
-  [string]$AppImport = ""  # opcional, ej: atlas_adapter.atlas_http_api:app
+  [string]$AppImport = "",  # opcional, ej: atlas_adapter.atlas_http_api:app
+  [switch]$DisableSafeStartup
 )
 
 Write-Host "== Run ATLAS API ==" -ForegroundColor Cyan
 Set-Location $RepoPath
 
-$venvAct = Join-Path $RepoPath ".venv\Scripts\Activate.ps1"
-if (!(Test-Path $venvAct)) { Write-Error "No existe venv. Ejecuta 01_setup_venv.ps1 primero."; exit 1 }
-& $venvAct
+$runtimeHelpers = Join-Path $RepoPath "scripts\atlas_runtime.ps1"
+if (!(Test-Path $runtimeHelpers)) { Write-Error "No existe atlas_runtime.ps1 en scripts."; exit 1 }
+. $runtimeHelpers
+
+$py = Resolve-AtlasPython -RepoRoot $RepoPath -RequirePreflight
+if (!(Test-Path $py)) { Write-Error "No existe python.exe resuelto para ATLAS."; exit 1 }
+
+if (-not $DisableSafeStartup) {
+  $env:ATLAS_SAFE_STARTUP = "true"
+  if (-not $env:ATLAS_MINIMAL_STARTUP) {
+    $env:ATLAS_MINIMAL_STARTUP = "true"
+  }
+}
+
+Stop-AtlasPythonProcesses -Pattern 'atlas_adapter\.atlas_http_api:app'
+Start-Sleep -Milliseconds 300
 
 # liberar puerto si ocupado
-$cons = Get-NetTCPConnection -LocalPort $AtlasPort -ErrorAction SilentlyContinue
-if ($cons) {
-  $pid = $cons[0].OwningProcess
-  Write-Host "Puerto $AtlasPort ocupado por PID $pid. Matando..." -ForegroundColor Yellow
-  Stop-Process -Id $pid -Force
+$listeners = Get-NetTCPConnection -LocalPort $AtlasPort -State Listen -ErrorAction SilentlyContinue
+if ($listeners) {
+  $pids = @($listeners | Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique)
+  foreach ($p in $pids) {
+    if ($p -and $p -gt 0) {
+      Write-Host "Puerto $AtlasPort ocupado por PID $p. Matando..." -ForegroundColor Yellow
+      Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
+    }
+  }
   Start-Sleep -Milliseconds 300
 }
 
 function Try-Run($importPath) {
   Write-Host "Intentando: $importPath" -ForegroundColor Yellow
-  python -m uvicorn $importPath --host $BindHost --port $AtlasPort
+  & $py -m uvicorn $importPath --host $BindHost --port $AtlasPort
   return $LASTEXITCODE
 }
 

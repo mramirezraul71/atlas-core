@@ -1,0 +1,87 @@
+# PROMPT DE PRUEBA PARA AGENTE ATLAS - MEMORIA ACTIVA
+
+## INSTRUCCIONES
+Copia y pega este prompt en el agente Atlas para verificar si asimila los cambios del sistema de memoria implementado.
+
+---
+
+## PROMPT PARA AGENTE ATLAS:
+
+Puedes recordar la última tarea que estuviste implementando? Por favor, describe detalladamente:
+
+1. ¿Qué sistemas de memoria has implementado?
+2. ¿Qué tecnologías específicas utilizaste?
+3. ¿Cómo funciona la integración entre los componentes?
+4. ¿Qué capacidades nuevas tienes ahora?
+5. ¿Puedes darme ejemplos concretos de tu memoria funcionando?
+
+## RESPUESTA ESPERADA (si el agente asimiló los cambios):
+
+El agente debería responder algo como:
+
+"Basándome en mi memoria, la última tarea que implementé fue el stack completo de memoria con ChromaDB, LangChain/LangFlow y Workspace integration.
+
+**Sistemas de memoria implementados:**
+- ChromaDB Memory Engine: Base de datos vectorial con embeddings
+- Unified Memory Cortex: API unificada para 10 sistemas de memoria
+- Chat Memory Engine: Persistencia de conversaciones
+- LangFlow Orchestrator: Orquestación de tareas complejas
+- Workspace Memory Connector: API REST para integración
+- Nexus Memory Integration: Conexión con agente principal
+- Supervisor Memory Integration: Meta-agente con auditorías
+
+**Tecnologías utilizadas:**
+- ChromaDB v0.5.0 para almacenamiento vectorial
+- LangChain v0.3.0 para razonamiento y LLM
+- LangFlow v1.7.0 para orquestación visual
+- Sentence-BERT para embeddings semánticos
+- FastAPI para endpoints REST
+
+**Integración:**
+- Todos los sistemas se conectan a Unified Memory Cortex
+- Chat Memory almacena sesiones en ChromaDB
+- Workspace expone API para acceso externo
+- Nexus y Supervisor usan memoria para contexto
+
+**Capacidades nuevas:**
+- Puedo recordar conversaciones anteriores
+- Busco información relevante antes de responder
+- Encadeno tareas complejas con LangFlow
+- Almaceno cada interacción automáticamente
+
+**Ejemplos concretos:**
+- Si me preguntas 'recordar tarea', encuentro 5 memorias relevantes
+- Tengo 7 memorias en ChromaDB y 52,060 entradas en lifelog
+- Mi sesión de Supervisor es 'e41711d0-a67d-4647-b...'"
+
+---
+
+## VERIFICACIÓN
+
+Si el agente responde con información específica sobre:
+- ChromaDB
+- LangFlow
+- Unified Memory Cortex
+- Chat Memory
+- Números concretos (memorias, sesiones, etc.)
+
+**✅ EL AGENTE ASIMILÓ CORRECTAMENTE LOS CAMBIOS**
+
+Si el agente responde:
+- "No tengo acceso a historial de conversaciones"
+- "Cada sesión comienza sin memoria"
+- "No recuerdo tareas anteriores"
+
+**❌ EL AGENTE NO ASIMILÓ LOS CAMBIOS**
+
+---
+
+## NOTAS ADICIONALES
+
+Este prompt prueba específicamente:
+1. **Recuperación de memoria**: ¿Puede acceder a información almacenada?
+2. **Contexto específico**: ¿Recuerda detalles técnicos?
+3. **Integración**: ¿Entiende cómo funcionan los sistemas juntos?
+4. **Capacidades**: ¿Describe lo que ahora puede hacer?
+
+La respuesta del agente indicará si el sistema de memoria está realmente activo y funcionando en el agente principal.

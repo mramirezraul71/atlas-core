@@ -1,0 +1,18 @@
+{
+  "name": "atlas-actuators",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ATLAS generic actuators (vision + action) with centralized audit logging.",
+  "main": "atlas_action_trigger.js",
+  "scripts": {
+    "capture": "node atlas_vision_capture.js",
+    "trigger": "node atlas_action_trigger.js",
+    "health": "node atlas_actuator_healthcheck.js",
+    "quant:smoke": "node quant_ui_smoke.js",
+    "install:browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2",
+    "puppeteer": "^24.40.0"
+  }
+}

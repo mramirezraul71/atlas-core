@@ -1,0 +1,8 @@
+playwright==instalado
+pyautogui==instalado
+pillow==instalado
+boto3==instalado
+anthropic==instalado
+httpx==instalado
+opencv-python==instalado
+chromium==instalado via playwright

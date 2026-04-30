@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>atlas_sensors</name>
+  <version>0.1.0</version>
+  <description>Atlas hardware abstraction: IMU, force-torque, joint states, camera drivers</description>
+  <maintainer email="raul@atlas-robot.dev">Raul</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

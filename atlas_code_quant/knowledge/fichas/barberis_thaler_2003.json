@@ -1,0 +1,38 @@
+{
+  "id": "barberis_thaler_2003",
+  "title": "A Survey of Behavioral Finance",
+  "authors": [
+    "Nicholas Barberis",
+    "Richard Thaler"
+  ],
+  "year": 2003,
+  "source": "Handbook of the Economics of Finance",
+  "url": "https://www.nber.org/papers/w9222",
+  "category": "CAT4",
+  "topic": "behavioral_finance",
+  "subtopics": [
+    "limits_to_arbitrage",
+    "cognitive_biases",
+    "asset_pricing_anomalies"
+  ],
+  "timeframes": [
+    "all"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "literature_survey",
+  "key_findings": "Dos pilares: (1) límites al arbitraje — los precios pueden desviarse sin corrección inmediata; (2) sesgos cognitivos — sobreconfianza, representatividad, anclaje y efecto de disposición generan patrones predecibles. El efecto de disposición (vender ganadores demasiado pronto, mantener perdedores) es una de las anomalías más documentadas.",
+  "limitations": "Los límites al arbitraje son menores en activos líquidos de gran capitalización. Los sesgos son más fuertes en retail que en institucional.",
+  "atlas_utility": "Justifica el exit_governance_snapshot: los inversores retail tienden a vender ganadores rápido y mantener perdedores. ATLAS debe hacer lo opuesto: cortar pérdidas rápido y dejar correr ganadores mientras la tendencia siga activa.",
+  "confidence_level": "high",
+  "scanner_methods": [],
+  "tags": [
+    "behavioral",
+    "survey",
+    "limits_arbitrage",
+    "disposition_effect",
+    "exit_governance"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.914171+00:00"
+}

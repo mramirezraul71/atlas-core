@@ -1,0 +1,95 @@
+# Atlas Medulla — Topicos y Canales de Comunicación
+# Define la estructura de mensajería del bus sensoriomotor.
+
+sensors:
+  vision:
+    topic: "sensor.vision.{camera_id}"
+    schema: VisionFrame
+    rate: 30Hz
+    description: "Frames de cámaras RGB/Depth"
+  audio:
+    topic: "sensor.audio.{mic_id}"
+    schema: AudioFrame
+    rate: 16kHz
+    description: "Chunks de audio del micrófono"
+  imu:
+    topic: "sensor.imu"
+    schema: IMUReading
+    rate: 100Hz
+    description: "Lectura del IMU 9-axis"
+  force_torque:
+    topic: "sensor.ft.{joint_id}"
+    schema: ForceTorqueReading
+    rate: 100Hz
+    description: "Sensor de fuerza/torque por articulación"
+  encoders:
+    topic: "sensor.encoder.{joint_id}"
+    schema: EncoderReading
+    rate: 1000Hz
+    description: "Encoder de posición articular"
+
+actuators:
+  arm:
+    topic: "actuator.arm.{arm_id}.{joint_id}"
+    schema: JointCommand
+    rate: 100Hz
+    description: "Comando a articulación del brazo"
+  gripper:
+    topic: "actuator.gripper.{hand_id}"
+    schema: GripperCommand
+    rate: 50Hz
+    description: "Comando al gripper/mano"
+  locomotion:
+    topic: "actuator.locomotion"
+    schema: LocomotionCommand
+    rate: 100Hz
+    description: "Comando de locomoción (ruedas/piernas)"
+  neck:
+    topic: "actuator.neck"
+    schema: NeckCommand
+    rate: 50Hz
+    description: "Comando al pan-tilt del cuello"
+
+cognitive:
+  perception:
+    topic: "cognitive.perception.world_state"
+    schema: WorldState
+    rate: 10Hz
+    description: "Estado del mundo percibido fusionado"
+  decision:
+    topic: "cognitive.decision.action"
+    schema: ActionDecision
+    rate: event
+    description: "Decisión de acción del planificador"
+  goal:
+    topic: "cognitive.goal.update"
+    schema: GoalUpdate
+    rate: event
+    description: "Actualización de objetivo activo"
+  speech_transcript:
+    topic: "cognitive.speech.transcript"
+    schema: Transcript
+    rate: event
+    description: "Transcripción de voz reconocida"
+  nlu_intent:
+    topic: "cognitive.nlu.intent"
+    schema: Intent
+    rate: event
+    description: "Intención extraída por NLU"
+
+system:
+  vitals:
+    topic: "system.vitals"
+    schema: VitalsStatus
+    rate: 1Hz
+    description: "Signos vitales del robot"
+  alert:
+    topic: "system.alert.{level}"
+    schema: SystemAlert
+    rate: event
+    description: "Alertas del sistema (info/warning/error/critical/emergency)"
+  mode:
+    topic: "system.mode"
+    schema: SystemMode
+    rate: event
+    description: "Cambio de modo global del sistema"

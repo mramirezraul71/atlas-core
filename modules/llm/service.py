@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+import math
+import time
+from typing import Any, Dict
+
+from .config import LLMSettings
+from .ollama_client import OllamaClient
+from .router import HybridRouter
+from .schemas import LLMRequest, LLMResponse
+
+
+class LLMService:
+    """Orchestrates HybridRouter + OllamaClient for a single LLM request."""
+
+    def __init__(self) -> None:
+        self.settings = LLMSettings()
+        self.router = HybridRouter(
+            fast_max_chars=self.settings.FAST_MAX_CHARS,
+            chat_max_chars=self.settings.CHAT_MAX_CHARS,
+            reason_min_chars=self.settings.REASON_MIN_CHARS,
+        )
+        self.client = OllamaClient(
+            base_url=self.settings.OLLAMA_BASE_URL,
+            timeout_connect=self.settings.TIMEOUT_CONNECT,
+            timeout_read=self.settings.TIMEOUT_READ,
+        )
+
+    def run(self, req: LLMRequest) -> LLMResponse:
+        """Route prompt, call Ollama, return LLMResponse with ok, output, route, ms, meta."""
+        t0 = time.perf_counter()
+        try:
+            decision = self.router.decide(req.prompt, forced=req.route)
+            model = req.model or self.settings.model_for_route(decision.route)
+
+            timeout_override = getattr(req, "timeout_override", None)
+            data = self.client.generate(
+                model=model,
+                prompt=req.prompt,
+                system=req.system,
+                temperature=req.temperature if req.temperature is not None else 0.2,
+                top_p=req.top_p or 0.9,
+                stream=bool(req.stream),
+                max_tokens=req.max_tokens,
+                timeout_override=timeout_override,
+            )
+
+            output = data.get("response", "") or ""
+            ms_ollama = int(data.get("_ms", 0))
+            ms_total = int((time.perf_counter() - t0) * 1000)
+            tokens_est = max(1, math.ceil(len(req.prompt) / 4))
+
+            meta: Dict[str, Any] = {
+                "decision_reason": decision.reason,
+                "ollama_ms": ms_ollama,
+            }
+
+            return LLMResponse(
+                ok=True,
+                output=output,
+                route=decision.route,
+                model_used=model,
+                ms=ms_total,
+                tokens_est=tokens_est,
+                error=None,
+                meta=meta,
+            )
+        except Exception as e:
+            ms_total = int((time.perf_counter() - t0) * 1000)
+            return LLMResponse(
+                ok=False,
+                output="",
+                route=req.route,
+                model_used=req.model,
+                ms=ms_total,
+                tokens_est=None,
+                error=str(e),
+                meta={},
+            )

@@ -1,0 +1,10 @@
+{
+  "mode": "paper_api",
+  "kill_switch_active": false,
+  "last_action": {
+    "type": "emergency_reset",
+    "timestamp": "2026-04-21T04:37:23.888946"
+  },
+  "notes": "",
+  "kill_switch_reason": null
+}

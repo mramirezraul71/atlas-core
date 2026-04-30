@@ -1,0 +1,8 @@
+# Dependencias orientadas a backtesting / reporting.
+# Instalar junto con core:
+#   pip install -r requirements.txt -r requirements-backtest.txt
+
+pandas-ta>=0.3.14b0
+matplotlib>=3.8.0
+plotly>=5.20.0
+tqdm>=4.66.0

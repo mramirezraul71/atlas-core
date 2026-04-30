@@ -6,12 +6,10 @@ Cuerpo + Cerebro + Memoria + Automatizacion
 """
 
 import os
-import time
-import psutil
-import threading
-import pyttsx3
-import requests
 from datetime import datetime
+
+import psutil
+import pyttsx3
 
 # =========================
 # VOZ
@@ -19,10 +17,12 @@ from datetime import datetime
 engine = pyttsx3.init()
 engine.setProperty("rate", 175)
 
+
 def hablar(texto):
     print(f"ATLAS: {texto}")
     engine.say(texto)
     engine.runAndWait()
+
 
 # =========================
 # MEMORIA SIMPLE
@@ -30,9 +30,11 @@ def hablar(texto):
 MEMORY_FILE = r"C:\ATLAS\memory\atlas_memory.txt"
 os.makedirs(r"C:\ATLAS\memory", exist_ok=True)
 
+
 def recordar(texto):
     with open(MEMORY_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{datetime.now()}] {texto}\n")
+
 
 # =========================
 # ESTADO DEL SISTEMA
@@ -41,6 +43,7 @@ def estado():
     cpu = psutil.cpu_percent(interval=1)
     ram = psutil.virtual_memory().percent
     return f"CPU {cpu}% | RAM {ram}%"
+
 
 # =========================
 # COMANDOS
@@ -70,6 +73,7 @@ def procesar(comando: str):
 
     hablar("Comando no reconocido.")
 
+
 # =========================
 # LOOP PRINCIPAL (CHAT)
 # =========================
@@ -82,6 +86,7 @@ def main():
         except KeyboardInterrupt:
             hablar("ATLAS detenido manualmente.")
             break
+
 
 if __name__ == "__main__":
     main()

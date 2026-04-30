@@ -1,0 +1,15 @@
+# Atlas Memory Stack - ChromaDB + LangChain + LangFlow
+# Vector Database
+chromadb>=0.5.0
+
+# LangChain Ecosystem
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-core>=0.3.0
+langchain-chroma>=0.2.0
+
+# LangFlow
+langflow>=1.7.0
+
+# Compatibility fixes
+pydantic-core>=2.41.5

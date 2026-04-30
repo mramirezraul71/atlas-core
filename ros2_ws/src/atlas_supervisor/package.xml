@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>atlas_supervisor</name>
+  <version>0.1.0</version>
+  <description>Atlas supervisor layer: orchestrates all subsystems, bridges to existing PUSH/ROBOT backends, governance enforcement</description>
+  <maintainer email="raul@atlas-robot.dev">Raul</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>atlas_interfaces</depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

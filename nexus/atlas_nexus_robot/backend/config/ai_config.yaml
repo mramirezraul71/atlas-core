@@ -1,0 +1,153 @@
+# AI Models Configuration for ATLAS NEXUS
+# Sistema Multi-IA con Routing Automático
+
+providers:
+  ollama:
+    name: "Ollama (Local)"
+    base_url: "http://localhost:11434"
+    priority: 1
+    cost: "free"
+    available: true
+    models:
+      "llama3.1:8b":
+        specialty: "general"
+        description: "Modelo local general para conversación y análisis"
+        max_tokens: 4096
+        temperature: 0.6
+      "deepseek-coder-v2:16b":
+        specialty: "code"
+        description: "Especializado en programación robusta local"
+        max_tokens: 4096
+        temperature: 0.1
+      "qwen3-coder:30b":
+        specialty: "reasoning"
+        description: "Modelo robusto para razonamiento y tareas complejas"
+        max_tokens: 4096
+        temperature: 0.2
+      "qwen2.5-coder:7b":
+        specialty: "code_fast"
+        description: "Fallback rápido de código local"
+        max_tokens: 4096
+        temperature: 0.15
+      "qwen3-vl:30b":
+        specialty: "vision"
+        description: "Modelo visual premium local"
+        max_tokens: 4096
+        temperature: 0.2
+      "llama3.2-vision:11b":
+        specialty: "vision_fallback"
+        description: "Fallback visual local"
+        max_tokens: 4096
+        temperature: 0.3
+      "nomic-embed-text:latest":
+        specialty: "embeddings"
+        description: "Embeddings locales"
+        max_tokens: 2048
+        temperature: 0.0
+
+  deepseek:
+    name: "DeepSeek API"
+    base_url: "https://api.deepseek.com"
+    priority: 2
+    cost: "cheap"
+    available: true
+    api_key_env: "DEEPSEEK_API_KEY"
+    models:
+      deepseek-chat:
+        specialty: "general"
+        description: "Modelo general de conversación"
+        max_tokens: 4096
+        temperature: 0.7
+      deepseek-reasoner:
+        specialty: "reasoning"
+        description: "Razonamiento avanzado (API)"
+        max_tokens: 4096
+        temperature: 0.2
+
+  openai:
+    name: "OpenAI API"
+    base_url: "https://api.openai.com/v1"
+    priority: 3
+    cost: "expensive"
+    available: true
+    api_key_env: "OPENAI_API_KEY"
+    models:
+      gpt-4o-mini:
+        specialty: "general"
+        description: "Modelo general de alta calidad"
+        max_tokens: 4096
+        temperature: 0.7
+
+# Routing Rules
+routing_rules:
+  code:
+    keywords: ["código", "función", "script", "debug", "programar", "python", "javascript", "java", "c++", "html", "css", "react", "node", "api", "algoritmo", "clase", "método", "variable", "bucle", "if", "else", "for", "while"]
+    preferred_model: "deepseek-coder-v2:16b"
+    simple_model: "qwen2.5-coder:7b"
+    normal_model: "deepseek-coder-v2:16b"
+    complex_model: "qwen3-coder:30b"
+    fallback_provider: "ollama"
+
+  reasoning:
+    keywords: ["calcula", "matemática", "ecuación", "resuelve", "problema", "lógica", "razonamiento", "cuánto es", "suma", "resta", "multiplica", "divide", "porcentaje", "derivada", "integral"]
+    preferred_model: "qwen3-coder:30b"
+    simple_model: "llama3.1:8b"
+    normal_model: "qwen3-coder:30b"
+    complex_model: "qwen3-coder:30b"
+    fallback_provider: "ollama"
+
+  analysis:
+    keywords: ["resume", "analiza texto", "traduce", "interpreta", "explica", "compara", "evalúa", "sintetiza", "parafrasea", "extrae", "identifica"]
+    preferred_model: "llama3.1:8b"
+    simple_model: "llama3.1:8b"
+    normal_model: "qwen3-coder:30b"
+    complex_model: "qwen3-coder:30b"
+    fallback_provider: "ollama"
+
+  general:
+    keywords: ["hola", "adiós", "gracias", "cómo estás", "qué tal", "ayuda", "información", "dime", "explícame", "cuéntame"]
+    preferred_model: "llama3.1:8b"
+    simple_model: "llama3.1:8b"
+    normal_model: "llama3.1:8b"
+    complex_model: "qwen3-coder:30b"
+    fallback_provider: "ollama"
+
+# System Configuration
+system:
+  default_provider: "ollama"
+  timeout_seconds: 30
+  max_retries: 2
+  confidence_threshold: 0.6
+  smart_routing:
+    enabled: true
+    active_profile: "ultra_fast"
+    fast_default_model: "llama3.1:8b"
+    simple_max_complexity: 0.30
+    complex_min_complexity: 0.68
+    output_tokens:
+      simple: 120
+      medium: 300
+      complex: 700
+    request_timeout_seconds:
+      simple: 35
+      medium: 85
+      complex: 150
+    profiles:
+      balanced:
+        output_tokens:
+          simple: 160
+          medium: 420
+          complex: 900
+        request_timeout_seconds:
+          simple: 40
+          medium: 90
+          complex: 150
+      ultra_fast:
+        output_tokens:
+          simple: 120
+          medium: 300
+          complex: 700
+        request_timeout_seconds:
+          simple: 35
+          medium: 85
+          complex: 150

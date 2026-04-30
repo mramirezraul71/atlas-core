@@ -1,0 +1,23 @@
+{
+  "ts": "2026-03-01T01:29:50.738113+00:00",
+  "event_file": "C:\\ATLAS_PUSH\\state\\atlas_bus\\vision_inbox\\vision-async-001.json",
+  "event_id": "vision-async-001",
+  "accepted": true,
+  "action": "dry_run_adjustments",
+  "reason": "validated",
+  "commands": [
+    {
+      "product_id": "prod-pan-001",
+      "quantity": 2.0,
+      "type": "entrada",
+      "notes": "ATLAS_CORTEX event=vision-async-001 source=rauli-vision confidence=0.92 quality=0.95"
+    },
+    {
+      "product_id": "prod-pan-002",
+      "quantity": -1.0,
+      "type": "merma",
+      "notes": "ATLAS_CORTEX event=vision-async-001 source=rauli-vision confidence=0.88 quality=0.9"
+    }
+  ],
+  "dispatch_results": []
+}

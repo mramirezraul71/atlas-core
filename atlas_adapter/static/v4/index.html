@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ATLAS</title>
+  <link rel="stylesheet" href="/static/shared/tokens.css?v=1-f3" />
+  <link rel="stylesheet" href="/v4/static/style.css?v=20260426f3-tokens">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;background:#0a0e14;color:#e6edf3;">
+  <div id="app">
+    <div id="atlas-static-fallback" style="padding:28px 20px;font-family:system-ui,Segoe UI,sans-serif;max-width:560px;margin:0 auto;line-height:1.55">
+      <p style="margin:0 0 10px;font-weight:700;font-size:17px;letter-spacing:.02em">ATLAS</p>
+      <p style="margin:0 0 10px;opacity:.9">Cargando interfaz…</p>
+      <p style="margin:0;font-size:13px;opacity:.72">Si esta pantalla no cambia: <strong>Ctrl+Shift+R</strong>. Prueba también <a style="color:#58a6ff" href="http://127.0.0.1:8791/ui">127.0.0.1:8791/ui</a>. Desactiva bloqueadores de scripts en esta URL.</p>
+    </div>
+  </div>
+  <script>
+    (function () {
+      function showErr(title, msg) {
+        if (document.getElementById('atlas-js-fatal')) return;
+        var d = document.createElement('div');
+        d.setAttribute('id', 'atlas-js-fatal');
+        d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:38vh;overflow:auto;background:rgba(26,0,0,.94);color:#f85149;padding:12px 16px;font:12px/1.45 system-ui,Segoe UI,sans-serif;z-index:2147483646;border-top:1px solid rgba(248,81,73,.4);white-space:pre-wrap';
+        d.textContent = title + '\n\n' + String(msg || '');
+        document.body.appendChild(d);
+      }
+      window.addEventListener('error', function (ev) {
+        var m = ev && ev.message ? ev.message : '';
+        if (ev && ev.error && ev.error.stack) m += '\n' + ev.error.stack;
+        showErr('Error de JavaScript (ATLAS v4)', m || String(ev));
+      });
+      window.addEventListener('unhandledrejection', function (ev) {
+        var r = ev && ev.reason;
+        showErr('Promesa no manejada (ATLAS v4)', r && r.message ? r.message : String(r));
+      });
+    })();
+  </script>
+  <script nomodule>
+    document.getElementById('app').innerHTML = '<div style="padding:24px;font-family:system-ui;color:#e6edf3">Este navegador no soporta módulos ES (necesario para ATLAS v4). Actualiza Chrome o Edge.</div>';
+  </script>
+  <script type="module" src="/v4/static/lib/state.js?v=20260427-on-replay"></script>
+  <script type="module" src="/v4/static/lib/router.js?v=20260426c-shell"></script>
+  <script type="module" src="/v4/static/components/sounds.js?v=20260426c-shell"></script>
+  <script type="module" src="/v4/static/components/companion.js?v=20260426c-shell"></script>
+  <script type="module" src="/v4/static/components/megamenu.js?v=20260426c-shell"></script>
+  <script type="module" src="/v4/static/components/landing.js?v=20260427-sync-copy"></script>
+  <script type="module" src="/v4/static/app.js?v=20260427-blackscreen-guard"></script>
+</body>
+</html>

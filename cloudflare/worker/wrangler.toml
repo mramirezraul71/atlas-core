@@ -1,0 +1,7 @@
+name = "atlas-cuba-proxy"
+main = "atlas_cuba_proxy_worker.js"
+compatibility_date = "2026-03-01"
+
+[vars]
+# Separar por comas, ej: "github.com,registry.npmjs.org,files.pythonhosted.org"
+ALLOWED_HOSTS = ""

@@ -1,14 +1,261 @@
-﻿.env
-*.env
-**/.env
-**/*.env
-snapshots/**/config/.env
-snapshots/**/.env
+# Atlas Automation Security Excludes
+*.key
+*.pem
+*.secret
+*.token
+*.tmp
+*.log
+*.cache
+*.bak
+*.swp
+*.swo
+*.pid
+*.lock
+.DS_Store
+Thumbs.db
+
+# Directories
+node_modules/
+.vscode/
+.idea/
+data/
+# Excepciones: estado operacional de quant (controla autonomía)
+!atlas_code_quant/data/
+!atlas_code_quant/data/operation/
+!atlas_code_quant/data/operation/operation_center_state.json
+cache/
+temp/
+backup/
+appsmith_data/
+homeassistant_config/
+n8n_data/
+mem0_repo/
+
+# Existing excludes
 .env
 *.env
 **/.env
 **/*.env
+local_settings.py
+*.secret.json
 snapshots/**/config/.env
 snapshots/**/.env
 __pycache__/
 *.pyc
+
+# Python venv
+.venv/
+.venv_*/
+venv/
+ENV/
+env/
+
+# Pip cache (local)
+pip/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Editor/OS
+.vscode/
+.DS_Store
+
+# CI reportes generados
+snapshots/ci/
+
+# Prometheus binary (descargado en runtime — no trackear)
+tools/prometheus/prometheus.exe
+tools/prometheus/promtool.exe
+tools/prometheus/data/
+
+# Snapshots / evidencia generada (LOCAL) - nunca subir
+snapshots/**
+
+# API keys guardadas desde el dashboard (nunca subir)
+config/provider_api_keys.json
+grafana/local/custom.ini
+
+# Audit DB (local)
+logs/*.sqlite
+logs/*.sqlite-shm
+logs/*.sqlite-wal
+# Runtime logs / bitácoras (local)
+logs/*.log
+logs/*.err.log
+logs/*.out.log
+logs/*.json
+logs/*.txt
+# Logs (LOCAL) - nunca subir
+logs/**
+# Repo monitor (tarea asignada)
+logs/repo_monitor.log*
+# Task/orchestrator local state
+atlas_task_memory.sqlite
+
+# Runtime artifacts (generated/cache) that should not be versioned
+atlas_master_registry.json
+software_hub/software_registry.json
+tools/atlas_agent/memory/episodes.sqlite
+
+# Emergency dashboards/servers (local recovery tools)
+dashboard_emergency.py
+emergency_server.py
+
+# Local chat threads DB (never commit)
+data/chat_threads.db
+
+# Runtime DBs (local)
+data/autonomy_tasks.db
+
+# Reportes ANS/GA/Metalearn/Brain/Hands-Eyes generados
+snapshots/ga/
+snapshots/metalearn/
+snapshots/support/
+snapshots/brain/
+snapshots/hands_eyes/
+snapshots/ans/
+
+# Capturas sueltas de cámara/evidencia (LOCAL)
+camera_*.jpg
+camera_*.png
+*_camera_*.jpg
+*_camera_*.png
+direct_camera_*.jpg
+direct_camera_*.png
+proxy_camera_*.jpg
+proxy_camera_*.png
+vision_camera_*.jpg
+vision_camera_*.png
+
+# Scripts generados por CoderAgent / AtlasCoder (sandbox)
+temp_scripts/
+atlas_workspace/
+
+# Capturas del Agente Navegador
+temp_vision/
+workspace_prime/screenshots/
+
+# Reportes POT (generados en runtime) - nunca subir
+modules/humanoid/quality/reports/pot_report_*.json
+
+# ATLAS_EVOLUTION sandbox
+.temp_venv/
+temp_workspace/
+temp_growth/
+temp_models_cache/
+
+# NEXUS (unificado en monorepo): logs y DBs locales
+nexus/**/logs/
+nexus/**/*.log
+nexus/**/*.db
+nexus/**/*.db-journal
+nexus/**/__pycache__/
+
+# Junction atlas_nexus -> nexus (evitar duplicar en repo)
+atlas_nexus/
+# atlas_agent runtime artifacts
+tools/atlas_agent/runs/
+
+# Local Codex/backup artifacts
+.atlas_backups/
+.codex/tmp/
+config/atlas.env
+
+# OpenClaw ATLAS runtime state
+state/openclaw_atlas/
+
+# Playwright CLI recordings / temp scripts
+.playwright-cli/
+tmp_pwcode*.js
+
+# Local pytest temp dirs / detached worktrees
+.pytest_tmp/
+.pytest_basetemp/
+_wt_*/
+
+# Quant local runtime learning state
+atlas_code_quant/data/learning/learning_orchestrator_state.json
+atlas_code_quant/data/learning/adaptive_policy_snapshot.json
+atlas_code_quant/data/options_paper_journal.jsonl
+
+# Archivos grandes - no subir a GitHub
+atlas_code_quant/logs/*.jsonl
+atlas_code_quant/data/journal/*.sqlite3
+atlas_code_quant/data/journal/*.sqlite3-wal
+atlas_code_quant/data/journal/*.sqlite3-shm
+atlas_code_quant/data/*.db
+atlas_code_quant/data/*.db-wal
+atlas_code_quant/data/*.db-shm
+atlas_code_quant/data/*.sqlite3
+atlas_code_quant/data/*.sqlite3-wal
+atlas_code_quant/data/*.sqlite3-shm
+atlas_code_quant/data/notifications/
+output/
+*.py.tmp
+
+# Scratch / forensics helpers generados localmente
+/changed.py
+/check_*.py
+/do_git*.py
+/find_*.py
+/git_push.bat
+/inspect_*.py
+/purge.py
+/read_*.py
+/regen*.py
+
+# Backtest artifacts (local cache/output)
+atlas_code_quant/data/backtest/AAPL_*.csv
+atlas_code_quant/data/backtest/MSFT_*.csv
+atlas_code_quant/data/backtest/backtest_results/iron_butterfly/
+atlas_code_quant/data/backtest/backtest_results/iron_butterfly_fixed_6m/
+atlas_code_quant/data/backtest/backtest_results/trades_*.csv
+atlas_code_quant/reports/backtest_*.html
+atlas_code_quant/reports/backtest_*.json
+atlas_code_quant/reports/backtest_metrics_*.json
+
+# Keep scorecard snapshots local by default
+reports/*_scorecard.json
+reports/*_scorecard_latest.md
+reports/evidence_*.png
+
+# Paper / runtime churn under quant data (no versionar)
+atlas_code_quant/data/operation/snapshots/
+atlas_code_quant/data/market/
+atlas_code_quant/data/operation/brain_audit_log.jsonl
+atlas_code_quant/data/operation/quant_brain_bridge_state_pending.json
+atlas_code_quant/data/options_paper_stats.json
+
+# Autonomy / runtime dumps en raíz (no versionar)
+state/atlas_*.json
+state/atlas_*.jsonl
+
+# Informes locales generados con fecha en nombre
+reports/ATLAS_PUSH_ESTRUCTURA_GENERAL_*.md
+reports/atlas_quant_implementation_scorecard_20*.md
+
+# Auditorías locales del modelo XGBoost (generadas al entrenar/scorear)
+atlas_code_quant/learning/xgboost_signal/models/audit_report.json
+atlas_code_quant/learning/xgboost_signal/models/audit_report.md
+
+# Fase 5 Institutional Radar: artefacto Lighthouse local (reproducible)
+reports/temp_f5_lh_radar.json
+reports/tmp_f5_*
+
+# Runtime forensic artifacts
+atlas-core/runtime/vision_sensor_forensics/
+atlas-core/runtime/vision_sensor_queue/
+
+# Local runtime databases
+tmp/*.sqlite
+tmp/*.sqlite3
+atlas_code_quant/data/paper_account.db
+data/quality/*.db
+
+# Large local media artifacts
+*.avi
+*.mp4
+*.mov
+*.mkv
+*.webm

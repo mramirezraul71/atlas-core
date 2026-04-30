@@ -1,0 +1,12 @@
+apiVersion: 1
+datasources:
+  - name: atlas-prometheus
+    uid: atlas-prom
+    type: prometheus
+    url: http://localhost:9091
+    access: proxy
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: GET
+      timeInterval: '2s'

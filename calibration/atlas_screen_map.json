@@ -1,0 +1,55 @@
+{
+  "tradingview_tabs": [
+    {
+      "symbol": "AAPL",
+      "tab_index": 1,
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 720,
+      "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=5&hide_side_toolbar=0"
+    },
+    {
+      "symbol": "TSLA",
+      "tab_index": 2,
+      "x": 1280,
+      "y": 0,
+      "width": 1280,
+      "height": 720,
+      "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3ATSLA&interval=5&hide_side_toolbar=0"
+    },
+    {
+      "symbol": "SPY",
+      "tab_index": 3,
+      "x": 0,
+      "y": 720,
+      "width": 1280,
+      "height": 720,
+      "url": "https://www.tradingview.com/chart/?symbol=AMEX%3ASPY&interval=5"
+    },
+    {
+      "symbol": "QQQ",
+      "tab_index": 4,
+      "x": 1280,
+      "y": 720,
+      "width": 1280,
+      "height": 720,
+      "url": "https://www.tradingview.com/chart/?symbol=AMEX%3AQQQ&interval=5"
+    }
+  ],
+  "screen_width": 2560,
+  "screen_height": 1440,
+  "chart_provider": "tradingview_free",
+  "symbols": [
+    "AAPL",
+    "TSLA",
+    "SPY",
+    "QQQ"
+  ],
+  "timeframe": "5m",
+  "indicators": [
+    "RSI",
+    "MACD",
+    "Volume"
+  ]
+}

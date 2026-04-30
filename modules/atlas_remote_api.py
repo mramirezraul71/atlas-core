@@ -1,4 +1,5 @@
 ﻿import os
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -14,24 +15,26 @@ if not API_TOKEN:
 
 app = FastAPI(title="ATLAS Remote API", version="1.0")
 
+
 class Req(BaseModel):
     token: str
     text: str
 
+
 @app.get("/health")
 def health():
     return {"ok": True}
+
 
 @app.post("/chat")
 def chat(req: Req):
     if req.token != API_TOKEN:
         raise HTTPException(status_code=401, detail="token inválido")
 
-    system = (
-        "Eres ATLAS, asistente de Raúl. Responde en español y con acciones ejecutables si aplica."
-    )
+    system = "Eres ATLAS, asistente de Raúl. Responde en español y con acciones ejecutables si aplica."
     reply = atlas.think(req.text, system=system)
     return {"reply": reply}
+
 
 @app.post("/cmd")
 def cmd(req: Req):

@@ -1,0 +1,31 @@
+ATLAS — TEST REAL DEL SISTEMA COMPLETO
+========================================
+
+Ejecuta estos comandos en orden exacto.
+Muestra el output completo de cada uno.
+
+COMANDO 1:
+execute_command: cd C:\ATLAS_PUSH\workspace_prime; python memory_manager.py
+
+COMANDO 2:
+execute_command: cd C:\ATLAS_PUSH\workspace_prime; python web_tools.py
+
+COMANDO 3:
+execute_command: cd C:\ATLAS_PUSH\workspace_prime; python smart_browser.py
+
+COMANDO 4:
+execute_command: cd C:\ATLAS_PUSH\workspace_prime; python desktop_hands.py
+
+COMANDO 5:
+execute_command: cd C:\ATLAS_PUSH\workspace_prime; python visual_agent.py
+
+COMANDO 6:
+execute_command: cd C:\ATLAS_PUSH\workspace_prime; python atlas_prime.py --help 2>&1
+
+Para cada comando dime:
+- ✅ OK si imprimió algo sin errores
+- ❌ ERROR + el mensaje exacto si falló
+
+NO reintentes si falla. Solo reporta y continúa al siguiente.
+
+Termina con: [TEST-SISTEMA-COMPLETO]

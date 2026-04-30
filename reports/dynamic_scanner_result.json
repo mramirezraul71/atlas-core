@@ -1,0 +1,32 @@
+{
+  "scanner_result": [
+    "SPY",
+    "NVDA",
+    "AMD"
+  ],
+  "filters": {
+    "iv_rank_min": 70,
+    "iv_hv_min": 1.2,
+    "cvd_sigma": 1.0,
+    "liq_min_usd": 10000000.0
+  },
+  "orders": [
+    {
+      "sym": "SPY",
+      "status": "ok",
+      "cost": 659.35
+    },
+    {
+      "sym": "NVDA",
+      "status": "ok",
+      "cost": 530.88
+    },
+    {
+      "sym": "AMD",
+      "status": "ok",
+      "cost": 410.74
+    }
+  ],
+  "equity": 95840.56,
+  "mode": "paper"
+}

@@ -1,0 +1,88 @@
+# ATLAS AUTONOMOUS - Configuración de auto-gestión
+# Referencia: docs/MISION_ATLAS_AUTONOMOUS_PROMPT.md
+
+health_monitor:
+  check_interval_seconds: 10
+  thresholds:
+    cpu_critical: 90
+    cpu_warning: 80
+    ram_critical: 90
+    ram_warning: 85
+    disk_critical: 95
+    disk_warning: 90
+  anomaly_detection:
+    enabled: true
+    sensitivity: 0.02  # 2 sigma
+  services:
+    push: "http://127.0.0.1:8791/health"
+    nexus: "http://127.0.0.1:8000/health"
+    robot: "http://127.0.0.1:8002/"
+
+self_healing:
+  circuit_breaker:
+    failure_threshold: 5
+    timeout_seconds: 60
+    success_threshold: 2
+  retry_policy:
+    max_attempts: 5
+    initial_delay: 5
+    max_delay: 300
+    exponential_base: 3
+  strategies:
+    default: retry_then_restart
+    critical: immediate_alert
+  failure_memory_db: "logs/autonomous_failure_memory.sqlite"
+
+evolution:
+  auto_update:
+    enabled: false
+    schedule: "daily"
+  regression_testing:
+    enabled: true
+    timeout_per_test: 30
+  staged_rollout:
+    enabled: true
+    phase_duration_minutes: 10
+  auto_rollback:
+    enabled: true
+    degradation_threshold: 15
+  backup_dir: "snapshots/autonomous_backups"
+
+telemetry:
+  metrics:
+    retention_days: 30
+    aggregation_interval: 60
+  logs:
+    level: INFO
+    retention_days: 7
+  timeseries_db: "logs/autonomous_metrics.sqlite"
+  alerts:
+    webhook_enabled: false
+    webhook_url: ""
+    bitacora_enabled: true
+
+resilience:
+  priority_queue:
+    max_queue_size: 1000
+  throttling:
+    max_concurrent_requests: 100
+    rate_limit_per_second: 10
+  survival_mode:
+    auto_trigger: true
+    triggers:
+      cpu_critical: 95
+      ram_critical: 95
+      error_rate_critical: 50
+  backup_dir: "snapshots/disaster_recovery"
+
+learning:
+  pattern_analysis:
+    enabled: true
+    min_data_points: 100
+  auto_optimization:
+    enabled: true
+    approval_required: false
+  knowledge_graph:
+    enabled: true
+    max_nodes: 10000
+  feedback_db: "logs/autonomous_learning.sqlite"

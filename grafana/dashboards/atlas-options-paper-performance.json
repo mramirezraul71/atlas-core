@@ -1,0 +1,86 @@
+{
+  "uid": "atlas-options-paper-performance",
+  "title": "Options Engine — Paper Performance",
+  "description": "Métricas paper desde journal JSONL (close_execution.pnl_realized). Mismos agregados expuestos en get_ui_snapshot() como paper_performance_summary / win_rate_approx. Ver docs/options_observability_implementation_notes.md.",
+  "tags": ["atlas", "options", "paper", "performance", "journal"],
+  "timezone": "UTC",
+  "schemaVersion": 38,
+  "version": 2,
+  "refresh": "15s",
+  "time": {"from": "now-30d", "to": "now"},
+  "panels": [
+    {
+      "id": 301,
+      "title": "P-01 Cierres con PnL en muestra",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "atlas-prom"},
+          "expr": "atlas_options_paper_performance_close_count",
+          "refId": "A"
+        }
+      ],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "none", "decimals": 0}}
+    },
+    {
+      "id": 302,
+      "title": "P-02 Win rate (-1 = muestra <2 cierres)",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 10, "x": 4, "y": 0},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "atlas-prom"},
+          "expr": "atlas_options_paper_win_rate_ratio",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "none", "min": -1, "max": 1, "decimals": 3}}
+    },
+    {
+      "id": 303,
+      "title": "P-03 Profit factor (-1 N/A; 99 tope sin pérdidas)",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 10, "x": 14, "y": 0},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "atlas-prom"},
+          "expr": "atlas_options_paper_profit_factor",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "none", "min": -1, "max": 100, "decimals": 2}}
+    },
+    {
+      "id": 304,
+      "title": "P-04 Net realized PnL (USD)",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 7},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "atlas-prom"},
+          "expr": "atlas_options_paper_net_realized_pnl_usd",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 2}}
+    },
+    {
+      "id": 305,
+      "title": "P-05 Max drawdown desde peak equity (USD)",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 7},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "atlas-prom"},
+          "expr": "atlas_options_paper_max_drawdown_usd",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 2, "min": 0}}
+    }
+  ],
+  "templating": {"list": []},
+  "annotations": {"list": []}
+}

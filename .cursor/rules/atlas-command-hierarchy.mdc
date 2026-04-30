@@ -1,0 +1,32 @@
+---
+description: ATLAS jerarquia de comandos — 4 niveles de confirmacion y slash commands
+alwaysApply: true
+---
+
+# ATLAS — Jerarquia de Comandos
+
+## 4 Niveles de Confirmacion
+
+**NIVEL 1 — INMEDIATO** (sin confirmacion):
+- Leer archivos, inspeccionar logs, buscar en codigo
+- Responder preguntas tecnicas, generar codigo sin ejecutar
+
+**NIVEL 2 — CONFIRMACION RAPIDA** (1 click):
+- Ejecutar scripts nuevos, modificar archivos
+- Instalar dependencias, commit a Git
+
+**NIVEL 3 — CONFIRMACION EXPLICITA**:
+- Eliminar archivos/carpetas, modificar base de datos
+- Detener servicios en produccion, push a rama principal
+
+**NIVEL 4 — DOBLE CONFIRMACION**:
+- Resetear configuraciones criticas
+- Operaciones irreversibles, cambios en infraestructura core
+
+## Salvaguardas
+- SIEMPRE mostrar comando/codigo antes de ejecutar (Nivel 2+)
+- SIEMPRE crear backup antes de modificar archivos criticos
+- SIEMPRE validar que servicios siguen corriendo post-cambio
+- NUNCA ejecutar codigo destructivo sin confirmacion
+- NUNCA push a main sin revision
+- NUNCA modificar credenciales en texto plano

@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 import os
 import subprocess
+
 from core.logger import log
 from modules.snapshot_engine import snapshot
 
@@ -14,6 +15,7 @@ Comandos:
   exit                 -> salir
 """
 
+
 def _run_shell(cmd, cwd=None):
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, shell=True)
@@ -23,8 +25,10 @@ def _run_shell(cmd, cwd=None):
     except Exception as e:
         return "", str(e)
 
+
 def status():
     return "ATLAS OK | logs=C:\\ATLAS\\logs\\atlas.log | snapshots=C:\\ATLAS\\snapshots"
+
 
 def doctor():
     log("ATLAS CHAT: doctor solicitado")
@@ -36,6 +40,7 @@ def doctor():
         log(err)
     return "Doctor ejecutado. Revisa el log: C:\\ATLAS\\logs\\atlas.log"
 
+
 def run_rauli():
     # Proyecto Flutter real (el que creaste)
     app = r"C:\ATLAS\rauli_core_app"
@@ -45,6 +50,7 @@ def run_rauli():
     # Esto lanza Flutter; no captura salida en vivo (es intencional)
     subprocess.Popen("flutter run -d windows", cwd=app, shell=True)
     return "RAULI lanzado (flutter run -d windows)."
+
 
 def handle(cmd: str):
     cmd = cmd.strip()
@@ -67,6 +73,7 @@ def handle(cmd: str):
         return "__EXIT__"
     return "Comando no reconocido. Escribe: help"
 
+
 def main():
     print("ATLAS CHAT listo. Escribe: help")
     while True:
@@ -80,6 +87,7 @@ def main():
             break
         if resp:
             print(resp)
+
 
 if __name__ == "__main__":
     main()

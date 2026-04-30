@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-03-19T08:45:38.059211",
+  "provider": "manual",
+  "operator_present": true,
+  "screen_integrity_ok": true,
+  "notes": "paper pilot preview",
+  "capture_path": null,
+  "meta_path": null,
+  "capture_ok": false,
+  "capture_error": "Manual provider active; no automatic capture attempted."
+}

@@ -1,0 +1,30 @@
+{
+  "delivery_tracking_version": 2,
+  "enabled": true,
+  "atlas_base_url": "http://127.0.0.1:8791",
+  "memory_enabled": true,
+  "bitacora_enabled": true,
+  "last_delivery_ok": true,
+  "last_bitacora_ok": true,
+  "last_memory_ok": true,
+  "last_event_kind": "attribution_integrity_alert",
+  "last_event_at": "2026-04-21T19:19:12.580708",
+  "last_error": "",
+  "total_events": 2375,
+  "delivered_events": 1718,
+  "queued_local_only_events": 69,
+  "pending_replay_events": 69,
+  "historical_local_only_events": 657,
+  "replayed_events": 168,
+  "last_replay_at": null,
+  "last_replay_error": "",
+  "emitted_journal_keys": [
+    "paper:VA9201365:bear_put_debit_spread:MRVL:cf7e43cb662b0e:1775152113",
+    "paper:VA9201365:bear_put_debit_spread:PVH:09890b80efed55:1775152911",
+    "paper:VA9201365:bear_put_debit_spread:INSM:b697ad8a9d04cb:1775162383",
+    "paper:VA9201365:bear_put_debit_spread:HLT:0fb6487ee1a794:1775152370",
+    "paper:VA9201365:bear_call_credit_spread:IONQ:6b1784399fa941:1775156065"
+  ],
+  "events_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\logs\\quant_brain_bridge.jsonl",
+  "pending_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\data\\operation\\quant_brain_bridge_state_pending.json"
+}

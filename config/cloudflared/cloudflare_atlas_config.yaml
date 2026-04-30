@@ -1,0 +1,18 @@
+tunnel: "957fc56a-1883-4b31-9d87-e0c6d0986f94"
+credentials-file: "C:\ATLAS_PUSH\config\cloudflared\957fc56a-1883-4b31-9d87-e0c6d0986f94.json"
+protocol: quic
+loglevel: info
+transport-loglevel: info
+logfile: "C:\ATLAS_PUSH\logs\cloudflared_access.log"
+metrics: "127.0.0.1:50333"
+
+ingress:
+  - hostname: "panaderia.rauliatlasapp.com"
+    service: "http://127.0.0.1:3001"
+  - hostname: "panaderia-api.rauliatlasapp.com"
+    service: "http://127.0.0.1:3001"
+  - hostname: "vision.rauliatlasapp.com"
+    service: "http://127.0.0.1:3000"
+  - hostname: "atlas-dashboard.rauliatlasapp.com"
+    service: "http://127.0.0.1:8791"
+  - service: "http_status:404"

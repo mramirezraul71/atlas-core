@@ -1,0 +1,10 @@
+# Request: query the AI brain for reasoning
+string query
+string model_hint         # e.g. "bedrock:opus-4.6" or "auto"
+string context_json       # optional serialized context
+---
+# Response
+bool success
+string response
+string model_used
+float64 latency_ms

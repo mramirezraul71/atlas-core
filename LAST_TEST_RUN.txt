@@ -1,0 +1,30 @@
+Last test run
+Timestamp: 2026-04-15
+Command: pytest atlas_code_quant/tests/ -v --tb=short
+Exit code: 1
+
+Result summary:
+- Passed: 883
+- Failed: 1
+- Warnings: 8
+- Duration: 39.43s
+
+Failure:
+FAILED atlas_code_quant/tests/test_journal_learning_hooks.py::test_upsert_open_entry_normalizes_signed_prices
+atlas_code_quant/tests/test_journal_learning_hooks.py:450: in test_upsert_open_entry_normalizes_signed_prices
+    _strategy_id, created_now = service._upsert_open_entry(db, _Account(), object(), strategy, [])
+E   ValueError: too many values to unpack (expected 2)
+
+Observations:
+- The failure indicates a return-signature mismatch in `journal.service._upsert_open_entry`.
+- Current implementation returns 3 values: `(strategy_id, created_now, skipped_now)`.
+- The failing test expects 2 return values.
+
+Warnings (condensed):
+- FastAPI deprecation warnings for `@app.on_event("startup"/"shutdown")`.
+- torch/easyocr quantization deprecation warnings.
+
+Tail excerpt:
+=========================== short test summary info ===========================
+FAILED atlas_code_quant/tests/test_journal_learning_hooks.py::test_upsert_open_entry_normalizes_signed_prices
+================= 1 failed, 883 passed, 8 warnings in 39.43s ==================

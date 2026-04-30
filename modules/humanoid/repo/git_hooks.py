@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def _repo_root() -> Path:
+    root = (os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or "").strip()
+    if root:
+        return Path(root).resolve()
+    # Fallback: subir hasta encontrar ".git"
+    here = Path(__file__).resolve()
+    for parent in [here.parent, *here.parents]:
+        try:
+            if (parent / ".git").is_dir():
+                return parent
+        except Exception:
+            continue
+    # Último recurso
+    return here.parents[4]
+
+
+def ensure_post_commit_hook() -> dict:
+    """
+    Instala (best-effort) un hook post-commit para notificar por OPS (Audio/Telegram).
+    Nota: .git/hooks no se versiona, por eso se auto-instala al arranque.
+    """
+    repo = _repo_root()
+    installer = repo / "scripts" / "install_git_hooks.py"
+    if installer.exists():
+        try:
+            if os.getenv("ATLAS_HOOK_PYTHON"):
+                py = os.getenv("ATLAS_HOOK_PYTHON")
+            elif (repo / ".venv" / "Scripts" / "python.exe").exists():
+                py = str(repo / ".venv" / "Scripts" / "python.exe")
+            else:
+                py = sys.executable or "python"
+            r = subprocess.run(
+                [py, str(installer)],
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+                timeout=20,
+                env={**os.environ, "LANG": "C"},
+            )
+            if r.returncode == 0:
+                return {
+                    "ok": True,
+                    "installed": True,
+                    "path": str(repo / ".githooks" / "post-commit"),
+                }
+        except Exception:
+            pass
+
+    hooks = repo / ".git" / "hooks"
+    if not hooks.exists():
+        return {"ok": False, "error": "no_git_hooks_dir", "path": str(hooks)}
+    target = hooks / "post-commit"
+    marker = hooks / ".atlas_post_commit_v1"
+
+    script = """#!/bin/sh
+# ATLAS: post-commit notify (Audio/Telegram). Best-effort, never blocks commit.
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ -n "${ATLAS_HOOK_PYTHON:-}" ]; then
+  PYTHON_BIN="${ATLAS_HOOK_PYTHON}"
+elif [ -x "$REPO_ROOT/.venv/Scripts/python.exe" ]; then
+  PYTHON_BIN="$REPO_ROOT/.venv/Scripts/python.exe"
+else
+  PYTHON_BIN="python"
+fi
+cd "$REPO_ROOT" >/dev/null 2>&1 || true
+$PYTHON_BIN "scripts/git_post_commit_hook.py" >/dev/null 2>&1 || true
+exit 0
+"""
+    try:
+        hooks.mkdir(parents=True, exist_ok=True)
+        # Idempotente: si marker existe, no reescribir salvo que falte el hook
+        if target.exists() and marker.exists():
+            return {"ok": True, "installed": False, "path": str(target)}
+        target.write_text(script, encoding="utf-8", errors="ignore")
+        marker.write_text("v1", encoding="utf-8")
+        try:
+            # En Unix, hacerlo ejecutable; en Windows no molesta
+            target.chmod(0o755)
+        except Exception:
+            pass
+        return {"ok": True, "installed": True, "path": str(target)}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "path": str(target)}

@@ -1,0 +1,6 @@
+{
+  "status": "not_found",
+  "requested_path": "atlas_code_quant/output/journal_forensics/",
+  "requested_file": "atlas_code_quant/output/journal_forensics/journal_forensics_20260411.json",
+  "note": "No existe carpeta/archivo de forensics en la ruta solicitada durante esta ejecución."
+}

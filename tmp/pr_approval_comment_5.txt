@@ -1,0 +1,1 @@
+LGTM. Changes are documentation + manifest + verify script + focused tests only; no trading, safety, Kelly, ML, or market_open_config behavior changes. The PR body matches the diff. Manifest drift is the main long-term maintenance item and is already called out under Risks; the verify script mitigates it. Approved — good candidate to merge first before PR #4.

@@ -1,0 +1,164 @@
+ATLAS AUDIT REPORT - 2026-04-15
+Owner: Raul Ramirez
+Workspace: C:\ATLAS_PUSH
+
+======================================================================
+0) HANDSHAKE OPERATIVO (SERVICIOS + GIT)
+======================================================================
+NEXUS :8000 -> OFFLINE (no listener detectado)
+PUSH  :8791 -> ONLINE  (LISTENING pid 39592)
+Robot :8002 -> OFFLINE (no listener detectado)
+
+Ultimos 3 commits:
+- e8cc585ed fix(dashboard): recover realtime updates and scanner responsiveness
+- 983bdeeb1 chore(tests): add pytest markers for test categorization
+- 879f5f490 feat(learning-gate): integrate reconciliation gate into learning orchestrator
+
+
+======================================================================
+1) VALIDACION DE BLOQUEADORES CRITICOS
+======================================================================
+
+----------------------------------------
+BLOQUEADOR #1: Market Hours Gate
+----------------------------------------
+Verificacion de codigo:
+- _check_market_hours existe y se invoca en:
+  - operations/operation_center.py:224 (def)
+  - operations/operation_center.py:261 (readiness call)
+  - operations/operation_center.py:1748 (gate en flujo operativo)
+- Horario de equity validado:
+  - timezone: America/New_York (pytz)
+  - weekday gate: weekday > 4 => market_closed_weekend
+  - ventana: 09:30 a 16:00 ET
+  - before open: market_not_open_yet
+  - after close: market_closed_for_day
+- Crypto 24/7 validado:
+  - whitelist simbolos crypto (BTC, ETH, SOL, ADA, ...)
+  - classify_asset(...)=AssetClass.CRYPTO tambien retorna crypto_market_24h
+
+Tests ejecutados:
+- pytest tests/test_operation_center_market_hours.py::TestOperationCenterMarketHours::test_market_hours_equity_during_market_hours -v -> PASSED
+- pytest tests/test_operation_center_market_hours.py::TestOperationCenterMarketHours::test_market_hours_equity_weekend -v -> PASSED
+
+Nota de auditoria:
+- El selector solicitado inicialmente sin clase no matchea en pytest (exit code 4), porque los tests estan dentro de TestOperationCenterMarketHours.
+
+
+----------------------------------------
+BLOQUEADOR #2: Broker Order IDs Fallback
+----------------------------------------
+Verificacion de codigo:
+- _execute_with_fallback existe y se usa:
+  - execution/tradier_execution.py:328 (def)
+  - execution/tradier_execution.py:454 (invocacion)
+- Retry logic:
+  - max_retries definido en wrapper y llamado con max_retries=3
+- Polling fallback:
+  - _polling_get_orders definido y registrado como fallback
+- Garantia broker_order_id:
+  - si broker_order_ids queda vacio o sin id, lanza ValueError CRITICAL
+
+Tests ejecutados:
+- pytest tests/test_tradier_execution_fallback.py::TestTradierExecutionFallback::test_stream_order_confirmation_success -v -> PASSED
+- pytest tests/test_tradier_execution_fallback.py::TestTradierExecutionFallback::test_execute_with_fallback_stream_fails_polling_succeeds -v -> PASSED
+- pytest tests/test_tradier_execution_fallback.py::TestTradierExecutionFallback::test_route_order_to_tradier_guarantees_broker_order_id -v -> PASSED
+
+
+----------------------------------------
+BLOQUEADOR #3: Reconciliation Sync Fallback
+----------------------------------------
+Verificacion de codigo:
+- sync_scope mejorado existe:
+  - journal/service.py:1997 (def sync_scope)
+- Fallback match presente:
+  - match primario: broker_order_id
+  - fallback: (symbol + qty_close + _is_recent_entry(entry_time, days=1))
+  - log de fallback: "Matched ... by (symbol, entry_date) fallback ..."
+- Phantom detection presente:
+  - log error: "PHANTOM DETECTED: Broker position ..."
+
+Tests ejecutados:
+- pytest tests/test_journal_sync_fallback.py::TestSyncScopeFallback::test_sync_scope_match_by_broker_order_id -v -> PASSED
+- pytest tests/test_journal_sync_fallback.py::TestSyncScopeFallback::test_sync_scope_fallback_match_symbol_qty_recency -v -> PASSED
+- pytest tests/test_journal_sync_fallback.py::TestSyncScopeFallback::test_sync_scope_phantom_detection -v -> PASSED
+
+
+----------------------------------------
+SUITE DE BLOQUEADORES (agregada)
+----------------------------------------
+Comando:
+- pytest tests/test_operation_center_market_hours.py tests/test_tradier_execution_fallback.py tests/test_journal_sync_fallback.py -v --tb=short
+Resultado:
+- 31 passed
+
+
+----------------------------------------
+SUITE COMPLETA QUANT
+----------------------------------------
+Comando:
+- pytest atlas_code_quant/tests/ -q
+Resultado final:
+- 916 passed, 8 warnings
+Notas:
+- Warnings deprecacion FastAPI @app.on_event
+- Warnings deprecacion torch.ao.quantization/easyocr
+
+
+======================================================================
+2) DEBUG SCANNER A-B BUG (DIAGNOSTICO + FIX)
+======================================================================
+
+Hallazgo principal:
+- El scanner no tenia un filtro explicito "A/B", pero si un sesgo de ordenamiento:
+  1) universe_catalog devuelve simbolos ordenados alfabeticamente (sorted)
+  2) OpportunityScannerService inicia _universe_cursor = 0 en cada arranque
+  3) _resolve_scan_batch toma ventana contigua [start:start+batch_size]
+  4) en modo us_equities_rotating + len(symbols)>=40, _prefilter_batch usa rotating_fastpath:
+     selected = symbols[:prefilter_count]
+- Efecto: al iniciar/reiniciar, los primeros ciclos seleccionan solo letras iniciales
+  (A y eventualmente B), aparentando bug alfabético.
+
+Reproduccion antes del fix:
+- universo cache: total 10431, letras A..Z
+- primer ciclo:
+  - batch_size=80, batch_start=0, batch_letters=['A']
+  - selected=20, selected_letters=['A']
+  - prefilter_source=rotating_fastpath
+- ciclos 1..5 observados: selected letters permanecian ['A'] en todos.
+
+Fix aplicado:
+- Archivo modificado: atlas_code_quant/scanner/opportunity_scanner.py
+- Cambio:
+  - agregado helper _stable_symbol_mix(symbols) usando hash SHA1 determinista
+  - _resolve_scan_batch ahora mezcla de forma estable el catalogo antes de cortar batch
+- Objetivo:
+  - eliminar sesgo del frente alfabético sin perder determinismo reproducible
+
+Test de regresion agregado:
+- Archivo: atlas_code_quant/tests/test_scanner_metric_recalibration.py
+- Nuevo test:
+  - test_stable_symbol_mix_breaks_alphabetical_front_bias
+  - valida que una ventana inicial no quede monocromatica por letra
+
+Verificacion post-fix:
+- pytest tests/test_scanner_metric_recalibration.py -q -> 4 passed
+- reproduccion scanner primer ciclo:
+  - batch_letters multiletra (A..Z parcial)
+  - selected_letters multiletra (A,B,C,D,E,F,G,M,P,Q,S,T,U,Y)
+  - ya no queda atrapado en A/B
+- revalidacion bloqueadores:
+  - suite 31 passed
+- revalidacion completa:
+  - 916 passed, 8 warnings
+
+
+======================================================================
+3) ESTADO FINAL
+======================================================================
+- Bloqueador #1 (market_hours): VALIDADO
+- Bloqueador #2 (broker_order_ids fallback): VALIDADO
+- Bloqueador #3 (reconciliation sync fallback): VALIDADO
+- Scanner A-B bug: DIAGNOSTICADO Y CORREGIDO
+- Riesgo residual: warnings de deprecacion (no bloqueantes) pendientes de hardening futuro.
+
