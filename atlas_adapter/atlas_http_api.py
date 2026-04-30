@@ -44,6 +44,7 @@ from atlas_adapter.services.nexus_robot_runtime import (
     get_robot_status,
 )
 from atlas_adapter.services.update_center import UpdateCenterService
+from atlas_push.intents import IntentRouter
 
 
 def _ts_to_epoch(ts_str: str) -> float:
@@ -70,6 +71,7 @@ from pydantic import BaseModel, Field, field_validator
 import psutil
 
 handle = load_handle()
+_intent_router = IntentRouter(handle_fn=handle)
 
 
 app = FastAPI(
@@ -6326,24 +6328,24 @@ from typing import Any, List, Optional
 from pydantic import BaseModel
 
 
-class IntentIn(BaseModel):
-    user: str = "raul"
-    text: str
-    meta: Optional[dict[str, Any]] = None
-
-
-@app.post("/intent")
-def intent(payload: IntentIn):
-    # Respuesta mÃ­nima (v1): eco + timestamp.
-    # Luego conectamos command_router/agent_router.
-    return {
-        "ok": True,
-        "received": payload.model_dump(),
-        "result": {
-            "message": "Intent recibido",
-            "ts": time.time(),
-        },
-    }
+# LEGACY_V1: class IntentIn(BaseModel):
+# LEGACY_V1:     user: str = "raul"
+# LEGACY_V1:     text: str
+# LEGACY_V1:     meta: Optional[dict[str, Any]] = None
+# LEGACY_V1: 
+# LEGACY_V1: 
+# LEGACY_V1: @app.post("/intent")
+# LEGACY_V1: def intent(payload: IntentIn):
+# LEGACY_V1:     # Respuesta mÃ­nima (v1): eco + timestamp.
+# LEGACY_V1:     # Luego conectamos command_router/agent_router.
+# LEGACY_V1:     return {
+# LEGACY_V1:         "ok": True,
+# LEGACY_V1:         "received": payload.model_dump(),
+# LEGACY_V1:         "result": {
+# LEGACY_V1:             "message": "Intent recibido",
+# LEGACY_V1:             "ts": time.time(),
+# LEGACY_V1:         },
+# LEGACY_V1:     }
 
 
 from typing import Any, List, Optional
@@ -6367,22 +6369,22 @@ def intent(payload: IntentIn):
     if not (payload.text or "").strip():
         return {
             "ok": False,
-            "received": payload.model_dump(),
+            "input": payload.model_dump(),
             "error": 'Campo \'text\' es requerido (ej: {"text": "/status"})',
             "ms": int((time.time() - t0) * 1000),
         }
     try:
-        out = route_command((payload.text or "").strip())
+        result = _intent_router.handle(payload.text)
         return {
             "ok": True,
-            "received": payload.model_dump(),
-            "output": out,
+            "input": payload.model_dump(),
+            "output": result.output,
             "ms": int((time.time() - t0) * 1000),
         }
     except Exception as e:
         return {
             "ok": False,
-            "received": payload.model_dump(),
+            "input": payload.model_dump(),
             "error": str(e),
             "ms": int((time.time() - t0) * 1000),
         }

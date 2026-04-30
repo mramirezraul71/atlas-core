@@ -6,6 +6,36 @@
 > Este documento describe qué hay **hoy**. No describe el objetivo
 > (eso vive en `ARCHITECTURE.md`).
 
+> **Nota post‑A2 (no reescribe este documento).**
+> Este texto refleja el estado **anterior** al PR A2. Tras la fusión
+> de A2, algunos de los archivos mencionados aquí por su ruta original
+> han sido **movidos a `legacy/`** (ver `legacy/README.md`). En
+> particular: `atlas.py`, `atlas_runtime.py`, `bridge/atlas_api_min.py`
+> y `atlas_adapter/run_atlas_api.cmd`. Las rutas listadas más abajo
+> se conservan intactas deliberadamente para no desvirtuar el
+> snapshot histórico; la descripción del perímetro vivo posterior
+> a A2 se mantendrá en `ARCHITECTURE.md` y, a partir del paso B, en
+> un apartado dedicado de ese documento.
+
+> **Nota post‑D (no reescribe este documento).**
+> Tras la fusión del PR D, `atlas_push/` contiene tres paquetes
+> nuevos además de `intents/`:
+>
+> - `atlas_push/engine/` con `DecisionEngine` (scaffold pass-through)
+>   y los Protocols `Strategy` y `RiskManager`.
+> - `atlas_push/state/` con `MarketState`, `AccountSnapshot`,
+>   `Position`, `Quote`, `RiskContext`.
+> - `atlas_push/outputs/` con `DecisionOutput`, `LogicalOrder`,
+>   `TargetWeight`, `RiskVeto`.
+>
+> Todo con `@dataclass(frozen=True)`. `DecisionEngine.decide(state)`
+> devuelve `DecisionOutput.empty()` para cualquier entrada; D no
+> cablea el motor al `IntentRouter` ni al adapter HTTP. El contrato
+> completo vive en `ARCHITECTURE.md` §3; el alcance, los tests y el
+> protocolo de commits están en `PLAN_STEP_D.md`. Las rutas de la
+> sección 4 no se reescriben; siguen reflejando el snapshot
+> histórico previo a B.
+
 ## 1. Perímetro analizado
 
 Incluido en el análisis (por decisión del owner):
@@ -142,13 +172,24 @@ primero es el vigente:
 
 ## 7. Qué falta por implementar (hoy no existe)
 
-- Cualquier concepto de `Strategy`, `Signal`, `Portfolio`.
-- Cualquier `RiskManager`, `RiskContext` o `limits`.
-- Cualquier `MarketState`, `Position`, `Quote`, `AccountSnapshot`.
-- Cualquier `DecisionOutput`, `LogicalOrder`, `TargetWeight`.
+> Apartado escrito antes de B/C/D. Tras el merge de D, los tipos de
+> estado y salida marcados con ✓ ya existen como scaffold en
+> `atlas_push/` (ver nota post-D arriba y `PLAN_STEP_D.md`). Se
+> conserva el listado original como referencia histórica.
+
+- Cualquier concepto de `Strategy`, `Signal`, `Portfolio`. *(Protocol
+  `Strategy` declarado en D; implementaciones reales siguen
+  pendientes.)*
+- Cualquier `RiskManager`, `RiskContext` o `limits`. *(Protocol
+  `RiskManager` y `RiskContext` declarados en D; `limits.py` y la
+  implementación real siguen pendientes.)*
+- ✓ Cualquier `MarketState`, `Position`, `Quote`, `AccountSnapshot`.
+  *(Declarados en D como `@dataclass(frozen=True)`.)*
+- ✓ Cualquier `DecisionOutput`, `LogicalOrder`, `TargetWeight`.
+  *(Declarados en D como `@dataclass(frozen=True)`, más `RiskVeto`.)*
 - Cualquier puerto (`MarketStateProvider`, `ExecutionEngineAdapter`,
-  `JournalSink`).
-- Cualquier adapter LEAN.
+  `JournalSink`). *(Parte del paso E.)*
+- Cualquier adapter LEAN. *(Parte del paso E o posterior.)*
 
 Estos elementos se crean desde cero en los pasos D y E del plan de
 refactor, no se migran.

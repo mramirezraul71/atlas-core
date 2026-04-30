@@ -1,0 +1,125 @@
+name: Atlas Lotto-Quant — Local-AI Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lotto_quant/**"
+      - "requirements_lotto.txt"
+      - ".github/workflows/atlas_lotto_quant.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "lotto_quant/**"
+      - "requirements_lotto.txt"
+  workflow_dispatch:
+    inputs:
+      run_smoke_test:
+        description: "Run a single radar cycle (network access required)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # 1. Static validation: syntax + imports + tests (NO LLM REQUIRED)
+  # ────────────────────────────────────────────────────────────────
+  syntax-and-tests:
+    name: Syntax + Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout atlas-core
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install module + test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Strip OCR / vision deps that need OS-level packages we don't need for tests.
+          grep -v -E "^(opencv-python-headless|pytesseract|hmmlearn|streamlit|plotly|aiohttp|ollama)" \
+              requirements_lotto.txt > requirements_test.txt
+          pip install -r requirements_test.txt
+          pip install pytest pytest-asyncio
+
+      - name: Validate Python syntax
+        run: |
+          python -m compileall -q lotto_quant
+          echo "✅ All Python files compiled successfully"
+
+      - name: Run unit tests
+        env:
+          # Disable any LLM call attempts in tests
+          ATLAS_LLM_ENABLED: "false"
+        run: pytest lotto_quant/tests -v --tb=short
+
+  # ────────────────────────────────────────────────────────────────
+  # 2. Local-AI smoke test (Ollama running inside the runner)
+  # ────────────────────────────────────────────────────────────────
+  ollama-integration:
+    name: Local-AI smoke test (Ollama)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_smoke_test == true }}
+    needs: syntax-and-tests
+    steps:
+      - name: Checkout atlas-core
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install minimal deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx beautifulsoup4 duckdb pydantic numpy lxml
+
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama --version
+
+      - name: Start Ollama
+        run: |
+          nohup ollama serve > ollama.log 2>&1 &
+          sleep 5
+          ollama list || true
+
+      - name: Pull a small model
+        run: ollama pull qwen2.5:1.5b
+
+      - name: Run smoke test (single radar cycle, dry run)
+        env:
+          ATLAS_LLM_BACKEND: ollama
+          ATLAS_LLM_URL: http://localhost:11434
+          ATLAS_LLM_MODEL: qwen2.5:1.5b
+          ATLAS_LLM_ENABLED: "true"
+          ATLAS_LOTTO_DB: /tmp/atlas_smoke.duckdb
+        run: |
+          python -c "from lotto_quant.llm import LocalAIClient; \
+                     import asyncio; \
+                     async def m():\
+                       async with LocalAIClient() as ai:\
+                         print('Healthy:', await ai.health());\
+                         print('Models:', await ai.list_models());\
+                         r = await ai.complete('Say only OK', max_tokens=8);\
+                         print('Resp:', r.text[:80]);\
+                     asyncio.run(m())"
+
+      - name: Upload Ollama log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-log
+          path: ollama.log

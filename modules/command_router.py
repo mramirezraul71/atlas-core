@@ -157,7 +157,7 @@ def snapshot(label: str = "snapshot") -> str:
 # =========================
 def handle(text: str) -> str:
     if not text:
-        return "ATLAS: vacÃ­o."
+        return "ATLAS: vacío."
 
     t = text.strip()
 
