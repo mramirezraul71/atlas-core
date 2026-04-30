@@ -22,6 +22,9 @@ pydantic>=2.6.0               # DTOs y settings tipados
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0     # solo necesario en modo stand-alone (:8792)
 
+# --- Polymarket CLOB (live; instalar para órdenes reales) -------------------
+py-clob-client>=0.34.0
+
 # --- Configuración -----------------------------------------------------------
 python-dotenv>=1.0.1
 

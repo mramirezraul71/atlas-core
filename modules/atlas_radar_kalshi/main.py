@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Optional
 
 from .brain import RadarBrain
-from .config import get_settings
+from .config import get_settings, reload_settings
 from .dashboard import RadarState, build_router
 from .executor import KalshiExecutor
 from .risk import KellyRiskManager
@@ -235,6 +235,7 @@ def register(app, state: Optional[RadarState] = None,
     if use_v2 is None:
         use_v2 = _os.getenv("ATLAS_RADAR_LEGACY", "0") != "1"
 
+    reload_settings()
     state = state or RadarState()
     app.include_router(build_router(state))
 

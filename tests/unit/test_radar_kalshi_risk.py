@@ -106,6 +106,22 @@ class TestSizingAndCaps:
         s = eng.size(_gate(), _readout(p=0.95), "M2")
         assert s.notional_cents <= 10_000 + 50
 
+    def test_venue_cap_separates_kalshi_and_poly(self) -> None:
+        eng = RiskEngine(RiskLimits(
+            kelly_fraction=1.0,
+            max_position_pct=0.50,
+            max_market_exposure_pct=0.50,
+            max_total_exposure_pct=0.50,
+            max_kalshi_venue_exposure_pct=0.10,
+            max_polymarket_venue_exposure_pct=0.10,
+        ))
+        eng.update_balance(1_000_000)
+        eng.on_order("KX-1", 100_000)  # 10% Kalshi, toca el tope de venue
+        s_k = eng.size(_gate(), _readout(p=0.99), "KX-2")
+        assert s_k.contracts == 0
+        s_p = eng.size(_gate(), _readout(p=0.99), "POLY:1")
+        assert s_p.contracts > 0
+
 
 # ---------------------------------------------------------------------------
 # Circuit breakers
@@ -220,3 +236,30 @@ class TestLifecycle:
         assert "kill_switch" in st
         assert "exposure_cents" in st
         assert "limits" in st
+
+    def test_unrealized_updates_equity(self) -> None:
+        eng = RiskEngine()
+        eng.update_balance(1_000_000)
+        eng.mark_unrealized(-25_000)
+        st = eng.status()
+        assert st["unrealized_pnl_cents"] == -25_000
+        assert st["equity_cents"] == 975_000
+
+    def test_on_close_marks_equity_high_with_realized_pnl(self) -> None:
+        eng = RiskEngine()
+        eng.update_balance(1_000_000)
+        eng.state.equity_high_day = 1_000_000
+        eng.on_close("M1", 10_000, pnl_cents=50_000)
+        st = eng.status()
+        assert st["equity_cents"] == 1_050_000
+        assert st["equity_high_day"] == 1_050_000
+
+    def test_status_includes_venue_exposure(self) -> None:
+        eng = RiskEngine()
+        eng.update_balance(1_000_000)
+        eng.on_order("KX-1", 10_000)
+        eng.on_order("POLY:1", 20_000)
+        st = eng.status()
+        assert st["exposure_by_venue"]["kalshi"] == 10_000
+        assert st["exposure_by_venue"]["polymarket"] == 20_000
+        assert st["drawdown_day_cents"] == 0

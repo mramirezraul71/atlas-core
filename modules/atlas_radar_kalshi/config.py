@@ -38,15 +38,44 @@ from pydantic import BaseModel, Field, field_validator
 #   2) En su defecto, ``modules/atlas_radar_kalshi/.env`` (desarrollo
 #      local cross-platform).
 _ATLAS_GLOBAL_ENV = Path(r"C:\ATLAS\config\.env")
+_ATLAS_CONFIG_DIR = Path(r"C:\ATLAS\config")
 _LOCAL_ENV = Path(__file__).resolve().parent / ".env"
+_DEFAULT_KALSHI_PEM = _ATLAS_CONFIG_DIR / "kalshi_private.pem"
+
+
+def _vault_candidate_paths() -> list[Path]:
+    ev = (os.getenv("ATLAS_VAULT_PATH") or "").strip()
+    out: list[Path] = []
+    if ev:
+        out.append(Path(ev))
+    out.extend(
+        [
+            Path(r"C:\Users\Raul\OneDrive\RAUL - Personal\Escritorio\credenciales.txt"),
+            Path.home() / "OneDrive" / "RAUL - Personal" / "Escritorio" / "credenciales.txt",
+            _ATLAS_CONFIG_DIR / "credenciales.txt",
+            Path(r"C:\dev\credenciales.txt"),
+        ]
+    )
+    return out
 
 
 def _load_env() -> None:
-    """Carga variables de entorno desde el primer .env disponible."""
+    """Carga .env y luego Bóveda (override) — alineado con ``atlas_http_api``."""
+    try:
+        _ATLAS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     if _ATLAS_GLOBAL_ENV.exists():
         load_dotenv(_ATLAS_GLOBAL_ENV, override=False)
     if _LOCAL_ENV.exists():
         load_dotenv(_LOCAL_ENV, override=False)
+    for p in _vault_candidate_paths():
+        if p.is_file():
+            try:
+                load_dotenv(str(p), override=True)
+            except OSError:
+                pass
+            break
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +105,42 @@ class RadarSettings(BaseModel):
     kalshi_ws_url: Optional[str] = Field(
         default=None,
         description="Override manual del base URL WebSocket.",
+    )
+    polymarket_enabled: bool = Field(
+        default=False,
+        description="Activa ingestión/ejecución en Polymarket además de Kalshi.",
+    )
+    polymarket_gamma_url: str = Field(
+        default="https://gamma-api.polymarket.com",
+        description="Endpoint REST para discovery de mercados Polymarket.",
+    )
+    polymarket_clob_url: str = Field(
+        default="https://clob.polymarket.com",
+        description="Endpoint CLOB de Polymarket.",
+    )
+    polymarket_ws_url: Optional[str] = Field(
+        default=None,
+        description="Endpoint WS opcional de Polymarket si el despliegue lo habilita.",
+    )
+    polymarket_private_key: Optional[str] = Field(
+        default=None,
+        description="Private key para live trading Polymarket (opcional en paper).",
+    )
+    polymarket_funder: Optional[str] = Field(
+        default=None,
+        description="Funder address para Polymarket CLOB (modo live).",
+    )
+    polymarket_chain_id: int = Field(
+        default=137,
+        description="Chain id EVM (Polygon mainnet = 137) para CLOB Polymarket.",
+    )
+    polymarket_signature_type: Optional[int] = Field(
+        default=None,
+        description="Tipo de firma CLOB: 0 EOA, 1 email/Magic, 2 proxy; None = default del cliente.",
+    )
+    execution_mode: str = Field(
+        default="paper",
+        description="Modo de ejecución global del radar: paper o live.",
     )
 
     # --- Ollama (cerebro local) -------------------------------------------
@@ -209,6 +274,14 @@ class RadarSettings(BaseModel):
             raise ValueError("kalshi_environment debe ser 'demo' o 'prod'.")
         return v
 
+    @field_validator("execution_mode")
+    @classmethod
+    def _check_exec_mode(cls, v: str) -> str:
+        v = v.lower().strip()
+        if v not in {"paper", "live"}:
+            raise ValueError("execution_mode debe ser 'paper' o 'live'.")
+        return v
+
     @field_validator("kalshi_private_key_path")
     @classmethod
     def _check_pem(cls, v: Path) -> Path:
@@ -254,14 +327,35 @@ def get_settings() -> RadarSettings:
     cargados desde ``.env`` y los defaults razonables del módulo.
     """
     _load_env()
+    if not (os.getenv("RADAR_PAPER_BALANCE_CENTS") or "").strip():
+        os.environ["RADAR_PAPER_BALANCE_CENTS"] = "1000000"
+    _pem = os.getenv("KALSHI_PRIVATE_KEY_PATH", "").strip() or str(_DEFAULT_KALSHI_PEM)
     return RadarSettings(
         kalshi_api_key_id=os.getenv("KALSHI_API_KEY", "") or os.getenv("KALSHI_API_KEY_ID", ""),
-        kalshi_private_key_path=Path(
-            os.getenv("KALSHI_PRIVATE_KEY_PATH", "./kalshi_private.pem")
-        ),
+        kalshi_private_key_path=Path(_pem).expanduser(),
         kalshi_environment=os.getenv("KALSHI_ENV", "demo"),
         kalshi_base_url=os.getenv("KALSHI_BASE_URL") or None,
         kalshi_ws_url=os.getenv("KALSHI_WS_URL") or None,
+        polymarket_enabled=os.getenv("POLYMARKET_ENABLED", "0") == "1",
+        polymarket_gamma_url=os.getenv(
+            "POLYMARKET_GAMMA_URL", "https://gamma-api.polymarket.com"
+        ),
+        polymarket_clob_url=os.getenv(
+            "POLYMARKET_CLOB_URL", "https://clob.polymarket.com"
+        ),
+        polymarket_ws_url=os.getenv("POLYMARKET_WS_URL") or None,
+        polymarket_private_key=os.getenv("POLYMARKET_PRIVATE_KEY") or None,
+        polymarket_funder=os.getenv("POLYMARKET_FUNDER") or None,
+        polymarket_chain_id=int(os.getenv("POLYMARKET_CHAIN_ID", "137")),
+        polymarket_signature_type=(
+            int(os.getenv("POLYMARKET_SIGNATURE_TYPE", ""))
+            if (os.getenv("POLYMARKET_SIGNATURE_TYPE", "").strip() != "")
+            else None
+        ),
+        execution_mode=os.getenv(
+            "ATLAS_RADAR_EXECUTION_MODE",
+            "live" if os.getenv("ATLAS_RADAR_LIVE", "0") == "1" else "paper",
+        ),
         ollama_endpoint=os.getenv("OLLAMA_ENDPOINT", "http://127.0.0.1:11434"),
         ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
         ollama_timeout_seconds=float(os.getenv("RADAR_OLLAMA_TIMEOUT_S", "20")),
@@ -283,3 +377,8 @@ def get_settings() -> RadarSettings:
         log_dir=Path(os.getenv("ATLAS_LOG_DIR", r"C:\ATLAS\logs")),
         log_level=os.getenv("RADAR_LOG_LEVEL", "INFO"),
     )
+
+
+def reload_settings() -> RadarSettings:
+    get_settings.cache_clear()
+    return get_settings()

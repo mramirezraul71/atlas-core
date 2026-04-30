@@ -5,14 +5,17 @@ acordado, sin necesitar el orquestador real corriendo.
 """
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from modules.atlas_radar_kalshi.config import get_settings
 from modules.atlas_radar_kalshi.dashboard import RadarState, build_router
+from modules.atlas_radar_kalshi import preflight as preflight_mod
 
 
 @pytest.fixture()
@@ -53,6 +56,15 @@ class TestRoutes:
         r = client.get("/api/radar/orders")
         assert r.status_code == 200
         assert r.json()["items"] == []
+
+    def test_arbitrage_empty(self, client: TestClient) -> None:
+        r = client.get("/api/radar/arbitrage")
+        assert r.status_code == 200
+        assert r.json()["rows"] == []
+        assert r.json()["activity"] == []
+        assert r.json()["stats"] == {}
+        assert "window_1h" in r.json()
+        assert "window_24h" in r.json()
 
     def test_metrics_no_journal(self, client: TestClient) -> None:
         r = client.get("/api/radar/metrics")
@@ -113,6 +125,76 @@ class TestRoutes:
         data = r.json()
         assert data["ok"] is True
         assert "degraded" in data
+
+    def test_preflight_missing_kalshi_credentials(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("KALSHI_API_KEY_ID", "")
+        monkeypatch.setenv("KALSHI_PRIVATE_KEY_PATH", str(tmp_path / "missing.pem"))
+        monkeypatch.setenv("POLYMARKET_ENABLED", "0")
+        monkeypatch.setenv("RADAR_PREFLIGHT_REQUIRE_OLLAMA", "0")
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+
+        state = RadarState()
+        app = FastAPI()
+        app.include_router(build_router(state))
+        cli = TestClient(app)
+
+        r = cli.get("/api/radar/preflight")
+        assert r.status_code == 200
+        data = r.json()
+        assert "checks" in data
+        assert "readiness" in data
+        assert data["checks"]["kalshi_rest"]["ok"] is False
+        assert data["readiness"]["paper_operational"] is False
+
+    def test_preflight_ok_with_mocked_http(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pem = tmp_path / "kalshi_test.pem"
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem.write_bytes(
+            key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        monkeypatch.setenv("KALSHI_API_KEY_ID", "test-key")
+        monkeypatch.setenv("KALSHI_PRIVATE_KEY_PATH", str(pem))
+        monkeypatch.setenv("POLYMARKET_ENABLED", "0")
+        monkeypatch.setenv("RADAR_PREFLIGHT_REQUIRE_OLLAMA", "0")
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+
+        async def fake_http_get(url: str, headers=None):  # type: ignore[no-untyped-def]
+            u = url.lower()
+            if "kalshi" in u and "/markets" in u:
+                return {"ok": True, "status_code": 200, "latency_ms": 1, "snippet": "{}"}
+            if "gamma-api.polymarket.com" in u and "/markets" in u:
+                return {"ok": True, "status_code": 200, "latency_ms": 1, "snippet": "{}"}
+            if "/api/tags" in u:
+                return {"ok": True, "status_code": 200, "latency_ms": 1, "snippet": "{}"}
+            return {"ok": False, "status_code": 0, "latency_ms": 1, "error": f"unexpected url {url}"}
+
+        monkeypatch.setattr(preflight_mod, "_http_get", fake_http_get)
+
+        state = RadarState()
+        app = FastAPI()
+        app.include_router(build_router(state))
+        cli = TestClient(app)
+        r = cli.get("/api/radar/preflight")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is True
+        assert data["checks"]["kalshi_rest"]["ok"] is True
+        assert data["readiness"]["paper_operational"] is True
+
+    def test_learning_endpoint(self, client: TestClient) -> None:
+        r = client.get("/api/radar/learning")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is True
+        assert "learning" in data
 
     def test_prometheus_text(self, client: TestClient) -> None:
         r = client.get("/api/radar/prometheus")

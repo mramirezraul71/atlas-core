@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -154,10 +155,27 @@ class KalshiScanner:
         self._dropped_events: int = 0
         self._new_market_events_emitted: int = 0
         self._discover_lock = asyncio.Lock()
+        self.uses_public_rest_feed = self._public_feed_allowed()
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _credentials_ready(self) -> bool:
+        kid = (self.settings.kalshi_api_key_id or "").strip()
+        if not kid:
+            return False
+        return self.settings.kalshi_private_key_path.expanduser().exists()
+
+    def _public_feed_allowed(self) -> bool:
+        """REST público Kalshi (sin firma) cuando no hay key+PEM."""
+        if self._credentials_ready():
+            return False
+        return os.getenv("RADAR_DISABLE_PUBLIC_MARKET_DATA", "0") != "1"
+
+    def refresh_feed_mode(self) -> None:
+        """Tras cambiar settings en caliente (dashboard)."""
+        self.uses_public_rest_feed = self._public_feed_allowed()
+
     def _signer_or_init(self) -> KalshiSigner:
         if self._signer is None:
             self._signer = KalshiSigner(
@@ -213,8 +231,11 @@ class KalshiScanner:
                 "limit": int(self.settings.market_discovery_limit),
                 "status": self.settings.market_status_filter,
             }
-            signer = self._signer_or_init()
-            headers, _ = signer.headers("GET", "/trade-api/v2/markets")
+            if self._credentials_ready():
+                signer = self._signer_or_init()
+                headers, _ = signer.headers("GET", "/trade-api/v2/markets")
+            else:
+                headers = {"Accept": "application/json"}
 
             async with httpx.AsyncClient(timeout=20) as client:
                 r = await client.get(url, headers=headers, params=params)
@@ -244,6 +265,67 @@ class KalshiScanner:
             except Exception as exc:
                 self.log.warning("REST polling falló: %s", exc)
             await asyncio.sleep(self.settings.poll_interval_seconds)
+
+    async def _public_orderbook_poll_loop(self) -> None:
+        """
+        Sin credenciales Kalshi, el WS firmado no está disponible; la API
+        pública permite ``GET /markets/{ticker}/orderbook`` sin headers de firma
+        (Kalshi docs: market data quick start).
+        """
+        max_ob = max(1, min(25, int(self.settings.ws_max_tickers)))
+        interval = max(2.5, min(12.0, float(self.settings.poll_interval_seconds) / 3.0))
+        while True:
+            try:
+                tickers = list(self._tickers)[:max_ob]
+                if not tickers:
+                    await asyncio.sleep(1.0)
+                    continue
+                base = str(self.settings.base_url).rstrip("/")
+                async with httpx.AsyncClient(timeout=25) as client:
+                    for t in tickers:
+                        try:
+                            r = await client.get(
+                                f"{base}/markets/{t}/orderbook",
+                                headers={"Accept": "application/json"},
+                            )
+                            if r.status_code != 200:
+                                continue
+                            data = r.json()
+                            ob = data.get("orderbook_fp") or {}
+                            yes_raw = ob.get("yes_dollars") or []
+                            no_raw = ob.get("no_dollars") or []
+                            if not yes_raw and not no_raw:
+                                continue
+                            yes_levels: list[list[int]] = []
+                            for row in yes_raw:
+                                if len(row) >= 2:
+                                    price_d, qv = row[0], row[1]
+                                    pc = int(round(float(price_d) * 100))
+                                    pc = max(1, min(99, pc))
+                                    yes_levels.append(
+                                        [pc, max(1, int(float(qv)))]
+                                    )
+                            no_levels: list[list[int]] = []
+                            for row in no_raw:
+                                if len(row) >= 2:
+                                    price_d, qv = row[0], row[1]
+                                    pc = int(round(float(price_d) * 100))
+                                    pc = max(1, min(99, pc))
+                                    no_levels.append(
+                                        [pc, max(1, int(float(qv)))]
+                                    )
+                            book = self._books.setdefault(
+                                t, _LocalOrderBook(t)
+                            )
+                            book.apply_snapshot(
+                                {"yes": yes_levels, "no": no_levels}
+                            )
+                            await self._emit_book(book)
+                        except Exception as exc:
+                            self.log.debug("orderbook %s: %s", t, exc)
+            except Exception as exc:
+                self.log.warning("public orderbook poll: %s", exc)
+            await asyncio.sleep(interval)
 
     # ------------------------------------------------------------------
     # WebSocket: orderbook + ticker
@@ -393,17 +475,36 @@ class KalshiScanner:
     # API pública
     # ------------------------------------------------------------------
     async def stream(self) -> AsyncIterator[MarketEvent]:
-        """Inicia REST poller + WS y emite eventos al consumidor."""
-        ws_task = asyncio.create_task(self._ws_loop(), name="radar-ws")
-        rest_task = asyncio.create_task(self._rest_polling_loop(),
-                                        name="radar-rest")
+        """Inicia REST poller + (WS firmado o feed público de libros)."""
+        self.refresh_feed_mode()
+        creds = self._credentials_ready()
+        tasks: list[asyncio.Task[None]] = []
+        if creds:
+            tasks.append(
+                asyncio.create_task(self._ws_loop(), name="radar-ws")
+            )
+        else:
+            self.log.info(
+                "Kalshi sin key+PEM: mercados y libros vía REST público "
+                "(WS firmado desactivado). Opcional: RADAR_DISABLE_PUBLIC_MARKET_DATA=1 "
+                "para forzar error si faltan credenciales."
+            )
+        tasks.append(
+            asyncio.create_task(self._rest_polling_loop(), name="radar-rest")
+        )
+        if self.uses_public_rest_feed:
+            tasks.append(
+                asyncio.create_task(
+                    self._public_orderbook_poll_loop(), name="radar-pub-ob"
+                )
+            )
         try:
             while True:
                 ev = await self._queue.get()
                 yield ev
         finally:
-            ws_task.cancel()
-            rest_task.cancel()
+            for t in tasks:
+                t.cancel()
 
     async def run_forever(
         self, callback: Callable[[MarketEvent], Awaitable[None]]

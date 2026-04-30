@@ -28,7 +28,7 @@ python -m atlas_adapter.atlas_http_api
 Endpoints disponibles tras arrancar:
 
 - UI: `http://localhost:8791/ui/radar`
-- API: `http://localhost:8791/api/radar/{status,markets,decisions,orders,metrics,risk,health,prometheus}`
+- API: `http://localhost:8791/api/radar/{status,markets,decisions,orders,metrics,risk,learning,arbitrage,health,preflight,prometheus}`
 - WebSocket en vivo: `ws://localhost:8791/api/radar/stream`
 - Kill manual: `POST /api/radar/kill` — Resume: `POST /api/radar/resume`
 
@@ -54,7 +54,8 @@ Defaults seguros — **todos** son configurables.
 ```env
 # === Activación / kill ====================================================
 ATLAS_ENABLE_RADAR_KALSHI=0|1   # (default 0) opt-in del adapter
-ATLAS_RADAR_LIVE=0|1            # (default 0) 1 = órdenes reales
+ATLAS_RADAR_LIVE=0|1            # (default 0) 1 = órdenes reales (compat)
+ATLAS_RADAR_EXECUTION_MODE=paper|live  # (preferido) modo de ejecución efectivo
 ATLAS_RADAR_KILL=0|1            # (default 0) kill global
 ATLAS_RADAR_LEGACY=0|1          # (default 0) usa trading_loop de PR #14
 
@@ -78,11 +79,18 @@ RADAR_KELLY_FRACTION=0.25
 RADAR_MAX_POSITION_PCT=0.05
 RADAR_MAX_MARKET_EXP=0.10
 RADAR_MAX_TOTAL_EXP=0.50
+# Límite de notional abierto por venue (Kalshi vs Polymarket)
+RADAR_MAX_VENUE_EXP_KALSHI=0.50
+RADAR_MAX_VENUE_EXP_POLY=0.50
 RADAR_DAILY_DD=0.05
 RADAR_WEEKLY_DD=0.10
 RADAR_MAX_CL=5                  # max consecutive losses
 RADAR_MAX_OPEN=8
 RADAR_MAX_OPM=30                # orders per minute
+
+# === Reconciliación (live Kalshi) =========================================
+# El orquestador llama a portfolio/orders+positions cada ~RADAR_RECONCILE_SEC s.
+RADAR_RECONCILE_SEC=60
 
 # === Exits ===============================================================
 RADAR_TP_PCT=0.6
@@ -105,6 +113,25 @@ RADAR_CAL_METHOD=platt|isotonic|identity
 # === LLM (Ollama) ========================================================
 OLLAMA_ENDPOINT=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen3:8b
+
+# === Polymarket (multi-venue, opt-in) ====================================
+POLYMARKET_ENABLED=0|1
+POLYMARKET_GAMMA_URL=https://gamma-api.polymarket.com
+POLYMARKET_CLOB_URL=https://clob.polymarket.com
+POLYMARKET_PRIVATE_KEY=...     # live Polymarket (0x...); requiere `pip install py-clob-client`
+POLYMARKET_FUNDER=0x...         # funder (obligatorio p.ej. email/Magic; EOA a veces omite)
+POLYMARKET_CHAIN_ID=137
+# 0=EOA, 1=email/Magic, 2=proxy — alinear con el tipo de wallet
+POLYMARKET_SIGNATURE_TYPE=0
+
+# === Alertas operativas ==================================================
+RADAR_ALERT_WEBHOOK_URL=https://...
+TELEGRAM_BOT_TOKEN=...           # opcional
+TELEGRAM_CHAT_ID=...            # opcional
+
+# === Preflight / readiness ===============================================
+# Por defecto el preflight NO bloquea si Ollama no responde (el brain hace fallback).
+RADAR_PREFLIGHT_REQUIRE_OLLAMA=0|1
 ```
 
 ## 3. Operación día a día
@@ -113,8 +140,12 @@ OLLAMA_MODEL=qwen3:8b
 
 1. Cargar `.env`.
 2. Lanzar adapter (o `--serve`).
-3. Verificar `GET /api/radar/status` → `ok=true, environment=demo|prod`.
-4. Abrir `/ui/radar` y comprobar:
+3. Verificar `GET /api/radar/preflight`:
+   - `checks.kalshi_rest.ok=true` (credenciales Kalshi presentes y REST responde),
+   - `checks.polymarket_gamma` coherente con `POLYMARKET_ENABLED`,
+   - `readiness.live_ready_global=true` **sólo** si vas a operar live multi-venue con credenciales completas.
+4. Verificar `GET /api/radar/status` → `ok=true, environment=demo|prod`.
+5. Abrir `/ui/radar` y comprobar:
    - KPIs cargan,
    - WebSocket se conecta (badge "live"),
    - Tabla de mercados se llena.
@@ -171,7 +202,10 @@ logs/
 ├── radar_orders.jsonl
 ├── radar_exits.jsonl
 ├── radar_risk.jsonl
-└── radar_calibration.jsonl
+├── radar_calibration.jsonl
+├── radar_arb_activity.jsonl
+├── radar_alerts.jsonl
+└── radar_learning_state.json
 ```
 
 Para reconstruir métricas a posteriori:
@@ -188,12 +222,23 @@ print(compute(j).model_dump())
 ## 5. Tests
 
 ```bash
-PYTHONPATH=. pytest \
-  tests/unit/test_radar_kalshi_*.py \
-  tests/integration/test_radar_kalshi_*.py
+PYTHONPATH=. pytest tests/unit tests/integration -k radar_kalshi
 ```
 
-Resultado esperado: **65 passed**. Si falla algo:
+> No ejecutar sólo `pytest -k radar_kalshi` desde la raíz del monorepo sin paths: se recolectan
+> demasiados módulos y suelen fallar con `ModuleNotFoundError` en otras piezas.
+
+### 5.1 Humo local (sin adapter levantado)
+
+Comprueba imports, arbitraje, risk, reconcile paper y (opcional) preflight con red:
+
+```bash
+set PYTHONPATH=.
+python scripts/radar_kalshi_smoke.py
+python scripts/radar_kalshi_smoke.py --network
+```
+
+Resultado esperado: suite verde (keyword `radar_kalshi`). Si falla algo:
 
 1. Verificar `python -m py_compile modules/atlas_radar_kalshi/*.py`.
 2. Revisar `pip install -r modules/atlas_radar_kalshi/requirements.txt`.

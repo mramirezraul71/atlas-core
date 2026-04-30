@@ -32,15 +32,33 @@ Regla de oro (idéntica a atlas_push):
 """
 from __future__ import annotations
 
-from .config import RadarSettings, get_settings
+from .config import RadarSettings, get_settings, reload_settings
 from .brain import RadarBrain, BrainDecision
 from .risk import KellyRiskManager, PositionSize
 from .scanner import KalshiScanner, OrderBookSnapshot
 from .executor import KalshiExecutor, OrderRequest, OrderResult
+from .execution_router import ExecutionModeRouter
+from .polymarket_executor import PolymarketExecutor
+from .polymarket_scanner import PolymarketScanner
+from .learning_engine import LearningEngine
+from .arbitrage_engine import ArbitrageEngine
+from .alerts import AlertEngine
+from .normalization import canonical_market_key
+from .preflight import run_preflight
+from .canonical import (
+    CanonicalMarket,
+    CanonicalQuote,
+    ExecutionIntent,
+    FillEvent,
+    market_from_payload,
+)
+from .ingestion import ConnectorRegistry, venue_of_event
+from .control import CalibrationKPIs, compute_calibration_kpis
 
 __all__ = [
     "RadarSettings",
     "get_settings",
+    "reload_settings",
     "RadarBrain",
     "BrainDecision",
     "KellyRiskManager",
@@ -50,6 +68,23 @@ __all__ = [
     "KalshiExecutor",
     "OrderRequest",
     "OrderResult",
+    "ExecutionModeRouter",
+    "PolymarketScanner",
+    "PolymarketExecutor",
+    "LearningEngine",
+    "ArbitrageEngine",
+    "AlertEngine",
+    "canonical_market_key",
+    "run_preflight",
+    "CanonicalMarket",
+    "CanonicalQuote",
+    "ExecutionIntent",
+    "FillEvent",
+    "market_from_payload",
+    "ConnectorRegistry",
+    "venue_of_event",
+    "compute_calibration_kpis",
+    "CalibrationKPIs",
 ]
 
 __version__ = "0.1.0"

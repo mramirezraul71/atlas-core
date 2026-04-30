@@ -121,5 +121,8 @@ def prometheus_text(perf: PerformanceMetrics, exec_metrics: dict,
         "# HELP radar_exposure_cents Total exposure in cents",
         "# TYPE radar_exposure_cents gauge",
         f"radar_exposure_cents {risk_status.get('exposure_cents', 0)}",
+        "# HELP radar_drawdown_day_cents Intraday drawdown vs peak (cents)",
+        "# TYPE radar_drawdown_day_cents gauge",
+        f"radar_drawdown_day_cents {risk_status.get('drawdown_day_cents', 0)}",
     ]
     return "\n".join(lines) + "\n"

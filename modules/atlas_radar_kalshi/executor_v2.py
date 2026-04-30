@@ -125,8 +125,9 @@ class KalshiExecutorV2:
         self.metrics = ExecMetrics()
         self._signer: Optional[KalshiSigner] = None
         self._audit = self.settings.log_dir / "radar_orders.jsonl"
+        # 1_000_000 centavos = 10_000 USD virtual por defecto (fase paper / validación)
         self._paper_balance_cents = int(
-            os.getenv("RADAR_PAPER_BALANCE_CENTS", "100000")
+            os.getenv("RADAR_PAPER_BALANCE_CENTS", "1000000")
         )
 
     # ------------------------------------------------------------------
