@@ -242,3 +242,20 @@ atlas_code_quant/learning/xgboost_signal/models/audit_report.md
 # Fase 5 Institutional Radar: artefacto Lighthouse local (reproducible)
 reports/temp_f5_lh_radar.json
 reports/tmp_f5_*
+
+# Runtime forensic artifacts
+atlas-core/runtime/vision_sensor_forensics/
+atlas-core/runtime/vision_sensor_queue/
+
+# Local runtime databases
+tmp/*.sqlite
+tmp/*.sqlite3
+atlas_code_quant/data/paper_account.db
+data/quality/*.db
+
+# Large local media artifacts
+*.avi
+*.mp4
+*.mov
+*.mkv
+*.webm
