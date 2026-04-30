@@ -131,7 +131,15 @@ from atlas_code_quant.options.options_engine_metrics import record_paper_aggress
 
 # ── OptionStrat ───────────────────────────────────────────────────────────────
 from api.routes.options import router as options_router
-from api.routers.xgboost_router import router as xgboost_router
+_XGBOOST_ROUTER_IMPORT_ERROR: Exception | None = None
+xgboost_router = None
+_XGBOOST_ENABLED_FOR_ROUTER = os.getenv("QUANT_XGBOOST_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+if _XGBOOST_ENABLED_FOR_ROUTER:
+    try:
+        from api.routers.xgboost_router import router as xgboost_router
+    except ImportError as exc:
+        _XGBOOST_ROUTER_IMPORT_ERROR = exc
+        logging.getLogger("quant.api").warning("XGBoost router disabled (import failed): %s", exc)
 from production.grafana_dashboard import GrafanaDashboard
 
 try:
@@ -416,7 +424,8 @@ async def options_runtime_status() -> dict[str, Any]:
     }
 
 app.include_router(options_router)
-app.include_router(xgboost_router)
+if xgboost_router is not None:
+    app.include_router(xgboost_router)
 
 _startup_services_task: asyncio.Task | None = None
 _metrics_sync_task: asyncio.Task | None = None
