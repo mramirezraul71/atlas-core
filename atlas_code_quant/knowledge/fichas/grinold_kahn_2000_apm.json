@@ -1,0 +1,45 @@
+{
+  "id": "grinold_kahn_2000_apm",
+  "title": "Active Portfolio Management: A Quantitative Approach for Producing Superior Returns",
+  "authors": [
+    "Richard Grinold",
+    "Ronald Kahn"
+  ],
+  "year": 2000,
+  "source": "McGraw-Hill",
+  "url": "https://www.mhprofessional.com/active-portfolio-management-9780070248823-usa",
+  "category": "CAT4",
+  "topic": "signal_quality",
+  "subtopics": [
+    "information_coefficient",
+    "information_ratio",
+    "breadth",
+    "fundamental_law"
+  ],
+  "timeframes": [
+    "all"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "quantitative_framework",
+  "key_findings": "IR ≈ IC × √Breadth (Ley Fundamental de la Gestión Activa). IC > 0.05 es meaningful; IC > 0.10 es fuerte. t-stat(IC) ≥ 2.0 requerido para producción. Más señales independientes (breadth) con IC modesto pueden superar a una señal con IC alto.",
+  "limitations": "Asume IC estable en el tiempo — en la práctica el IC varía por régimen. La estimación del IC requiere muestra suficiente (n ≥ 30).",
+  "atlas_utility": "Marco central del ICSignalTracker. Define los umbrales operativos de IC para ATLAS. El ICSignalTracker implementa exactamente la metodología IC de Grinold-Kahn.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "trend_ema_stack",
+    "breakout_donchian",
+    "rsi_pullback_trend",
+    "ml_directional",
+    "relative_strength_overlay"
+  ],
+  "tags": [
+    "IC",
+    "information_ratio",
+    "signal_quality",
+    "fundamental_law",
+    "production_criteria"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.915171+00:00"
+}

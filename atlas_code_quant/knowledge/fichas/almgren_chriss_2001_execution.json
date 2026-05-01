@@ -1,0 +1,40 @@
+{
+  "id": "almgren_chriss_2001_execution",
+  "title": "Optimal Execution of Portfolio Transactions",
+  "authors": [
+    "Robert Almgren",
+    "Neil Chriss"
+  ],
+  "year": 2001,
+  "source": "Journal of Risk",
+  "url": "https://www.risk.net/journal-of-risk/1509161/optimal-execution-of-portfolio-transactions",
+  "category": "CAT5",
+  "topic": "execution_quality",
+  "subtopics": [
+    "optimal_execution",
+    "market_impact",
+    "VWAP",
+    "risk_tradeoff"
+  ],
+  "timeframes": [
+    "intraday"
+  ],
+  "markets": [
+    "equity",
+    "futures"
+  ],
+  "method": "optimization_model",
+  "key_findings": "La ejecución óptima minimiza el trade-off entre impacto de mercado y riesgo de timing. Para ordenes pequeñas (< 0.1% del volumen diario), el VWAP es una estrategia casi óptima. El impacto de mercado es lineal en el tamaño de la orden para operaciones pequeñas.",
+  "limitations": "El modelo aplica a ejecución institucional. En paper trading con size=1 acción, el impacto es cero. Relevante cuando ATLAS escale a tamaños mayores.",
+  "atlas_utility": "Para el estado actual de ATLAS (size=1 acción), el impacto es negligible. Referencia para cuando se escale el sistema: size no debe superar 0.1% del ADV. Justifica usar VWAP como precio de referencia en el implementation shortfall.",
+  "confidence_level": "high",
+  "scanner_methods": [],
+  "tags": [
+    "execution",
+    "VWAP",
+    "market_impact",
+    "optimal_execution",
+    "scaling"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.919687+00:00"
+}

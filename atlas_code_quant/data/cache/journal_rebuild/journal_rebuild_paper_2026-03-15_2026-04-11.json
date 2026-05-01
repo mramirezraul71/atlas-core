@@ -1,0 +1,37 @@
+{
+  "account_scope": "paper",
+  "account_id": "VA9201365",
+  "start_date": "2026-03-15",
+  "end_date": "2026-04-11",
+  "symbols": [
+    "AXTI"
+  ],
+  "events_considered": 0,
+  "closed_positions_considered": 1,
+  "history_source": "gainloss_closed_positions",
+  "journal_rebuilt": 1,
+  "deleted_existing": 0,
+  "score_calidad": 100.0,
+  "ml_habilitado": true,
+  "quality": {
+    "status": "healthy",
+    "score_pct": 100.0,
+    "learning_allowed": true,
+    "total_closed_count": 1,
+    "row_level_clean_count": 1,
+    "trusted_closed_count": 1,
+    "row_level_clean_ratio_pct": 100.0,
+    "trusted_ratio_pct": 100.0,
+    "blocked_reasons": [],
+    "row_reason_counts": {},
+    "metrics": {
+      "negative_entry_price_count": 0,
+      "negative_exit_price_count": 0,
+      "short_duration_count": 0,
+      "max_outlier_day_share_pct": 0.0
+    },
+    "outlier_days": [],
+    "strategy_anomalies": []
+  },
+  "export_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\data\\cache\\journal_rebuild\\journal_rebuild_paper_2026-03-15_2026-04-11.json"
+}

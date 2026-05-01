@@ -1,0 +1,1728 @@
+"""Métricas Prometheus y snapshot UI para Options Engine (paper-only).
+
+Actualizado desde orquestador, journal, AutoCloseEngine y sincronización periódica
+(vía ``GrafanaDashboard.sync_from_canonical``).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import math
+import os
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from atlas_code_quant.options.paper_journal_stats import OptionsPaperJournalStats
+
+logger = logging.getLogger("atlas.options.engine_metrics")
+
+try:
+    from prometheus_client import Counter, Gauge, Histogram
+
+    _PROM_OK = True
+except ImportError:  # pragma: no cover
+    Counter = Gauge = Histogram = None  # type: ignore[misc, assignment]
+    _PROM_OK = False
+
+_PIPELINE_MODULES = ("briefing", "intent_router", "entry_planner", "journal", "autoclose")
+
+_state: dict[str, Any] = {
+    "last_session_plan": None,
+    "last_journal_path": None,
+    "last_iv_rank_value": None,
+    "last_iv_rank_quality_score": None,
+    "last_options_flow": None,
+    "last_visual_signal": None,
+    "last_options_self_audit": None,
+    "last_paper_performance": None,
+    "utc_day": "",
+    "journal_events_today": 0,
+    "journal_sessions_today": 0,
+    "last_journal_write_ts": 0.0,
+    "module_last_ts": {m: 0.0 for m in _PIPELINE_MODULES},
+    "module_status": {m: 0.0 for m in _PIPELINE_MODULES},
+    "last_sentinel_snapshot": None,
+    "paper_closed_total_counter_value": 0,
+    "paper_go_blocked_total_counter_value": 0,
+    "paper_trade_hist_seen": set(),
+    "aggr_signals_total": 0,
+    "aggr_trades_total": 0,
+    "aggr_realized_pairs": 0,
+    "aggr_score_outcome_sum": 0.0,
+    "aggr_uplift_ratio": 0.0,
+    "aggr_path_delta": {},
+}
+
+_m: dict[str, Any] = {}
+
+
+def compute_iv_rank_quality_score(briefing: dict[str, Any] | None) -> float:
+    """Deriva un score 0..1 **conservador** desde el briefing (IVRankCalculator → session_briefing).
+
+    Fuentes: ``iv_rank_payload_quality``, ``iv_source.quality``, ``iv_source.error``,
+    ``quality_flags`` del briefing (p.ej. ``iv_rank_quality_approx``, ``iv_rank_fallback_mid``).
+
+    Mapping (conservador: sin dato nunca se asume “ok” neto):
+    - ``iv_source.error`` presente → **0.0** (fallo explícito).
+    - Sin cadena ``quality`` efectiva (vacía) → **0.25** (desconocido / insuficiente dato).
+    - ``quality == "ok"`` y **ningún** flag IV-degradado en ``quality_flags`` → **1.0**.
+    - ``quality == "ok"`` pero hay flags IV-degradados → **0.5**.
+    - ``approx`` o ``insufficient_history`` → **0.5** (peor que ok neto).
+    - Cualquier otro valor de ``quality`` → **0.25**.
+
+    Flags IV-degradados reconocidos: prefijo ``iv_rank_quality_``, ``approx_iv_rank``,
+    ``iv_rank_fallback_mid``, ``iv_hv_ratio_fallback_unit``, ``iv_current_missing``, ``spot_unavailable``.
+    """
+    if not briefing:
+        return 0.25
+    iv_src = briefing.get("iv_source")
+    if isinstance(iv_src, dict) and iv_src.get("error"):
+        return 0.0
+    q_top = str(briefing.get("iv_rank_payload_quality") or "").strip().lower()
+    q_inner = ""
+    if isinstance(iv_src, dict):
+        q_inner = str(iv_src.get("quality") or "").strip().lower()
+    raw = q_top or q_inner
+    flags = list(briefing.get("quality_flags") or [])
+
+    def _iv_degrade_flag(f: str) -> bool:
+        fs = str(f)
+        if fs.startswith("iv_rank_quality_"):
+            return True
+        return fs in (
+            "approx_iv_rank",
+            "iv_rank_fallback_mid",
+            "iv_hv_ratio_fallback_unit",
+            "iv_current_missing",
+            "spot_unavailable",
+        )
+
+    degraded = any(_iv_degrade_flag(x) for x in flags)
+    if not raw:
+        return 0.25
+    if raw == "ok":
+        return 0.5 if degraded else 1.0
+    if raw in ("approx", "insufficient_history"):
+        return 0.5
+    return 0.25
+
+
+def get_last_iv_rank_quality_score() -> float | None:
+    """Último score calculado (útil en tests y depuración)."""
+    v = _state.get("last_iv_rank_quality_score")
+    return float(v) if isinstance(v, (int, float)) else None
+
+
+def _iv_rank_quality_tier(briefing: dict[str, Any] | None) -> int:
+    """Tier 0/1/2 para dashboard Health: 2=ok, 1=approx, 0=insufficient/error."""
+    if not briefing:
+        return 0
+    iv_src = briefing.get("iv_source")
+    if isinstance(iv_src, dict) and iv_src.get("error"):
+        return 0
+    q_top = str(briefing.get("iv_rank_payload_quality") or "").strip().lower()
+    q_inner = str(iv_src.get("quality") or "").strip().lower() if isinstance(iv_src, dict) else ""
+    raw = q_top or q_inner
+    if raw == "ok":
+        return 2
+    if raw in ("approx", "insufficient_history"):
+        return 1
+    return 0
+
+
+def _utc_day() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _ensure_day() -> None:
+    d = _utc_day()
+    if _state["utc_day"] != d:
+        _state["utc_day"] = d
+        _state["journal_events_today"] = 0
+        _state["journal_sessions_today"] = 0
+
+
+_FLOW_SENTINEL = -1.0
+"""Valor gauge cuando no hay dato interpretable (no confundir con señal neutral del provider)."""
+
+
+def _finite_float(x: Any) -> float | None:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(v) or math.isinf(v):
+        return None
+    return v
+
+
+def options_flow_bridge_enabled() -> bool:
+    """Si es verdadero, ``PaperSessionOrchestrator`` intenta ``OptionsFlowProvider.build_snapshot`` (Tradier)."""
+    return str(os.environ.get("ATLAS_OPTIONS_FLOW_BRIDGE", "")).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _options_flow_snapshot_coherent(snapshot: dict[str, Any]) -> bool:
+    """Payload mínimo para publicar ratios sin inventar: ``available`` y campos numéricos clave del snapshot."""
+    if not isinstance(snapshot, dict) or not bool(snapshot.get("available")):
+        return False
+    for key in ("put_call_volume_ratio", "gamma_bias_pct", "score_pct", "confidence_pct"):
+        if _finite_float(snapshot.get(key)) is None:
+            return False
+    return True
+
+
+def try_fetch_options_flow_snapshot(symbol: str, *, price_hint: float = 0.0) -> dict[str, Any]:
+    """Construye snapshot vía ``OptionsFlowProvider`` (mismo contrato que el scanner). Errores → dict ``available: False``."""
+    sym = str(symbol or "").strip().upper()
+    if not sym:
+        return {"available": False, "reason": "empty_symbol", "scope": "paper", "mode": "options_flow"}
+    try:
+        from scanner.options_flow_provider import OptionsFlowProvider
+    except ModuleNotFoundError:  # pragma: no cover
+        from atlas_code_quant.scanner.options_flow_provider import OptionsFlowProvider
+
+    try:
+        from backtesting.winning_probability import TradierClient
+    except ModuleNotFoundError:  # pragma: no cover
+        from atlas_code_quant.backtesting.winning_probability import TradierClient
+
+    client = TradierClient(scope="paper")
+    prov = OptionsFlowProvider()
+    return prov.build_snapshot(symbol=sym, client=client, scope="paper", price_hint=float(price_hint or 0.0))
+
+
+def apply_options_flow_snapshot_to_metrics(
+    symbol: str,
+    snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Publica gauges ``atlas_options_flow_*`` desde un snapshot del provider (o estado conservador si falta/incompleto).
+
+    Valores neutrales / sin señal:
+    - ``atlas_options_flow_payload_available{symbol}=0`` si no hay snapshot coherente.
+    - Ratios y score usan **-1** como centinela (no usar 1.0/50.0 del provider fuera de contexto).
+    - ``confidence_pct`` = 0 cuando no hay payload coherente.
+    """
+    _init_prom()
+    _ensure_flow_gauges()
+    sym = str(symbol or "").strip().upper() or "UNKNOWN"
+    coherent = _options_flow_snapshot_coherent(snapshot) if snapshot is not None else False
+
+    if not coherent:
+        row = {
+            "symbol": sym,
+            "payload_available": 0.0,
+            "put_call_volume_ratio": _FLOW_SENTINEL,
+            "gamma_bias_pct": _FLOW_SENTINEL,
+            "score_pct": _FLOW_SENTINEL,
+            "confidence_pct": 0.0,
+            "coherent": False,
+        }
+        _state["last_options_flow"] = row
+        if _m:
+            try:
+                _m["flow_payload_available"].labels(symbol=sym).set(0.0)
+                _m["flow_put_call_volume_ratio"].labels(symbol=sym).set(_FLOW_SENTINEL)
+                _m["flow_gamma_bias_pct"].labels(symbol=sym).set(_FLOW_SENTINEL)
+                _m["flow_score_pct"].labels(symbol=sym).set(_FLOW_SENTINEL)
+                _m["flow_confidence_pct"].labels(symbol=sym).set(0.0)
+            except Exception as exc:
+                logger.debug("apply_options_flow_snapshot_to_metrics (degraded): %s", exc)
+        update_options_engine_sentinels()
+        return row
+
+    pcr = _finite_float(snapshot.get("put_call_volume_ratio"))
+    gamma = _finite_float(snapshot.get("gamma_bias_pct"))
+    score = _finite_float(snapshot.get("score_pct"))
+    conf = _finite_float(snapshot.get("confidence_pct"))
+    if pcr is None or gamma is None or score is None or conf is None:
+        return apply_options_flow_snapshot_to_metrics(symbol, None)
+
+    row = {
+        "symbol": sym,
+        "payload_available": 1.0,
+        "put_call_volume_ratio": pcr,
+        "gamma_bias_pct": gamma,
+        "score_pct": score,
+        "confidence_pct": conf,
+        "coherent": True,
+    }
+    _state["last_options_flow"] = row
+    if _m:
+        try:
+            _m["flow_payload_available"].labels(symbol=sym).set(1.0)
+            _m["flow_put_call_volume_ratio"].labels(symbol=sym).set(pcr)
+            _m["flow_gamma_bias_pct"].labels(symbol=sym).set(gamma)
+            _m["flow_score_pct"].labels(symbol=sym).set(score)
+            _m["flow_confidence_pct"].labels(symbol=sym).set(conf)
+        except Exception as exc:
+            logger.debug("apply_options_flow_snapshot_to_metrics: %s", exc)
+    update_options_engine_sentinels()
+    return row
+
+
+def get_last_options_flow_metrics() -> dict[str, Any] | None:
+    v = _state.get("last_options_flow")
+    return dict(v) if isinstance(v, dict) else None
+
+
+def compute_visual_signal_state_score(visual: dict[str, Any] | None) -> float:
+    """Estado observable VisualSignalAdapter → un solo gauge 0..1 (más alto = más materialidad de riesgo).
+
+    - **0.0** error del adaptador o payload inválido.
+    - **0.2** sin spot / input insuficiente (no se interpreta contexto útil).
+    - **0.5** análisis ok sin ruptura detectada.
+    - **0.75** ruptura no crítica.
+    - **1.0** ruptura crítica (p. ej. short strike en 0DTE).
+
+    Ausencia o fallo **no** se mapea a valores altos.
+    """
+    if not visual or not isinstance(visual, dict):
+        return 0.2
+    av = str(visual.get("availability") or "").strip().lower()
+    if av == "error":
+        return 0.0
+    if av == "unavailable":
+        return 0.2
+    if av != "ok":
+        return 0.2
+    if bool(visual.get("critical_breach")):
+        return 1.0
+    if bool(visual.get("breach_detected")):
+        return 0.75
+    return 0.5
+
+
+def get_last_visual_signal() -> dict[str, Any] | None:
+    v = _state.get("last_visual_signal")
+    return dict(v) if isinstance(v, dict) else None
+
+
+def compute_options_self_audit_state_score(block: dict[str, Any] | None) -> float:
+    """Único gauge ``atlas_options_self_audit_state`` (0..1), conservador.
+
+    - **0.0** ``status=error`` (excepción o audit no ejecutable con evidencia de fallo).
+    - **0.1** ausencia de bloque ``options_self_audit`` en el plan (no se asume éxito).
+    - **0.25** ``status=skipped`` (deshabilitado por alcance/env; no es corrida completa).
+    - **0.35** ``status=ok`` y ``passed`` falso (rollup ERROR/BLOCK).
+    - **0.72** ``status=ok``, ``passed`` verdadero y ``overall_severity=WARN`` (o findings sin bloqueo).
+    - **1.0** ``status=ok``, ``passed`` verdadero y severidad máxima ``INFO`` (sin hallazgos graves).
+
+    No se mapea a 1.0 si el audit no corrió o está omitido.
+    """
+    if not block or not isinstance(block, dict):
+        return 0.1
+    st = str(block.get("status") or "").strip().lower()
+    if st == "error":
+        return 0.0
+    if st == "skipped":
+        return 0.25
+    if st != "ok":
+        return 0.1
+    passed = block.get("passed")
+    if passed is False:
+        return 0.35
+    if passed is not True:
+        return 0.1
+    sev = str(block.get("overall_severity") or "INFO").strip().upper()
+    if sev == "WARN":
+        return 0.72
+    if sev == "INFO":
+        return 1.0
+    return 0.5
+
+
+def get_last_options_self_audit() -> dict[str, Any] | None:
+    v = _state.get("last_options_self_audit")
+    return dict(v) if isinstance(v, dict) else None
+
+
+def extract_close_realized_pnls_from_journal_text(text: str) -> list[float]:
+    """Orden de archivo: un float por cada ``close_execution`` con ``pnl_realized`` numérico finito."""
+    out: list[float] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if str(row.get("event_type") or "") != "close_execution":
+            continue
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        val = payload.get("pnl_realized")
+        if val is None:
+            continue
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(v):
+            continue
+        out.append(v)
+    return out
+
+
+def compute_paper_performance_from_pnls(pnls: list[float]) -> dict[str, Any]:
+    """Métricas conservadoras desde PnL realizados por cierre (journal ``close_execution``).
+
+    - **Win rate:** ``wins / n`` con ``n = len(pnls)``; si ``n < 2`` → ``win_rate_ratio = -1`` (muestra insuficiente).
+    - **Profit factor:** ``sum(wins gross) / abs(sum(losses gross))``; si no hay pérdidas y sí ganancias → **99.0**
+      (tope documentado, no infinito); si no hay ganancias ni pérdidas útiles → ``-1``; solo pérdidas → ``0.0``.
+    - **Net PnL:** suma de todos los elementos (puede ser 0).
+    - **Max drawdown (USD):** sobre equity acumulada empezando en 0; ``max_t(peak_t - equity_t)``, valor **≥ 0**.
+    """
+    n = len(pnls)
+    if n == 0:
+        return {
+            "n_closes": 0,
+            "win_rate_ratio": -1.0,
+            "profit_factor": -1.0,
+            "net_realized_pnl_usd": 0.0,
+            "max_drawdown_usd": 0.0,
+            "insufficient_win_rate_sample": True,
+            "insufficient_profit_factor": True,
+            "insufficient_profit_factor_capped_no_losses": False,
+        }
+    wins_n = sum(1 for p in pnls if p > 0)
+    gross_win = sum(p for p in pnls if p > 0)
+    gross_loss = sum(p for p in pnls if p < 0)
+    loss_abs = abs(gross_loss)
+    net = float(sum(pnls))
+    cum = 0.0
+    peak = 0.0
+    max_dd = 0.0
+    for p in pnls:
+        cum += p
+        peak = max(peak, cum)
+        max_dd = max(max_dd, peak - cum)
+    win_rate_ratio = -1.0 if n < 2 else float(wins_n) / float(n)
+    if loss_abs > 1e-12:
+        profit_factor = min(gross_win / loss_abs, 99.0)
+        insufficient_pf = False
+    elif gross_win > 1e-12:
+        profit_factor = 99.0
+        insufficient_pf = True
+    elif gross_loss < -1e-12:
+        profit_factor = 0.0
+        insufficient_pf = False
+    else:
+        profit_factor = -1.0
+        insufficient_pf = True
+    return {
+        "n_closes": n,
+        "win_rate_ratio": win_rate_ratio,
+        "profit_factor": profit_factor,
+        "net_realized_pnl_usd": round(net, 4),
+        "max_drawdown_usd": round(max_dd, 4),
+        "insufficient_win_rate_sample": n < 2,
+        "insufficient_profit_factor": profit_factor < 0,
+        "insufficient_profit_factor_capped_no_losses": profit_factor == 99.0,
+    }
+
+
+def get_last_paper_performance() -> dict[str, Any] | None:
+    v = _state.get("last_paper_performance")
+    return dict(v) if isinstance(v, dict) else None
+
+
+def _module_age_seconds(module: str, *, now: float | None = None) -> float:
+    """Edad en segundos desde ``module_last_ts``; sin marca → ~infinito."""
+    t = time.time() if now is None else float(now)
+    ts = float(_state["module_last_ts"].get(module) or 0.0)
+    if ts <= 0.0:
+        return 1e9
+    return max(0.0, t - ts)
+
+
+def _score_metrics_freshness(*, now: float | None = None) -> float:
+    """Sentinela pipeline núcleo (briefing, intent, entry, journal): max edad conservadora."""
+    mods = ("briefing", "intent_router", "entry_planner", "journal")
+    ages = [_module_age_seconds(m, now=now) for m in mods]
+    mx = max(ages) if ages else 1e9
+    if mx >= 1e8:
+        return 0.25
+    if mx >= 86400:
+        return 0.0
+    if mx >= 3600:
+        return 0.25
+    if mx >= 900:
+        return 0.5
+    if mx >= 120:
+        return 0.75
+    return 1.0
+
+
+def _score_journal_heartbeat(*, now: float | None = None) -> float:
+    """Sentinela escritura journal: edad desde último write conocido (mtime o append)."""
+    t = time.time() if now is None else float(now)
+    lw = float(_state.get("last_journal_write_ts") or 0.0)
+    if lw <= 0.0:
+        return 0.25
+    age = max(0.0, t - lw)
+    if age >= 86400:
+        return 0.0
+    if age >= 3600:
+        return 0.33
+    if age >= 300:
+        return 0.66
+    return 1.0
+
+
+def _score_autoclose_activity(*, now: float | None = None) -> float:
+    """Sentinela AutoClose: best-effort — silencio sospechoso si hay trades abiertos.
+
+    Limitación: no se conoce el intervalo esperado de evaluación; umbrales conservadores.
+    Sin posiciones abiertas, silencio prolongado no penaliza fuerte.
+    """
+    ac_age = _module_age_seconds("autoclose", now=now)
+    open_n = int(_state.get("paper_open_trades") or 0)
+    if open_n <= 0:
+        if ac_age >= 1e8 - 1:
+            return 0.5
+        if ac_age <= 604800:
+            return 1.0
+        return 0.75
+    if ac_age >= 1e8 - 1:
+        return 0.25
+    if ac_age <= 600:
+        return 1.0
+    if ac_age <= 3600:
+        return 0.66
+    if ac_age <= 86400:
+        return 0.33
+    return 0.0
+
+
+def _score_options_flow_sentinel() -> float:
+    """Sentinela options flow / scanner bridge: coherencia del último snapshot."""
+    if not options_flow_bridge_enabled():
+        return 0.25
+    row = _state.get("last_options_flow")
+    if not isinstance(row, dict):
+        return 0.25
+    if bool(row.get("coherent")):
+        return 1.0
+    return 0.0
+
+
+def _score_iv_rank_sentinel() -> float:
+    """Sentinela degradación IV: deriva del último ``iv_rank_quality_score`` calculado."""
+    v = _state.get("last_iv_rank_quality_score")
+    if v is None:
+        return 0.25
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.25
+    if f >= 0.9:
+        return 1.0
+    if f >= 0.5:
+        return 0.66
+    if f >= 0.25:
+        return 0.33
+    return 0.0
+
+
+def _ensure_sentinel_gauges() -> None:
+    """Gauges explícitos 0..1 (1=saludable, 0=crítico, 0.25≈unknown/N/A)."""
+    global _m
+    if not _PROM_OK or not _m:
+        return
+    specs = (
+        ("sentinel_metrics_freshness", "atlas_options_sentinel_metrics_freshness", "Freshness módulos núcleo pipeline"),
+        ("sentinel_journal_heartbeat", "atlas_options_sentinel_journal_heartbeat", "Heartbeat journal (edad escritura)"),
+        ("sentinel_autoclose_activity", "atlas_options_sentinel_autoclose_activity", "AutoClose vs silencio (best-effort)"),
+        ("sentinel_options_flow", "atlas_options_sentinel_options_flow", "Options flow bridge / snapshot coherente"),
+        ("sentinel_iv_rank_quality", "atlas_options_sentinel_iv_rank_quality", "IV rank quality degradación"),
+    )
+    for key, prom_name, desc in specs:
+        if key in _m:
+            continue
+        try:
+            _m[key] = Gauge(prom_name, desc)
+        except Exception as exc:
+            logger.debug("_ensure_sentinel_gauges %s: %s", prom_name, exc)
+
+
+def update_options_engine_sentinels(*, now: float | None = None) -> dict[str, float]:
+    """Recalcula sentinelas explícitos y publica gauges + ``_state['last_sentinel_snapshot']``.
+
+    Escala **conservadora** por sentinela (0..1): valores altos = mejor; **0.25** suele indicar
+    dato ausente o función desactivada (no “OK” implícito).
+    """
+    _init_prom()
+    _ensure_sentinel_gauges()
+    scores = {
+        "metrics_freshness": float(_score_metrics_freshness(now=now)),
+        "journal_heartbeat": float(_score_journal_heartbeat(now=now)),
+        "autoclose_activity": float(_score_autoclose_activity(now=now)),
+        "options_flow": float(_score_options_flow_sentinel()),
+        "iv_rank_quality": float(_score_iv_rank_sentinel()),
+    }
+    _state["last_sentinel_snapshot"] = dict(scores)
+    if not _m:
+        return scores
+    try:
+        _m["sentinel_metrics_freshness"].set(scores["metrics_freshness"])
+        _m["sentinel_journal_heartbeat"].set(scores["journal_heartbeat"])
+        _m["sentinel_autoclose_activity"].set(scores["autoclose_activity"])
+        _m["sentinel_options_flow"].set(scores["options_flow"])
+        _m["sentinel_iv_rank_quality"].set(scores["iv_rank_quality"])
+    except Exception as exc:
+        logger.debug("update_options_engine_sentinels: %s", exc)
+    return scores
+
+
+def get_last_sentinel_snapshot() -> dict[str, float] | None:
+    """Último snapshot de sentinelas (tests / auditoría)."""
+    v = _state.get("last_sentinel_snapshot")
+    return dict(v) if isinstance(v, dict) else None
+
+
+def _ensure_iv_rank_quality_gauge() -> None:
+    """Registra gauges IV si el proceso arrancó con un ``_m`` antiguo sin estas claves."""
+    global _m
+    if not _PROM_OK or not _m:
+        return
+    if "iv_rank_quality_score" not in _m:
+        try:
+            _m["iv_rank_quality_score"] = Gauge(
+                "atlas_options_iv_rank_quality_score",
+                "Calidad IV rank briefing: 1 ok 0.5 degradado 0.25 desconocido 0 error iv_source",
+            )
+        except Exception as exc:
+            logger.debug("_ensure_iv_rank_quality_gauge quality_score: %s", exc)
+    if "iv_rank_value" not in _m:
+        try:
+            _m["iv_rank_value"] = Gauge(
+                "atlas_options_iv_rank_value",
+                "IV Rank observado en briefing/session plan (paper).",
+            )
+        except Exception as exc:
+            logger.debug("_ensure_iv_rank_quality_gauge value: %s", exc)
+    if "iv_rank_quality" not in _m:
+        try:
+            _m["iv_rank_quality"] = Gauge(
+                "atlas_options_iv_rank_quality",
+                "Calidad IV Rank: 2=ok 1=approx 0=insufficient/error.",
+            )
+        except Exception as exc:
+            logger.debug("_ensure_iv_rank_quality_gauge tier: %s", exc)
+
+
+def _init_prom() -> None:
+    global _m
+    if not _PROM_OK or _m:
+        return
+    try:
+        _m["go_nogo"] = Gauge(
+            "atlas_options_session_go_nogo",
+            "Sesión paper: 0=no-go 0.5=degradado 1=go",
+        )
+        _m["go_nogo_count"] = Counter(
+            "atlas_options_session_go_nogo_count",
+            "Conteo por decisión de sesión paper",
+            ["decision"],
+        )
+        _m["pipe_status"] = Gauge(
+            "atlas_options_pipeline_module_status",
+            "Estado módulo pipeline 0=off 0.5=degradado 1=ok",
+            ["module"],
+        )
+        _m["pipe_last_run"] = Gauge(
+            "atlas_options_pipeline_module_last_run_seconds",
+            "Segundos desde última ejecución del módulo (edad)",
+            ["module"],
+        )
+        _m["journal_events"] = Gauge(
+            "atlas_options_journal_events_today",
+            "Eventos journal options hoy (UTC)",
+        )
+        _m["journal_sessions"] = Gauge(
+            "atlas_options_journal_sessions_today",
+            "Planes de sesión registrados hoy (UTC)",
+        )
+        _m["journal_write_age"] = Gauge(
+            "atlas_options_journal_last_write_age_seconds",
+            "Segundos desde última escritura journal",
+        )
+        _m["journal_size"] = Gauge(
+            "atlas_options_journal_file_size_bytes",
+            "Tamaño archivo JSONL journal",
+        )
+        _m["paper_open"] = Gauge(
+            "atlas_options_paper_trades_open",
+            "Trades paper con entrada y sin cierre (journal)",
+        )
+        _m["paper_closed"] = Gauge(
+            "atlas_options_paper_trades_closed_today",
+            "Cierres paper registrados hoy (UTC)",
+        )
+        _m["paper_phantom"] = Gauge(
+            "atlas_options_paper_trades_phantom_today",
+            "Phantoms paper hoy (placeholder hasta regla formal)",
+        )
+        _m["paper_go_blocked_today"] = Gauge(
+            "atlas_options_paper_sessions_go_blocked_today",
+            "Sesiones GO paper bloqueadas por sizing no ejecutable (hoy UTC).",
+        )
+        _m["paper_go_blocked_ratio_today"] = Gauge(
+            "atlas_options_paper_sessions_go_blocked_ratio_today",
+            "Ratio sesiones GO bloqueadas hoy (blocked/go).",
+        )
+        _m["paper_debit_no_stop"] = Gauge(
+            "atlas_options_paper_debit_positions_no_stop",
+            "Posiciones débito sin stop (placeholder)",
+        )
+        _m["paper_go_blocked_total"] = Counter(
+            "atlas_options_paper_sessions_go_blocked_total",
+            "Total histórico de sesiones GO bloqueadas por sizing no ejecutable.",
+        )
+        _m["autoclose_triggers"] = Counter(
+            "atlas_options_autoclose_triggers_total",
+            "Disparos AutoCloseEngine por razón",
+            ["reason"],
+        )
+        _m["errors"] = Counter(
+            "atlas_options_errors_total",
+            "Errores options observabilidad",
+            ["type"],
+        )
+        _m["iv_rank_quality_score"] = Gauge(
+            "atlas_options_iv_rank_quality_score",
+            "Calidad IV rank briefing: 1 ok 0.5 degradado 0.25 desconocido 0 error iv_source",
+        )
+        _m["iv_rank_value"] = Gauge(
+            "atlas_options_iv_rank_value",
+            "IV Rank observado en briefing/session plan (paper).",
+        )
+        _m["iv_rank_quality"] = Gauge(
+            "atlas_options_iv_rank_quality",
+            "Calidad IV Rank: 2=ok 1=approx 0=insufficient/error.",
+        )
+        _m["self_audit_state"] = Gauge(
+            "atlas_options_self_audit_state",
+            "Self-audit operativo paper: 0 error 0.1 sin bloque 0.25 skipped 0.35 failed 0.72 WARN 1.0 INFO limpio",
+        )
+        _m["sentinel_metrics_freshness"] = Gauge(
+            "atlas_options_sentinel_metrics_freshness",
+            "Sentinela: freshness módulos núcleo pipeline (1=sano … 0=crítico)",
+        )
+        _m["sentinel_journal_heartbeat"] = Gauge(
+            "atlas_options_sentinel_journal_heartbeat",
+            "Sentinela: heartbeat journal por edad de escritura",
+        )
+        _m["sentinel_autoclose_activity"] = Gauge(
+            "atlas_options_sentinel_autoclose_activity",
+            "Sentinela: AutoClose vs silencio (best-effort)",
+        )
+        _m["sentinel_options_flow"] = Gauge(
+            "atlas_options_sentinel_options_flow",
+            "Sentinela: options flow / snapshot coherente",
+        )
+        _m["sentinel_iv_rank_quality"] = Gauge(
+            "atlas_options_sentinel_iv_rank_quality",
+            "Sentinela: degradación IV rank quality",
+        )
+        _m["aggr_opportunities_total"] = Counter(
+            "atlas_paper_aggressive_opportunities_total",
+            "Total de oportunidades evaluadas en modo paper aggressive.",
+            ["mode", "decision_path"],
+        )
+        _m["aggr_trades_total"] = Counter(
+            "atlas_paper_aggressive_trades_total",
+            "Total de decisiones ejecutadas en paper aggressive.",
+            ["mode", "decision_path"],
+        )
+        _m["aggr_signal_to_trade_ratio"] = Gauge(
+            "atlas_paper_signal_to_trade_conversion_ratio",
+            "Conversión señal->trade en paper aggressive (0..1).",
+        )
+        _m["aggr_pre_trade_score_vs_outcome"] = Gauge(
+            "atlas_paper_pre_trade_score_vs_realized_outcome",
+            "Relación agregada score pre-trade vs outcome realizado.",
+        )
+        _m["aggr_mae_mfe_capture"] = Histogram(
+            "atlas_paper_mae_mfe_capture_ratio",
+            "Ratio MFE/MAE por outcomes paper (si disponible).",
+            ["strategy", "regime"],
+            buckets=(-5.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 5.0, 10.0),
+        )
+        _m["aggr_holding_time_hist"] = Histogram(
+            "atlas_paper_holding_time_minutes",
+            "Holding time en minutos por trade paper.",
+            ["strategy", "session"],
+            buckets=(1, 5, 15, 30, 60, 120, 240, 480, 1440, float("inf")),
+        )
+        _m["aggr_exit_quality"] = Gauge(
+            "atlas_paper_exit_quality_score",
+            "Score agregado de calidad de salida (0..1).",
+        )
+        _m["aggr_outcome_by_cohort"] = Gauge(
+            "atlas_paper_outcome_by_session_regime_strategy",
+            "Outcome agregado (media) por cohorte session/regime/strategy.",
+            ["session", "regime", "strategy"],
+        )
+        _m["aggr_advisory_uplift"] = Gauge(
+            "atlas_paper_advisory_uplift_ratio",
+            "Uplift advisory vs baseline en paper aggressive.",
+        )
+        _m["aggr_advisory_path_delta"] = Gauge(
+            "atlas_paper_advisory_path_winrate_delta",
+            "Delta de winrate por path de advisory/modelo.",
+            ["model_path"],
+        )
+        _m["aggr_policy_cohort_total"] = Counter(
+            "atlas_paper_policy_cohort_decisions_total",
+            "Decisiones paper aggressive por policy_variant y cohort_id.",
+            ["policy_variant", "cohort_id", "decision"],
+        )
+        _m["aggr_taxonomy_total"] = Counter(
+            "atlas_paper_error_taxonomy_v2_total",
+            "Conteo de errores taxonomía v2 en paper aggressive.",
+            ["bucket"],
+        )
+        _m["aggr_realism_slippage_bps"] = Histogram(
+            "atlas_paper_estimated_slippage_bps",
+            "Slippage estimado (bps) para análisis de realismo en paper.",
+            ["fee_model", "fill_quality_assumption"],
+            buckets=(1, 2, 5, 10, 15, 20, 30, 40, 60, 100),
+        )
+        _m["aggr_realism_partial_fill_risk"] = Gauge(
+            "atlas_paper_partial_fill_risk",
+            "Riesgo supuesto de fill parcial (0..1) por cohorte.",
+            ["policy_variant", "cohort_id"],
+        )
+        _m["aggr_visual_confirmation_ratio"] = Gauge(
+            "atlas_paper_visual_confirmation_ratio",
+            "Ratio de decisiones con confirmación visual útil en paper aggressive.",
+        )
+        _m["aggr_visual_confluence_hist"] = Histogram(
+            "atlas_paper_visual_confluence_score",
+            "Confluence score proveniente de análisis visual chart/camera.",
+            ["provider_used", "chart_bias"],
+            buckets=(0.0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 1.0),
+        )
+        _m["aggr_fusion_confluence_bucket_total"] = Counter(
+            "atlas_paper_fusion_confluence_bucket_count",
+            "Conteo de decisiones paper por bucket de confluencia visual.",
+            ["bucket"],
+        )
+        _m["aggr_fusion_score_hist"] = Histogram(
+            "atlas_paper_fusion_score",
+            "Distribución de fusion_score (confluence_score) en paper aggressive.",
+            ["bucket"],
+            buckets=(0.0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 1.0),
+        )
+        _m["aggr_recommended_action_total"] = Counter(
+            "atlas_paper_recommended_action_count",
+            "Conteo de recomendaciones de la capa de fusion Fase B.",
+            ["action"],
+        )
+        _m["aggr_seasonal_bias_total"] = Counter(
+            "atlas_paper_seasonal_bias_count",
+            "Conteo por sesgo estacional observado.",
+            ["bias"],
+        )
+        _m["aggr_mtf_alignment_total"] = Counter(
+            "atlas_paper_mtf_alignment_count",
+            "Conteo por alineacion multi-timeframe.",
+            ["alignment"],
+        )
+        _m["aggr_operational_reliability_total"] = Counter(
+            "atlas_paper_operational_reliability_count",
+            "Conteo por bucket de confiabilidad operativa visual.",
+            ["bucket"],
+        )
+        _m["live_runtime_mode_resolved_total"] = Counter(
+            "atlas_live_runtime_mode_resolved_total",
+            "Conteo de resolucion de runtime mode.",
+            ["requested_mode", "effective_mode"],
+        )
+        _m["live_switch_effective_enabled"] = Gauge(
+            "atlas_live_switch_effective_enabled",
+            "1 si live esta efectivamente habilitado, 0 en caso contrario.",
+        )
+        _m["live_switch_block_reason_total"] = Counter(
+            "atlas_live_switch_block_reason_total",
+            "Bloqueos del live switch por razon.",
+            ["reason"],
+        )
+        # Preinicializa series con labels para que los dashboards de Options
+        # muestren estado base en arranque en frio y no "No data".
+        _m["go_nogo"].set(0.0)
+        for decision in ("go", "no_go", "force_no_trade"):
+            _m["go_nogo_count"].labels(decision=decision).inc(0)
+        for module in _PIPELINE_MODULES:
+            _m["pipe_status"].labels(module=module).set(0.0)
+            _m["pipe_last_run"].labels(module=module).set(1e9)
+        _m["journal_events"].set(0.0)
+        _m["journal_sessions"].set(0.0)
+        _m["journal_write_age"].set(1e9)
+        _m["journal_size"].set(0.0)
+        _m["paper_open"].set(0.0)
+        _m["paper_closed"].set(0.0)
+        _m["paper_phantom"].set(0.0)
+        _m["paper_go_blocked_today"].set(0.0)
+        _m["paper_go_blocked_ratio_today"].set(0.0)
+        _m["paper_debit_no_stop"].set(0.0)
+        _m["paper_go_blocked_total"].inc(0.0)
+        _m["iv_rank_quality_score"].set(0.25)
+        _m["iv_rank_value"].set(0.0)
+        _m["iv_rank_quality"].set(0.0)
+        _m["self_audit_state"].set(0.25)
+        _m["sentinel_metrics_freshness"].set(0.25)
+        _m["sentinel_journal_heartbeat"].set(0.25)
+        _m["sentinel_autoclose_activity"].set(0.5)
+        _m["sentinel_options_flow"].set(0.25)
+        _m["sentinel_iv_rank_quality"].set(0.25)
+        _m["aggr_signal_to_trade_ratio"].set(0.0)
+        _m["aggr_pre_trade_score_vs_outcome"].set(0.0)
+        _m["aggr_exit_quality"].set(0.0)
+        _m["aggr_advisory_uplift"].set(0.0)
+        _m["aggr_visual_confirmation_ratio"].set(0.0)
+        _m["aggr_opportunities_total"].labels(mode="paper_aggressive", decision_path="baseline").inc(0.0)
+        _m["aggr_opportunities_total"].labels(mode="paper_aggressive", decision_path="advisory").inc(0.0)
+        _m["aggr_trades_total"].labels(mode="paper_aggressive", decision_path="final").inc(0.0)
+        _m["aggr_policy_cohort_total"].labels(
+            policy_variant="baseline_v1",
+            cohort_id="cohort_unknown",
+            decision="accept",
+        ).inc(0.0)
+        _m["aggr_taxonomy_total"].labels(bucket="timing_error").inc(0.0)
+        _m["aggr_fusion_confluence_bucket_total"].labels(bucket="unknown").inc(0.0)
+        _m["aggr_recommended_action_total"].labels(action="manual_review").inc(0.0)
+        _m["aggr_seasonal_bias_total"].labels(bias="unknown").inc(0.0)
+        _m["aggr_mtf_alignment_total"].labels(alignment="unknown").inc(0.0)
+        _m["aggr_operational_reliability_total"].labels(bucket="critical").inc(0.0)
+        _m["live_runtime_mode_resolved_total"].labels(
+            requested_mode="paper_aggressive",
+            effective_mode="paper_aggressive",
+        ).inc(0.0)
+        _m["live_switch_effective_enabled"].set(0.0)
+        _m["live_switch_block_reason_total"].labels(reason="full_live_globally_locked").inc(0.0)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("options_engine_metrics init: %s", exc)
+        _m.clear()
+
+
+def _ensure_flow_gauges() -> None:
+    """Registra gauges de flow si el proceso arrancó con un ``_m`` sin estas claves."""
+    global _m
+    if not _PROM_OK or not _m or "flow_payload_available" in _m:
+        return
+    try:
+        _m["flow_payload_available"] = Gauge(
+            "atlas_options_flow_payload_available",
+            "1 si snapshot OptionsFlowProvider es coherente (available+numéricos); 0 si ausente/incompleto",
+            ["symbol"],
+        )
+        _m["flow_put_call_volume_ratio"] = Gauge(
+            "atlas_options_flow_put_call_volume_ratio",
+            "Put/call volumen (front). -1 = sin dato interpretable (ignorar como señal)",
+            ["symbol"],
+        )
+        _m["flow_gamma_bias_pct"] = Gauge(
+            "atlas_options_flow_gamma_bias_pct",
+            "Sesgo gamma % (front). -1 = sin dato interpretable",
+            ["symbol"],
+        )
+        _m["flow_score_pct"] = Gauge(
+            "atlas_options_flow_score_pct",
+            "Score interno flow 0..100. -1 = sin dato interpretable",
+            ["symbol"],
+        )
+        _m["flow_confidence_pct"] = Gauge(
+            "atlas_options_flow_confidence_pct",
+            "Confianza % del snapshot flow; 0 si payload no coherente",
+            ["symbol"],
+        )
+    except Exception as exc:
+        logger.debug("_ensure_flow_gauges: %s", exc)
+
+
+def _ensure_visual_signal_gauge() -> None:
+    global _m
+    if not _PROM_OK or not _m or "visual_signal_state" in _m:
+        return
+    try:
+        _m["visual_signal_state"] = Gauge(
+            "atlas_options_visual_signal_state",
+            "VisualSignalAdapter: 0 error 0.2 sin input útil 0.5 ok sin breach 0.75 breach 1.0 crítico",
+        )
+    except Exception as exc:
+        logger.debug("_ensure_visual_signal_gauge: %s", exc)
+
+
+def _ensure_self_audit_gauge() -> None:
+    global _m
+    if not _PROM_OK or not _m or "self_audit_state" in _m:
+        return
+    try:
+        _m["self_audit_state"] = Gauge(
+            "atlas_options_self_audit_state",
+            "Self-audit operativo paper: 0 error 0.1 sin bloque 0.25 skipped 0.35 failed 0.72 WARN 1.0 INFO limpio",
+        )
+    except Exception as exc:
+        logger.debug("_ensure_self_audit_gauge: %s", exc)
+
+
+def _ensure_paper_performance_gauges() -> None:
+    global _m
+    if not _PROM_OK or not _m:
+        return
+    try:
+        if "paper_win_rate_ratio" not in _m:
+            _m["paper_win_rate_ratio"] = Gauge(
+                "atlas_options_paper_win_rate_ratio",
+                "Compatibilidad legacy 0..1 derivado de WR global.",
+            )
+        if "paper_profit_factor" not in _m:
+            _m["paper_profit_factor"] = Gauge(
+                "atlas_options_paper_profit_factor",
+                "Profit factor global paper desde journal.",
+            )
+        if "paper_net_realized_pnl_usd" not in _m:
+            _m["paper_net_realized_pnl_usd"] = Gauge(
+                "atlas_options_paper_net_realized_pnl_usd",
+                "Compatibilidad legacy: pnl total realizado (USD).",
+            )
+        if "paper_max_drawdown_usd" not in _m:
+            _m["paper_max_drawdown_usd"] = Gauge(
+                "atlas_options_paper_max_drawdown_usd",
+                "Compatibilidad legacy: máximo drawdown histórico (USD).",
+            )
+        if "paper_perf_close_count" not in _m:
+            _m["paper_perf_close_count"] = Gauge(
+                "atlas_options_paper_performance_close_count",
+                "Compatibilidad legacy: número de close_execution usados en performance.",
+            )
+        # Métricas canónicas Paper Performance (observability_architecture.md).
+        if "paper_equity_usd" not in _m:
+            _m["paper_equity_usd"] = Gauge(
+                "atlas_options_paper_equity_usd",
+                "Capital paper acumulado (capital inicial + pnl total).",
+            )
+        if "paper_drawdown_pct" not in _m:
+            _m["paper_drawdown_pct"] = Gauge(
+                "atlas_options_paper_drawdown_pct",
+                "Drawdown actual desde máximo previo (porcentaje, <= 0).",
+            )
+        if "paper_win_rate_pct" not in _m:
+            _m["paper_win_rate_pct"] = Gauge(
+                "atlas_options_paper_win_rate_pct",
+                "Win rate global paper en porcentaje.",
+            )
+        if "paper_avg_pnl_usd" not in _m:
+            _m["paper_avg_pnl_usd"] = Gauge(
+                "atlas_options_paper_avg_pnl_usd",
+                "PnL promedio por trade cerrado (USD).",
+            )
+        if "paper_total_pnl_usd" not in _m:
+            _m["paper_total_pnl_usd"] = Gauge(
+                "atlas_options_paper_total_pnl_usd",
+                "PnL total acumulado paper (USD).",
+            )
+        if "paper_win_rate_rolling_7d" not in _m:
+            _m["paper_win_rate_rolling_7d"] = Gauge(
+                "atlas_options_paper_win_rate_rolling_7d",
+                "Win rate rolling 7 días (porcentaje).",
+            )
+        if "paper_profit_factor_rolling_7d" not in _m:
+            _m["paper_profit_factor_rolling_7d"] = Gauge(
+                "atlas_options_paper_profit_factor_rolling_7d",
+                "Profit factor rolling 7 días.",
+            )
+        if "paper_closed_total" not in _m:
+            _m["paper_closed_total"] = Counter(
+                "atlas_options_paper_closed_total",
+                "Total histórico de trades paper cerrados (Fase 0).",
+            )
+            _m["paper_closed_total"].inc(0.0)
+        if "paper_trade_pnl_hist" not in _m:
+            _m["paper_trade_pnl_hist"] = Histogram(
+                "atlas_options_paper_trade_pnl_usd",
+                "Histograma de PnL por trade paper cerrado.",
+                ["strategy", "close_reason", "gamma_regime", "dte_mode"],
+                buckets=(
+                    -1000.0,
+                    -500.0,
+                    -250.0,
+                    -100.0,
+                    -50.0,
+                    -20.0,
+                    -10.0,
+                    -5.0,
+                    0.0,
+                    5.0,
+                    10.0,
+                    20.0,
+                    50.0,
+                    100.0,
+                    250.0,
+                    500.0,
+                    1000.0,
+                ),
+            )
+            _m["paper_trade_pnl_hist"].labels(
+                strategy="unknown",
+                close_reason="unknown",
+                gamma_regime="unknown",
+                dte_mode="unknown",
+            )
+        if "paper_win_rate_by_strategy_regime" not in _m:
+            _m["paper_win_rate_by_strategy_regime"] = Gauge(
+                "atlas_options_paper_win_rate_by_strategy_regime",
+                "WR paper (%) por combinación strategy x gamma_regime.",
+                ["strategy", "gamma_regime"],
+            )
+        if "paper_go_blocked_today" not in _m:
+            _m["paper_go_blocked_today"] = Gauge(
+                "atlas_options_paper_sessions_go_blocked_today",
+                "Sesiones GO paper bloqueadas por sizing no ejecutable (hoy UTC).",
+            )
+        if "paper_go_blocked_ratio_today" not in _m:
+            _m["paper_go_blocked_ratio_today"] = Gauge(
+                "atlas_options_paper_sessions_go_blocked_ratio_today",
+                "Ratio sesiones GO bloqueadas hoy (blocked/go).",
+            )
+        if "paper_go_blocked_total" not in _m:
+            _m["paper_go_blocked_total"] = Counter(
+                "atlas_options_paper_sessions_go_blocked_total",
+                "Total histórico de sesiones GO bloqueadas por sizing no ejecutable.",
+            )
+            _m["paper_go_blocked_total"].inc(0.0)
+    except Exception as exc:
+        logger.debug("_ensure_paper_performance_gauges: %s", exc)
+
+
+def _metric_label(value: Any, *, fallback: str = "unknown", max_len: int = 80) -> str:
+    s = str(value or "").strip().lower().replace(" ", "_")
+    if not s:
+        s = fallback
+    return s[:max_len]
+
+
+def _apply_paper_performance_gauges(metrics: dict[str, Any]) -> None:
+    _init_prom()
+    _ensure_paper_performance_gauges()
+    _state["last_paper_performance"] = dict(metrics)
+    if not _m:
+        return
+    try:
+        _m["paper_win_rate_ratio"].set(float(metrics["win_rate_ratio"]))
+        _m["paper_profit_factor"].set(float(metrics["profit_factor"]))
+        _m["paper_net_realized_pnl_usd"].set(float(metrics["net_realized_pnl_usd"]))
+        _m["paper_max_drawdown_usd"].set(float(metrics["max_drawdown_usd"]))
+        _m["paper_perf_close_count"].set(float(metrics["n_closes"]))
+        _m["paper_equity_usd"].set(float(metrics["equity_usd"]))
+        _m["paper_drawdown_pct"].set(float(metrics["drawdown_pct"]))
+        _m["paper_win_rate_pct"].set(float(metrics["win_rate_pct"]))
+        _m["paper_avg_pnl_usd"].set(float(metrics["pnl_avg_usd"]))
+        _m["paper_total_pnl_usd"].set(float(metrics["pnl_total_usd"]))
+        _m["paper_win_rate_rolling_7d"].set(float(metrics["rolling_7d_win_rate_pct"]))
+        _m["paper_profit_factor_rolling_7d"].set(float(metrics["rolling_7d_profit_factor"]))
+    except Exception as exc:
+        logger.debug("_apply_paper_performance_gauges: %s", exc)
+
+
+def record_pipeline_module(*, module: str, status: float) -> None:
+    """status: 0.0, 0.5 o 1.0."""
+    if module not in _PIPELINE_MODULES:
+        return
+    _init_prom()
+    now = time.time()
+    _state["module_last_ts"][module] = now
+    _state["module_status"][module] = float(status)
+    if not _m:
+        return
+    try:
+        _m["pipe_status"].labels(module=module).set(float(status))
+        _m["pipe_last_run"].labels(module=module).set(0.0)
+    except Exception as exc:
+        logger.debug("record_pipeline_module: %s", exc)
+
+
+def tick_pipeline_ages() -> None:
+    """Actualiza edad desde última corrida de cada módulo (llamar desde sync métricas)."""
+    _init_prom()
+    now = time.time()
+    if _m:
+        try:
+            for mod in _PIPELINE_MODULES:
+                ts = float(_state["module_last_ts"].get(mod) or 0.0)
+                age = max(0.0, now - ts) if ts > 0 else 1e9
+                _m["pipe_last_run"].labels(module=mod).set(age)
+        except Exception as exc:
+            logger.debug("tick_pipeline_ages: %s", exc)
+    update_options_engine_sentinels(now=now)
+
+
+def record_session_plan(plan: dict[str, Any], *, journal_path: str | Path | None = None) -> None:
+    """Llamar al finalizar ``build_session_plan`` (tras journal si aplica)."""
+    _init_prom()
+    _ensure_iv_rank_quality_gauge()
+    _ensure_visual_signal_gauge()
+    _ensure_self_audit_gauge()
+    _ensure_day()
+    _state["last_session_plan"] = plan
+    if journal_path is not None:
+        _state["last_journal_path"] = str(journal_path)
+
+    briefing_for_iv = plan.get("briefing") if isinstance(plan.get("briefing"), dict) else {}
+    iv_score = compute_iv_rank_quality_score(briefing_for_iv)
+    iv_tier = _iv_rank_quality_tier(briefing_for_iv)
+    iv_rank_raw = _finite_float(briefing_for_iv.get("iv_rank"))
+    _state["last_iv_rank_value"] = iv_rank_raw
+    _state["last_iv_rank_quality_score"] = iv_score
+    if _m:
+        try:
+            _m["iv_rank_quality_score"].set(float(iv_score))
+            _m["iv_rank_quality"].set(float(iv_tier))
+            if iv_rank_raw is not None:
+                _m["iv_rank_value"].set(float(iv_rank_raw))
+        except Exception as exc:
+            logger.debug("iv_rank_quality_score: %s", exc)
+
+    sym_flow = str(plan.get("symbol") or "").strip().upper() or "UNKNOWN"
+    snap_flow = plan.get("options_flow_snapshot")
+    if not isinstance(snap_flow, dict):
+        snap_flow = None
+    apply_options_flow_snapshot_to_metrics(sym_flow, snap_flow)
+
+    vs_block = briefing_for_iv.get("visual_signal") if isinstance(briefing_for_iv, dict) else None
+    vs_score = compute_visual_signal_state_score(vs_block if isinstance(vs_block, dict) else None)
+    _state["last_visual_signal"] = vs_block if isinstance(vs_block, dict) else None
+    if _m:
+        try:
+            _m["visual_signal_state"].set(float(vs_score))
+        except Exception as exc:
+            logger.debug("visual_signal_state: %s", exc)
+
+    audit_block = plan.get("options_self_audit") if isinstance(plan.get("options_self_audit"), dict) else None
+    sa_score = compute_options_self_audit_state_score(audit_block)
+    _state["last_options_self_audit"] = dict(audit_block) if isinstance(audit_block, dict) else None
+    if _m:
+        try:
+            _m["self_audit_state"].set(float(sa_score))
+        except Exception as exc:
+            logger.debug("self_audit_state: %s", exc)
+
+    intent = plan.get("intent") if isinstance(plan.get("intent"), dict) else {}
+    entry_allowed = bool(plan.get("entry_allowed"))
+    force_no = bool(intent.get("force_no_trade"))
+    flags = plan.get("pipeline_quality_flags") or []
+
+    degraded = entry_allowed and isinstance(flags, list) and len(flags) > 4
+    if force_no:
+        go_val = 0.0
+        decision = "force_no_trade"
+    elif entry_allowed and not degraded:
+        go_val = 1.0
+        decision = "go"
+    elif entry_allowed and degraded:
+        go_val = 0.5
+        decision = "go"
+    else:
+        go_val = 0.0
+        decision = "no_go"
+
+    update_options_engine_sentinels()
+
+    if not _m:
+        return
+    try:
+        _m["go_nogo"].set(go_val)
+        _m["go_nogo_count"].labels(decision=decision).inc()
+    except Exception as exc:
+        logger.debug("record_session_plan: %s", exc)
+
+
+def on_journal_record(journal_path: Path, record: dict[str, Any]) -> None:
+    """Tras cada append al JSONL (``record`` completo)."""
+    _init_prom()
+    _ensure_day()
+    event_type = str(record.get("event_type") or "")
+    _state["last_journal_path"] = str(journal_path)
+    _state["journal_events_today"] = int(_state["journal_events_today"]) + 1
+    if event_type == "session_plan":
+        _state["journal_sessions_today"] = int(_state["journal_sessions_today"]) + 1
+    _state["last_journal_write_ts"] = time.time()
+    _state["module_last_ts"]["journal"] = time.time()
+    _state["module_status"]["journal"] = 1.0
+    if not _m:
+        return
+    try:
+        _m["journal_events"].set(float(_state["journal_events_today"]))
+        _m["journal_sessions"].set(float(_state["journal_sessions_today"]))
+        _m["journal_write_age"].set(0.0)
+        if journal_path.is_file():
+            _m["journal_size"].set(float(journal_path.stat().st_size))
+        _m["pipe_status"].labels(module="journal").set(1.0)
+        _m["pipe_last_run"].labels(module="journal").set(0.0)
+    except Exception as exc:
+        logger.debug("on_journal_record: %s", exc)
+
+
+def record_autoclose_triggers(reasons: list[str]) -> None:
+    """Incrementa contadores por cada razón de cierre propuesta."""
+    _init_prom()
+    if not reasons:
+        update_options_engine_sentinels()
+        return
+    if not _m:
+        update_options_engine_sentinels()
+        return
+    try:
+        for r in reasons:
+            _m["autoclose_triggers"].labels(reason=str(r)).inc()
+        _state["module_last_ts"]["autoclose"] = time.time()
+        _state["module_status"]["autoclose"] = 1.0
+        _m["pipe_status"].labels(module="autoclose").set(1.0)
+        _m["pipe_last_run"].labels(module="autoclose").set(0.0)
+    except Exception as exc:
+        logger.debug("record_autoclose_triggers: %s", exc)
+    update_options_engine_sentinels()
+
+
+def record_options_error(error_type: str) -> None:
+    _init_prom()
+    if not _m:
+        return
+    try:
+        _m["errors"].labels(type=str(error_type)[:120]).inc()
+    except Exception as exc:
+        logger.debug("record_options_error: %s", exc)
+
+
+def _label(value: Any, *, fallback: str = "unknown", max_len: int = 64) -> str:
+    s = str(value or "").strip().lower().replace(" ", "_")
+    if not s:
+        s = fallback
+    return s[:max_len]
+
+
+def record_paper_aggressive_decision(
+    *,
+    decision_path: str,
+    mode: str,
+    pre_trade_score: float,
+    executed: bool,
+    session: str,
+    regime: str,
+    strategy: str,
+    model_path: str | None = None,
+    policy_variant: str | None = None,
+    cohort_id: str | None = None,
+    error_taxonomy_v2: dict[str, int] | None = None,
+    realism: dict[str, Any] | None = None,
+    visual_evidence: dict[str, Any] | None = None,
+) -> None:
+    """Record phase-1 paper aggressive decision metrics."""
+    _init_prom()
+    if not _m:
+        return
+    mode_l = _label(mode, fallback="paper_aggressive")
+    path_l = _label(decision_path, fallback="final")
+    session_l = _label(session, fallback="unknown")
+    regime_l = _label(regime, fallback="unknown")
+    strategy_l = _label(strategy, fallback="unknown")
+    policy_l = _label(policy_variant, fallback="baseline_v1")
+    cohort_l = _label(cohort_id, fallback="cohort_unknown")
+    try:
+        _m["aggr_opportunities_total"].labels(mode=mode_l, decision_path=path_l).inc()
+        _state["aggr_signals_total"] = int(_state.get("aggr_signals_total") or 0) + 1
+        _m["aggr_policy_cohort_total"].labels(
+            policy_variant=policy_l,
+            cohort_id=cohort_l,
+            decision="accept" if executed else "discard",
+        ).inc()
+        if executed:
+            _m["aggr_trades_total"].labels(mode=mode_l, decision_path="final").inc()
+            _state["aggr_trades_total"] = int(_state.get("aggr_trades_total") or 0) + 1
+        sig = max(1, int(_state.get("aggr_signals_total") or 0))
+        trd = int(_state.get("aggr_trades_total") or 0)
+        _m["aggr_signal_to_trade_ratio"].set(float(trd) / float(sig))
+        # Pending relation until outcome is known; keep score context by cohort.
+        _m["aggr_outcome_by_cohort"].labels(
+            session=session_l,
+            regime=regime_l,
+            strategy=strategy_l,
+        ).set(float(pre_trade_score) if executed else 0.0)
+        if model_path:
+            _m["aggr_advisory_path_delta"].labels(model_path=_label(model_path)).set(0.0)
+        if isinstance(error_taxonomy_v2, dict):
+            for bucket, count in error_taxonomy_v2.items():
+                n = max(0, int(count or 0))
+                if n > 0:
+                    _m["aggr_taxonomy_total"].labels(bucket=_label(bucket)).inc(float(n))
+        if isinstance(realism, dict):
+            fee_model = _label(realism.get("fee_model"), fallback="paper_flat")
+            fill_quality = _label(realism.get("fill_quality_assumption"), fallback="normal")
+            slippage = max(0.0, float(realism.get("estimated_slippage_bps") or 0.0))
+            partial_fill_risk = max(0.0, min(1.0, float(realism.get("partial_fill_risk") or 0.0)))
+            _m["aggr_realism_slippage_bps"].labels(
+                fee_model=fee_model,
+                fill_quality_assumption=fill_quality,
+            ).observe(slippage)
+            _m["aggr_realism_partial_fill_risk"].labels(
+                policy_variant=policy_l,
+                cohort_id=cohort_l,
+            ).set(partial_fill_risk)
+        if isinstance(visual_evidence, dict):
+            visual_ctx = (
+                visual_evidence.get("visual_decision_context")
+                if isinstance(visual_evidence.get("visual_decision_context"), dict)
+                else {}
+            )
+            conf = max(0.0, min(1.0, float(visual_evidence.get("visual_confidence") or 0.0)))
+            confluence_raw = (
+                visual_ctx.get("confluence_score")
+                if isinstance(visual_ctx, dict) and visual_ctx.get("confluence_score") is not None
+                else visual_evidence.get("confluence_score")
+            )
+            confluence = max(0.0, min(1.0, float(confluence_raw or 0.0)))
+            confluence_bucket = _label(
+                (visual_ctx.get("confluence_bucket") if isinstance(visual_ctx, dict) else None)
+                or visual_evidence.get("confluence_bucket"),
+                fallback="unknown",
+            )
+            provider_used = _label(visual_evidence.get("provider_used"), fallback="none")
+            chart_bias = _label(visual_evidence.get("chart_bias"), fallback="neutral")
+            if conf >= 0.55:
+                confirmed = int(_state.get("aggr_visual_confirmed_total") or 0) + 1
+                _state["aggr_visual_confirmed_total"] = confirmed
+            total_visual = int(_state.get("aggr_signals_total") or 0)
+            confirmed_visual = int(_state.get("aggr_visual_confirmed_total") or 0)
+            if total_visual > 0:
+                _m["aggr_visual_confirmation_ratio"].set(float(confirmed_visual) / float(total_visual))
+            _m["aggr_visual_confluence_hist"].labels(
+                provider_used=provider_used,
+                chart_bias=chart_bias,
+            ).observe(confluence)
+            _m["aggr_fusion_confluence_bucket_total"].labels(bucket=confluence_bucket).inc()
+            _m["aggr_fusion_score_hist"].labels(bucket=confluence_bucket).observe(confluence)
+            recommended_action = _label(
+                (visual_ctx.get("recommended_action") if isinstance(visual_ctx, dict) else None)
+                or visual_evidence.get("recommended_action"),
+                fallback="manual_review",
+            )
+            seasonal_bias = _label(
+                ((visual_ctx.get("seasonality_context") or {}).get("seasonal_bias") if isinstance(visual_ctx, dict) else None),
+                fallback="unknown",
+            )
+            mtf_alignment = _label(
+                ((visual_ctx.get("multi_timeframe_view") or {}).get("alignment") if isinstance(visual_ctx, dict) else None),
+                fallback="unknown",
+            )
+            op_rel_bucket = _label(
+                ((visual_ctx.get("fusion_components") or {}).get("operational_reliability_bucket") if isinstance(visual_ctx, dict) else None),
+                fallback="critical",
+            )
+            _m["aggr_recommended_action_total"].labels(action=recommended_action).inc()
+            _m["aggr_seasonal_bias_total"].labels(bias=seasonal_bias).inc()
+            _m["aggr_mtf_alignment_total"].labels(alignment=mtf_alignment).inc()
+            _m["aggr_operational_reliability_total"].labels(bucket=op_rel_bucket).inc()
+    except Exception as exc:
+        logger.debug("record_paper_aggressive_decision: %s", exc)
+
+
+def record_paper_aggressive_outcome(
+    *,
+    pre_trade_score: float,
+    realized_outcome: float,
+    session: str,
+    regime: str,
+    strategy: str,
+    mae: float | None = None,
+    mfe: float | None = None,
+    holding_time_minutes: float | None = None,
+    exit_quality: float | None = None,
+) -> None:
+    """Record post-outcome metrics for paper aggressive learning loop."""
+    _init_prom()
+    if not _m:
+        return
+    session_l = _label(session, fallback="unknown")
+    regime_l = _label(regime, fallback="unknown")
+    strategy_l = _label(strategy, fallback="unknown")
+    try:
+        _state["aggr_realized_pairs"] = int(_state.get("aggr_realized_pairs") or 0) + 1
+        _state["aggr_score_outcome_sum"] = float(_state.get("aggr_score_outcome_sum") or 0.0) + (
+            float(pre_trade_score) * float(realized_outcome)
+        )
+        pairs = max(1, int(_state.get("aggr_realized_pairs") or 0))
+        _m["aggr_pre_trade_score_vs_outcome"].set(
+            float(_state.get("aggr_score_outcome_sum") or 0.0) / float(pairs)
+        )
+        _m["aggr_outcome_by_cohort"].labels(
+            session=session_l,
+            regime=regime_l,
+            strategy=strategy_l,
+        ).set(float(realized_outcome))
+        if holding_time_minutes is not None:
+            _m["aggr_holding_time_hist"].labels(strategy=strategy_l, session=session_l).observe(
+                max(0.0, float(holding_time_minutes))
+            )
+        if mae is not None and mfe is not None:
+            denom = abs(float(mae)) if abs(float(mae)) > 1e-9 else 1.0
+            _m["aggr_mae_mfe_capture"].labels(strategy=strategy_l, regime=regime_l).observe(float(mfe) / denom)
+        if exit_quality is not None:
+            _m["aggr_exit_quality"].set(float(exit_quality))
+    except Exception as exc:
+        logger.debug("record_paper_aggressive_outcome: %s", exc)
+
+
+def update_advisory_uplift_metrics(payload: dict[str, Any] | None) -> None:
+    """Publish uplift aggregates from learning loop summaries."""
+    _init_prom()
+    if not _m or not isinstance(payload, dict):
+        return
+    try:
+        uplift = float(payload.get("advisory_uplift_ratio") or 0.0)
+        _state["aggr_uplift_ratio"] = uplift
+        _m["aggr_advisory_uplift"].set(uplift)
+        by_path = payload.get("by_model_path")
+        if isinstance(by_path, dict):
+            for model_path, delta in by_path.items():
+                _m["aggr_advisory_path_delta"].labels(model_path=_label(model_path)).set(float(delta or 0.0))
+    except Exception as exc:
+        logger.debug("update_advisory_uplift_metrics: %s", exc)
+
+
+def record_live_transition_state(
+    *,
+    runtime_resolution: dict[str, Any] | None,
+    live_switch_state: dict[str, Any] | None,
+) -> None:
+    _init_prom()
+    if not _m:
+        return
+    runtime_payload = dict(runtime_resolution or {})
+    switch_payload = dict(live_switch_state or {})
+    requested = _label(runtime_payload.get("requested_mode"), fallback="unknown")
+    effective = _label(runtime_payload.get("effective_mode"), fallback="unknown")
+    enabled = bool(switch_payload.get("effective_live_enabled", False))
+    reasons = list(switch_payload.get("blocking_reasons") or [])
+    try:
+        _m["live_runtime_mode_resolved_total"].labels(
+            requested_mode=requested,
+            effective_mode=effective,
+        ).inc()
+        _m["live_switch_effective_enabled"].set(1.0 if enabled else 0.0)
+        for reason in reasons:
+            _m["live_switch_block_reason_total"].labels(reason=_label(reason)).inc()
+    except Exception as exc:
+        logger.debug("record_live_transition_state: %s", exc)
+
+
+def refresh_journal_from_disk(path: Path | None = None) -> None:
+    """Relee JSONL y publica estado/performace paper usando el agregador canónico de journal."""
+    _init_prom()
+    _ensure_paper_performance_gauges()
+    p = path or Path(_state.get("last_journal_path") or default_journal_path())
+    stats = OptionsPaperJournalStats.load_from_file(p)
+    g = stats.to_dict_global()
+    _state["journal_events_today"] = int(g.get("events_today") or 0)
+    _state["journal_sessions_today"] = int(g.get("sessions_today") or 0)
+    _state["paper_closed_today"] = int(g.get("closed_today") or 0)
+    _state["paper_open_trades"] = int(g.get("open_trades_count") or 0)
+    _state["last_journal_path"] = str(stats.journal_path)
+    _state["last_journal_write_ts"] = float(stats.last_write_ts or 0.0)
+
+    perf_payload = {
+        "n_closes": int(g.get("closed_trades_total") or 0),
+        "win_rate_ratio": float(g.get("win_rate_ratio") or 0.0),
+        "win_rate_pct": float(g.get("win_rate_pct") or 0.0),
+        "profit_factor": float(g.get("profit_factor") or 0.0),
+        "pnl_total_usd": float(g.get("pnl_total_usd") or 0.0),
+        "net_realized_pnl_usd": float(g.get("net_realized_pnl_usd") or 0.0),
+        "pnl_avg_usd": float(g.get("pnl_avg_usd") or 0.0),
+        "equity_usd": float(g.get("equity_usd") or 0.0),
+        "drawdown_pct": float(g.get("drawdown_pct") or 0.0),
+        "max_drawdown_usd": float(g.get("max_drawdown_usd") or 0.0),
+        "rolling_7d_win_rate_pct": float((stats.rolling_7d or {}).get("win_rate_pct") or 0.0),
+        "rolling_7d_profit_factor": float((stats.rolling_7d or {}).get("profit_factor") or 0.0),
+    }
+    _apply_paper_performance_gauges(perf_payload)
+
+    # Debug JSON consumible por API interna o revisión manual.
+    try:
+        stats.write_debug_json(stats.journal_path.parent / "options_paper_stats.json")
+    except Exception as exc:
+        logger.debug("refresh_journal_from_disk write debug stats: %s", exc)
+
+    if not _m:
+        update_options_engine_sentinels()
+        return
+    try:
+        now = time.time()
+        lw = float(_state.get("last_journal_write_ts") or 0.0)
+        age = max(0.0, now - lw) if lw > 0 else 1e9
+        _m["journal_events"].set(float(g.get("events_today") or 0.0))
+        _m["journal_sessions"].set(float(g.get("sessions_today") or 0.0))
+        _m["journal_write_age"].set(age)
+        _m["journal_size"].set(float(stats.journal_path.stat().st_size) if stats.journal_path.is_file() else 0.0)
+        _m["paper_open"].set(float(g.get("open_trades_count") or 0.0))
+        _m["paper_closed"].set(float(g.get("closed_today") or 0.0))
+        _m["paper_phantom"].set(float(g.get("phantom_today") or 0.0))
+        go_today = float(g.get("go_sessions_today") or 0.0)
+        blocked_today = float(g.get("blocked_sessions_today") or 0.0)
+        blocked_ratio = (blocked_today / go_today) if go_today > 0 else 0.0
+        _m["paper_go_blocked_today"].set(blocked_today)
+        _m["paper_go_blocked_ratio_today"].set(blocked_ratio)
+        _m["paper_debit_no_stop"].set(0.0)
+
+        closed_total = int(g.get("closed_trades_total") or 0)
+        prev_total = int(_state.get("paper_closed_total_counter_value") or 0)
+        if closed_total >= prev_total:
+            delta = closed_total - prev_total
+            if delta > 0:
+                _m["paper_closed_total"].inc(float(delta))
+            _state["paper_closed_total_counter_value"] = closed_total
+        else:
+            # Journal truncado/rotado: mantenemos monotonicidad del counter.
+            _state["paper_closed_total_counter_value"] = closed_total
+        blocked_total = int(g.get("blocked_sessions_total") or 0)
+        prev_blocked_total = int(_state.get("paper_go_blocked_total_counter_value") or 0)
+        if blocked_total >= prev_blocked_total:
+            delta_blocked = blocked_total - prev_blocked_total
+            if delta_blocked > 0:
+                _m["paper_go_blocked_total"].inc(float(delta_blocked))
+            _state["paper_go_blocked_total_counter_value"] = blocked_total
+        else:
+            _state["paper_go_blocked_total_counter_value"] = blocked_total
+
+        seen: set[str] = _state.setdefault("paper_trade_hist_seen", set())
+        for trade in stats.closed_trades:
+            hist_key = f"{trade.get('trace_id')}|{trade.get('closed_at')}|{trade.get('pnl_usd')}"
+            if hist_key in seen:
+                continue
+            _m["paper_trade_pnl_hist"].labels(
+                strategy=_metric_label(trade.get("strategy")),
+                close_reason=_metric_label(trade.get("close_reason")),
+                gamma_regime=_metric_label(trade.get("gamma_regime")),
+                dte_mode=_metric_label(trade.get("dte_mode")),
+            ).observe(float(trade.get("pnl_usd") or 0.0))
+            seen.add(hist_key)
+
+        # Exporta heatmap WR por strategy x gamma_regime.
+        by_regime = stats.to_dict_by_strategy_regime()
+        for strategy, regimes in by_regime.items():
+            for gamma_regime, wr_pct in regimes.items():
+                _m["paper_win_rate_by_strategy_regime"].labels(
+                    strategy=_metric_label(strategy),
+                    gamma_regime=_metric_label(gamma_regime),
+                ).set(float(wr_pct))
+        if not by_regime:
+            _m["paper_win_rate_by_strategy_regime"].labels(
+                strategy="unknown",
+                gamma_regime="unknown",
+            ).set(0.0)
+    except Exception as exc:
+        logger.debug("refresh_journal_from_disk gauges: %s", exc)
+    update_options_engine_sentinels()
+
+
+def default_journal_path() -> Path:
+    return Path.cwd() / "data" / "options_paper_journal.jsonl"
+
+
+def get_ui_snapshot() -> dict[str, Any]:
+    """Payload para ``/api/options-engine-status`` (hub 8791).
+
+    Alineado con gauges: ``win_rate_approx`` / ``paper_performance_summary`` vienen de
+    ``get_last_paper_performance()`` tras ``refresh_journal_from_disk``; ``sentinel_snapshot``
+    de ``get_last_sentinel_snapshot()`` (mismas series que paneles H-12…H-16).
+    """
+    plan = _state.get("last_session_plan")
+    if not isinstance(plan, dict):
+        plan = {}
+    briefing = plan.get("briefing") if isinstance(plan.get("briefing"), dict) else {}
+    iv_rank = briefing.get("iv_rank")
+    entry_allowed = bool(plan.get("entry_allowed"))
+    force_no = bool((plan.get("intent") or {}).get("force_no_trade"))
+    if force_no:
+        go_label = "NO-GO (force_no_trade)"
+    elif entry_allowed:
+        qfx = plan.get("pipeline_quality_flags") or []
+        go_label = "GO (degraded)" if isinstance(qfx, list) and len(qfx) > 4 else "GO"
+    else:
+        go_label = "NO-GO"
+    target = 100
+    jp = Path(_state.get("last_journal_path") or default_journal_path())
+    refresh_journal_from_disk(jp)
+    closed = int(_state.get("paper_closed_today") or 0)
+
+    perf = get_last_paper_performance()
+    win_rate_approx: float | None = None
+    paper_performance_summary: dict[str, Any] | None = None
+    if isinstance(perf, dict):
+        keys = ("n_closes", "win_rate_ratio", "profit_factor", "net_realized_pnl_usd", "max_drawdown_usd")
+        paper_performance_summary = {k: perf[k] for k in keys if k in perf}
+        wr = perf.get("win_rate_ratio")
+        if isinstance(wr, (int, float)) and math.isfinite(float(wr)):
+            win_rate_approx = float(wr)
+    iv_quality_tier = _iv_rank_quality_tier(briefing)
+    trades_completed_total = closed
+    if isinstance(paper_performance_summary, dict):
+        n_closes = paper_performance_summary.get("n_closes")
+        if isinstance(n_closes, (int, float)):
+            trades_completed_total = int(n_closes)
+    if force_no:
+        status = "NO-GO"
+    elif entry_allowed and len(plan.get("pipeline_quality_flags") or []) > 4:
+        status = "DEGRADED"
+    elif entry_allowed:
+        status = "GO"
+    else:
+        status = "NO-GO"
+
+    grafana_url = os.environ.get("ATLAS_GRAFANA_BASE_URL", "http://localhost:3002").rstrip("/")
+    dashboard_uid = "atlas-options-health"
+    signals_uid = "atlas-options-signals-intent"
+    paper_uid = "atlas-options-paper-performance"
+    return {
+        "ok": True,
+        "automation_mode": "paper_only",
+        "go_nogo_label": go_label,
+        "go_nogo_gauge_hint": (
+            0.0
+            if force_no
+            else (
+                0.5
+                if entry_allowed
+                and len(plan.get("pipeline_quality_flags") or []) > 4
+                else (1.0 if entry_allowed else 0.0)
+            )
+        ),
+        "symbol": plan.get("symbol"),
+        "iv_rank_current": iv_rank,
+        "iv_rank_quality_tier": iv_quality_tier,
+        "iv_rank_quality_score": get_last_iv_rank_quality_score(),
+        "win_rate_approx": win_rate_approx,
+        "paper_performance_summary": paper_performance_summary,
+        "paper_trades_closed_today": closed,
+        "paper_trades_target": target,
+        "paper_trades_progress_pct": min(100.0, 100.0 * closed / target) if target else 0.0,
+        "grafana_health_dashboard_url": f"{grafana_url}/d/{dashboard_uid}/options-engine-health",
+        "grafana_signals_intent_dashboard_url": f"{grafana_url}/d/{signals_uid}/options-engine-signals-intent",
+        "grafana_paper_performance_dashboard_url": f"{grafana_url}/d/{paper_uid}/options-engine-paper-performance",
+        "last_updated_utc": datetime.now(timezone.utc).isoformat(),
+        "options_self_audit": get_last_options_self_audit(),
+        "sentinel_snapshot": get_last_sentinel_snapshot(),
+        "options_engine": {
+            "status": status,
+            "trades_completed_total": trades_completed_total,
+            "trades_closed_today": closed,
+            "trades_target": target,
+            "wr_basic": None if paper_performance_summary is None else paper_performance_summary.get("win_rate_ratio"),
+            "pf_basic": None if paper_performance_summary is None else paper_performance_summary.get("profit_factor"),
+            "iv_rank_current": iv_rank if isinstance(iv_rank, (int, float)) else None,
+            "iv_rank_quality_tier": iv_quality_tier,
+            "iv_rank_quality_score": get_last_iv_rank_quality_score(),
+        },
+    }

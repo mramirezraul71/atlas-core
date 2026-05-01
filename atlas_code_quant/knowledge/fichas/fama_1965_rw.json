@@ -1,0 +1,37 @@
+{
+  "id": "fama_1965_rw",
+  "title": "Random Walks in Stock-Market Prices",
+  "authors": [
+    "Eugene F. Fama"
+  ],
+  "year": 1965,
+  "source": "Financial Analysts Journal",
+  "url": "https://www.jstor.org/stable/4469865",
+  "category": "CAT1",
+  "topic": "random_walk",
+  "subtopics": [
+    "market_efficiency",
+    "price_prediction",
+    "EMH"
+  ],
+  "timeframes": [
+    "all"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "statistical_analysis",
+  "key_findings": "Los cambios sucesivos de precios son estadísticamente independientes bajo la hipótesis de mercado eficiente. El precio incorpora toda la información disponible de forma inmediata. La predicción sistemática de retornos futuros a partir de retornos pasados no sería posible.",
+  "limitations": "Aplica en mercados perfectamente eficientes. En la práctica, la microestructura, los costos de transacción y los sesgos conductuales generan desviaciones explotables temporalmente.",
+  "atlas_utility": "Base de contraste: cualquier señal del scanner debe superar el benchmark de caminata aleatoria antes de considerarse con edge real. IC del scanner mide esto directamente.",
+  "confidence_level": "high",
+  "scanner_methods": [],
+  "tags": [
+    "eficiencia",
+    "baseline",
+    "classical",
+    "EMH",
+    "null_hypothesis"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.908650+00:00"
+}

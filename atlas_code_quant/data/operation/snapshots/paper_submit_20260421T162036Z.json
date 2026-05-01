@@ -1,0 +1,59 @@
+{
+  "captured_at": "2026-04-21T16:20:36.550360",
+  "provider": "direct_nexus",
+  "operator_present": true,
+  "screen_integrity_ok": true,
+  "notes": "",
+  "capture_path": null,
+  "meta_path": null,
+  "capture_ok": false,
+  "bridge_status": {
+    "ok": false
+  },
+  "capture_backend": "direct_nexus",
+  "capture_target": "nexus:camera",
+  "screen_target": {
+    "x": 960.0,
+    "y": 540.0,
+    "zoom": 1.0
+  },
+  "calib_path": "C:\\ATLAS_PUSH\\config\\screen_gaze_calibration.json",
+  "source": "camera",
+  "gaze": {
+    "ok": false,
+    "ms": 6890,
+    "pose": {
+      "pan": 0.0,
+      "tilt": 0.0,
+      "zoom": 1.0,
+      "focus_x": 0.5,
+      "focus_y": 0.5
+    },
+    "error": "HTTP Error 503: Service Unavailable",
+    "url": "http://127.0.0.1:8002/api/vision/snapshot?source=camera&focus_x=0.500&focus_y=0.500&zoom=1.000&enhance=max",
+    "screen_target": {
+      "x": 960.0,
+      "y": 540.0,
+      "u": 0.5,
+      "v": 0.5
+    },
+    "neck_pose": {
+      "neck_yaw": 0.0,
+      "neck_pitch": 0.0,
+      "zoom": 1.0
+    },
+    "calibration": {
+      "W": 1920,
+      "H": 1080,
+      "zoom_center": 1.0
+    },
+    "calibration_path": "C:\\ATLAS_PUSH\\config\\screen_gaze_calibration.json"
+  },
+  "capture": {
+    "ok": false,
+    "error": "screen_deps_missing",
+    "target": "nexus:camera"
+  },
+  "resource_id": null,
+  "capture_error": "screen_deps_missing"
+}

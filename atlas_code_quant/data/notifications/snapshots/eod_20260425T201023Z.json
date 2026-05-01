@@ -1,0 +1,60 @@
+{
+  "kind": "eod",
+  "generated_at": "2026-04-25T20:10:09.092260+00:00",
+  "prioritized": {
+    "kind": "eod",
+    "headline": "Cierre de sesi\u00f3n \u2014 resumen operativo ATLAS Quant",
+    "opportunities": [],
+    "risks": [
+      "Failsafe activo: safe_default_bootstrap",
+      "Learning: pocas operaciones reconciliadas a\u00fan",
+      "EoD: PnL diario estimado sin match exacto de sesion; revisar timezone/journal antes de usarlo contablemente."
+    ],
+    "positions_focus": [
+      {
+        "symbol": "OS",
+        "unrealized_pnl": -720.6,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "warming_up",
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-25T20:05:14.447118+00:00"
+      }
+    },
+    "session_plan": [
+      "Reforzar lo que funciona: equity_long PF\u2248999.0",
+      "Vigilar o recortar: untracked PF\u22480.0",
+      "Revisar causas de salida en journal y ajustar governance si hay salidas reactivas."
+    ],
+    "open_close_criteria": {},
+    "metrics": {
+      "pnl_day_estimate": 0.0,
+      "pnl_day_session_date": "2026-04-25",
+      "pnl_day_matched_date": "2026-04-13",
+      "pnl_day_match_source": "latest_row_fallback",
+      "pnl_day_timezone": "America/New_York",
+      "trades_analytics_rows": 6807,
+      "r_distribution_summary": "{'values': [-1.99, -1.98, -2.04, -2.0, -2.05, -2.03, -2.0, -1.91, -1.98, -2.0, -1.96, -2.0, -1.96, -2.0, -2.2, -1.93, -1.99, -2.06, -2.02, -1.99, -1.98, -2.04, -2.0, -2.05, -2.03, -2.0, -1.91, -1.98, "
+    },
+    "raw_refs": {
+      "analytics_generated_at": "2026-04-25T20:10:13.833035+00:00",
+      "eod_day_match": {
+        "session_day": "2026-04-25",
+        "matched_day": "2026-04-13",
+        "match_source": "latest_row_fallback",
+        "timezone": "America/New_York"
+      }
+    }
+  },
+  "dispatch": {
+    "fingerprint": "007bfca214d08abd76bd",
+    "ok": true,
+    "detail": "sent"
+  }
+}

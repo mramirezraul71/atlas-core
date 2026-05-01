@@ -1,0 +1,158 @@
+{
+  "kind": "premarket",
+  "generated_at": "2026-04-14T12:00:38.776965+00:00",
+  "prioritized": {
+    "kind": "premarket",
+    "headline": "Preapertura \u2014 briefing operativo ATLAS Quant",
+    "opportunities": [
+      {
+        "symbol": "BGC",
+        "selection_score": 81.34,
+        "timeframe": "1h",
+        "method": null,
+        "win_rate_local": 67.86,
+        "profit_factor_local": 2.672,
+        "expectancy_hint": null
+      },
+      {
+        "symbol": "BGC",
+        "selection_score": 80.12,
+        "timeframe": "15m",
+        "method": null,
+        "win_rate_local": 64.49,
+        "profit_factor_local": 3.38,
+        "expectancy_hint": null
+      },
+      {
+        "symbol": "BGC",
+        "selection_score": 78.3,
+        "timeframe": "5m",
+        "method": null,
+        "win_rate_local": 63.41,
+        "profit_factor_local": 4.154,
+        "expectancy_hint": null
+      },
+      {
+        "symbol": "BGS",
+        "selection_score": 74.47,
+        "timeframe": "15m",
+        "method": null,
+        "win_rate_local": 57.89,
+        "profit_factor_local": 2.437,
+        "expectancy_hint": null
+      },
+      {
+        "symbol": "BHE",
+        "selection_score": 72.29,
+        "timeframe": "4h",
+        "method": null,
+        "win_rate_local": 58.33,
+        "profit_factor_local": 1.924,
+        "expectancy_hint": null
+      }
+    ],
+    "risks": [],
+    "positions_focus": [
+      {
+        "symbol": "OS",
+        "unrealized_pnl": -720.6,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ALM",
+        "unrealized_pnl": 123.12,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AAOI",
+        "unrealized_pnl": 76.76,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AVT",
+        "unrealized_pnl": 72.57,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ARW",
+        "unrealized_pnl": 67.8,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ALAB",
+        "unrealized_pnl": 67.575,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AAP",
+        "unrealized_pnl": 67.2,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ADTN",
+        "unrealized_pnl": 59.55,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "ready",
+      "phase_notes": [],
+      "orchestrator": {
+        "reconcile_count": 215,
+        "trades_processed_total": 43000,
+        "last_ic_by_method": {},
+        "readiness_live": null
+      },
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-14T11:57:34.002347+00:00"
+      },
+      "policy_can_weight": false
+    },
+    "session_plan": [
+      "1) Confirmar readiness y visi\u00f3n antes de tama\u00f1os.",
+      "2) Priorizar revisi\u00f3n: BGC (score 81.34) alineado con contexto y pol\u00edtica IC.",
+      "3) Mantener disciplina de salida (governance + time stop).",
+      "4) Registrar decisiones en journal para cerrar el loop de aprendizaje."
+    ],
+    "open_close_criteria": {
+      "open": [
+        "Readiness OK y proveedor de visi\u00f3n acorde al modo.",
+        "Se\u00f1al con score \u2265 umbral din\u00e1mico del scanner / pol\u00edtica IC.",
+        "Spread y drift de entrada dentro de l\u00edmites (entry validation)."
+      ],
+      "close": [
+        "Take profit / hard loss R seg\u00fan exit governance (TP R\u22480.75).",
+        "Time stop y trailing floor si aplica.",
+        "Cierre si thesis drift o heat de s\u00edmbolo excede pol\u00edtica."
+      ]
+    },
+    "metrics": {
+      "readiness_ready": true,
+      "scanner_running": true,
+      "open_positions": 55
+    },
+    "raw_refs": {
+      "generated_at": "2026-04-14T12:00:38.776965+00:00"
+    }
+  },
+  "context_summary": {
+    "readiness_ready": true,
+    "open_positions": 55
+  },
+  "dispatch": {
+    "fingerprint": "0c543f2d6390d7bb5f42",
+    "ok": true,
+    "detail": "sent"
+  }
+}

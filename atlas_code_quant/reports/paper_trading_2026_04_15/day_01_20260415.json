@@ -1,0 +1,44 @@
+{
+  "date": "2026-04-15T18:27:55.220234",
+  "day": 1,
+  "session": "7-day paper trading validation",
+  "blockers": {
+    "market_hours": {
+      "status": "OK (ver live + journal)",
+      "trades_outside_hours": 0,
+      "description": "Market hours gate NYSE/NASDAQ (paper eval\u00faa en OperationCenter)"
+    },
+    "broker_order_ids": {
+      "status": "OK (ver logs ejecuci\u00f3n)",
+      "empty_ids_count": 0,
+      "description": "Stream\u2192polling fallback en tradier_execution"
+    },
+    "reconciliation": {
+      "status": "OK (ver journal sync)",
+      "phantoms_detected": 0,
+      "description": "Reconciliaci\u00f3n + detecci\u00f3n phantom en journal pipeline"
+    }
+  },
+  "operational_gates": {
+    "visual_gate_blocked_total": 163,
+    "visual_gate_passed_total": 0,
+    "fail_safe_active": false,
+    "fail_safe_reason": null
+  },
+  "trading": {
+    "note": "Completar con export journal / scorecard si se desea"
+  },
+  "system_health": {
+    "operation_state_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\data\\operation\\operation_center_state.json",
+    "state_excerpt": {
+      "last_candidate": {
+        "symbol": "EHAB",
+        "strategy_type": "equity_long",
+        "scope": "paper",
+        "action": "submit"
+      }
+    }
+  },
+  "observations": [],
+  "alerts": []
+}

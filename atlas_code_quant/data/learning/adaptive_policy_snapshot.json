@@ -1,0 +1,82 @@
+{
+  "generated_at": "2026-04-27T01:39:37.132105+00:00",
+  "enabled": true,
+  "learning_allowed": false,
+  "window_days": 180,
+  "effective_cutoff": "2026-03-30T00:00:00",
+  "sample_count": 0,
+  "raw_sample_count": 2000,
+  "quality": {
+    "status": "critical",
+    "score_pct": 60.0,
+    "learning_allowed": false,
+    "total_closed_count": 2000,
+    "row_level_clean_count": 1540,
+    "trusted_closed_count": 0,
+    "row_level_clean_ratio_pct": 77.0,
+    "trusted_ratio_pct": 0.0,
+    "blocked_reasons": [
+      "outlier_close_day_concentration",
+      "quality_score_below_threshold"
+    ],
+    "row_reason_counts": {
+      "too_short_duration": 460,
+      "negative_duration": 47
+    },
+    "metrics": {
+      "negative_entry_price_count": 0,
+      "negative_exit_price_count": 0,
+      "short_duration_count": 460,
+      "max_outlier_day_share_pct": 100.0
+    },
+    "outlier_days": [
+      {
+        "date": "2026-04-13",
+        "count": 1540,
+        "share_pct": 100.0
+      }
+    ],
+    "strategy_anomalies": []
+  },
+  "scopes": {
+    "all": {
+      "scope": "all",
+      "sample_count": 0,
+      "win_rate_pct": 0.0,
+      "profit_factor": 0.0,
+      "expectancy_pct": 0.0,
+      "risk_multiplier": 1.0,
+      "strategy_biases": {},
+      "symbol_biases": {},
+      "directional_symbol_biases": {},
+      "top_positive": [],
+      "top_negative": []
+    },
+    "paper": {
+      "scope": "paper",
+      "sample_count": 0,
+      "win_rate_pct": 0.0,
+      "profit_factor": 0.0,
+      "expectancy_pct": 0.0,
+      "risk_multiplier": 1.0,
+      "strategy_biases": {},
+      "symbol_biases": {},
+      "directional_symbol_biases": {},
+      "top_positive": [],
+      "top_negative": []
+    },
+    "live": {
+      "scope": "live",
+      "sample_count": 0,
+      "win_rate_pct": 0.0,
+      "profit_factor": 0.0,
+      "expectancy_pct": 0.0,
+      "risk_multiplier": 1.0,
+      "strategy_biases": {},
+      "symbol_biases": {},
+      "directional_symbol_biases": {},
+      "top_positive": [],
+      "top_negative": []
+    }
+  }
+}

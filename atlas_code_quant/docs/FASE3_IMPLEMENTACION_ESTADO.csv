@@ -1,0 +1,8 @@
+Componente,Archivo,Lineas,Status,Dependencias
+CNN-LSTM Pattern Recognition,learning/cnn_lstm_pattern.py,400,Implementado,TensorFlow 2.x + GPU (opt)
+Prophet Forecasting,forecasting/prophet_detector.py,250,Implementado,pip install prophet
+On-Chain Metrics (Cripto),market_context/onchain_metrics.py,300,Implementado,Glassnode API (opt) o Blockchain.com
+Fundamental Score (Equities),market_context/fundamental_score.py,250,Implementado,yfinance (free)
+Scanner Integration,scanner/opportunity_scanner.py,+250 integracion,Completo (gates + scoring),"Path, AssetClass"
+Tests Unitarios,tests/test_learning/*.py + test_market_context/*.py,~350 total,11+ tests suite Fase 3,pytest
+Tests Integracion,tests/test_scanner/test_phase3_integration.py,~150 total,"4 OK, 1 skipped (Prophet)",pytest + deps opcionales

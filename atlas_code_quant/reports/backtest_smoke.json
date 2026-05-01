@@ -1,0 +1,76 @@
+{
+  "result": {
+    "metrics": {
+      "total_trades": 25,
+      "winning_trades": 11,
+      "losing_trades": 14,
+      "win_rate_pct": 44.0,
+      "profit_factor": 0.2718863998881374,
+      "sharpe_ratio": -12.716867034564562,
+      "max_drawdown_pct": -4.16219128495859,
+      "total_return_pct": -3.830826369792012,
+      "avg_win_pct": 0.26320151758450555,
+      "avg_loss_pct": -0.7604716880313103,
+      "best_trade_pct": 0.6894823242143882,
+      "worst_trade_pct": -2.0019800000000045,
+      "consecutive_wins": 3,
+      "consecutive_losses": 6,
+      "equity_final": 9616.917363020799
+    },
+    "decision": {
+      "go_live_approved": false,
+      "reasons": [
+        "Win rate < 58%",
+        "Sharpe < 1.0",
+        "Profit factor < 1.25",
+        "Consecutive losses >= 5",
+        "Trade count < 30"
+      ],
+      "metrics": {
+        "total_trades": 25,
+        "winning_trades": 11,
+        "losing_trades": 14,
+        "win_rate_pct": 44.0,
+        "profit_factor": 0.2718863998881374,
+        "sharpe_ratio": -12.716867034564562,
+        "max_drawdown_pct": -4.16219128495859,
+        "total_return_pct": -3.830826369792012,
+        "avg_win_pct": 0.26320151758450555,
+        "avg_loss_pct": -0.7604716880313103,
+        "best_trade_pct": 0.6894823242143882,
+        "worst_trade_pct": -2.0019800000000045,
+        "consecutive_wins": 3,
+        "consecutive_losses": 6,
+        "equity_final": 9616.917363020799
+      }
+    },
+    "best_result": {
+      "combo": {
+        "signal_strength_threshold": 0.52,
+        "risk_per_trade": 0.01,
+        "max_trades_per_cycle": 3,
+        "reward_to_risk": 1.5
+      },
+      "metrics": {
+        "total_trades": 25,
+        "winning_trades": 11,
+        "losing_trades": 14,
+        "win_rate_pct": 44.0,
+        "profit_factor": 0.2718863998881374,
+        "sharpe_ratio": -12.716867034564562,
+        "max_drawdown_pct": -4.16219128495859,
+        "total_return_pct": -3.830826369792012,
+        "avg_win_pct": 0.26320151758450555,
+        "avg_loss_pct": -0.7604716880313103,
+        "best_trade_pct": 0.6894823242143882,
+        "worst_trade_pct": -2.0019800000000045,
+        "consecutive_wins": 3,
+        "consecutive_losses": 6,
+        "equity_final": 9616.917363020799
+      },
+      "score": 0.09498178435379195
+    },
+    "trades_count": 25
+  },
+  "report_html": "C:\\ATLAS_PUSH\\atlas_code_quant\\reports\\backtest_2026-04-15.html"
+}

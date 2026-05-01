@@ -107,3 +107,8 @@ nexus/**/*.log
 nexus/**/*.db
 nexus/**/*.db-journal
 nexus/**/__pycache__/
+
+# Code Quant runtime (local; no versionar bitácoras ni DBs pesadas)
+atlas_code_quant/logs/
+atlas_code_quant/data/journal/
+atlas_code_quant/data/operation/brain_audit_log.jsonl

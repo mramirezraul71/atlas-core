@@ -1,0 +1,118 @@
+{
+  "kind": "premarket",
+  "generated_at": "2026-04-20T12:41:39.823931+00:00",
+  "prioritized": {
+    "kind": "premarket",
+    "headline": "Preapertura \u2014 briefing operativo ATLAS Quant",
+    "opportunities": [],
+    "risks": [
+      "Failsafe activo: safe_default_bootstrap",
+      "Aprendizaje: reconciliaci\u00f3n posiblemente detenida o lenta",
+      "Learning: loop no marcado como running"
+    ],
+    "positions_focus": [
+      {
+        "symbol": "AEHR",
+        "unrealized_pnl": 1188.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ALM",
+        "unrealized_pnl": 1030.32,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ADTN",
+        "unrealized_pnl": 849.58,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "OS",
+        "unrealized_pnl": -720.6,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AMKR",
+        "unrealized_pnl": 507.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ATEN",
+        "unrealized_pnl": 384.88,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "APGE",
+        "unrealized_pnl": 306.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AVGX",
+        "unrealized_pnl": 273.7,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "stalled",
+      "phase_notes": [
+        "loop no marcado como running"
+      ],
+      "orchestrator": {
+        "reconcile_count": 0,
+        "trades_processed_total": 0,
+        "last_ic_by_method": {},
+        "readiness_live": null
+      },
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-20T12:41:36.006047+00:00"
+      },
+      "policy_can_weight": false
+    },
+    "session_plan": [
+      "1) Confirmar readiness y visi\u00f3n antes de tama\u00f1os.",
+      "2) Sin candidatos destacados del scanner; operar solo setups de alta convicci\u00f3n manual.",
+      "3) Mantener disciplina de salida (governance + time stop).",
+      "4) Registrar decisiones en journal para cerrar el loop de aprendizaje."
+    ],
+    "open_close_criteria": {
+      "open": [
+        "Readiness OK y proveedor de visi\u00f3n acorde al modo.",
+        "Se\u00f1al con score \u2265 umbral din\u00e1mico del scanner / pol\u00edtica IC.",
+        "Spread y drift de entrada dentro de l\u00edmites (entry validation)."
+      ],
+      "close": [
+        "Take profit / hard loss R seg\u00fan exit governance (TP R\u22480.75).",
+        "Time stop y trailing floor si aplica.",
+        "Cierre si thesis drift o heat de s\u00edmbolo excede pol\u00edtica."
+      ]
+    },
+    "metrics": {
+      "readiness_ready": true,
+      "scanner_running": false,
+      "open_positions": 136
+    },
+    "raw_refs": {
+      "generated_at": "2026-04-20T12:41:39.823931+00:00"
+    }
+  },
+  "context_summary": {
+    "readiness_ready": true,
+    "open_positions": 136
+  },
+  "dispatch": {
+    "fingerprint": "49deeab2d367b8fa8bc2",
+    "ok": true,
+    "detail": "sent"
+  }
+}

@@ -68,3 +68,8 @@ Si la cámara está deshabilitada a propósito, no debe generar `CAMERA_UNAVAILA
 - `atlas_adapter/routes/radar_quant_mapper.py`: omite degradación de cámara si está intencionalmente apagada.
 
 Fusionar este worktree a la rama principal cuando valides en runtime (8791 / 8795).
+
+## Implementación motor unificado (2026-05-01)
+
+- `atlas_code_quant.backtest.unified_engine`: LEAN CLI (`ATLAS_LEAN_USE_CLI`) → adapter F13 → degradación GBM (`ATLAS_LEAN_DEGRADE_TO_GBM`).
+- Tests: `tests/atlas_code_quant/test_plan_radar_lean_pipeline.py`.

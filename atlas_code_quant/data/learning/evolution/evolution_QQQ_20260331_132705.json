@@ -1,0 +1,475 @@
+{
+  "symbol": "QQQ",
+  "generations": 25,
+  "population_size": 40,
+  "total_backtests": 1000,
+  "duration_sec": 0.92,
+  "best_genomes": [
+    {
+      "genome_id": "GEN-7bfeaacc46",
+      "generation": 24,
+      "genes": {
+        "rsi_period": 8,
+        "rsi_oversold": 17,
+        "rsi_overbought": 64,
+        "ma_fast": 14,
+        "ma_slow": 71,
+        "atr_period": 15,
+        "atr_sl_mult": 1.45,
+        "atr_tp_mult": 3.6,
+        "bb_period": 12,
+        "bb_std": 2.78,
+        "macd_fast": 16,
+        "macd_slow": 28,
+        "macd_signal": 11,
+        "volume_sma": 20,
+        "volume_threshold": 1.83
+      },
+      "entry_rules": [
+        "rsi_divergence"
+      ],
+      "exit_rules": [
+        "atr_trailing_stop"
+      ],
+      "sharpe": -3.598,
+      "ic": 0.3364,
+      "win_rate": 52.38,
+      "profit_factor": 0.593,
+      "total_trades": 21,
+      "max_drawdown": -9.17,
+      "expectancy_r": -0.1274,
+      "parents": [
+        "GEN-62315eee3e",
+        "GEN-841cfd8a0a"
+      ],
+      "mutation_log": [],
+      "fitness": 9.0094,
+      "passes_filter": "False"
+    },
+    {
+      "genome_id": "GEN-1223faf4f0",
+      "generation": 24,
+      "genes": {
+        "rsi_period": 8,
+        "rsi_oversold": 17,
+        "rsi_overbought": 62,
+        "ma_fast": 14,
+        "ma_slow": 71,
+        "atr_period": 15,
+        "atr_sl_mult": 1.45,
+        "atr_tp_mult": 3.6,
+        "bb_period": 12,
+        "bb_std": 2.78,
+        "macd_fast": 16,
+        "macd_slow": 28,
+        "macd_signal": 11,
+        "volume_sma": 23,
+        "volume_threshold": 1.91
+      },
+      "entry_rules": [
+        "rsi_divergence"
+      ],
+      "exit_rules": [
+        "atr_trailing_stop"
+      ],
+      "sharpe": -3.598,
+      "ic": 0.3364,
+      "win_rate": 52.38,
+      "profit_factor": 0.593,
+      "total_trades": 21,
+      "max_drawdown": -9.17,
+      "expectancy_r": -0.1274,
+      "parents": [
+        "GEN-7bfeaacc46"
+      ],
+      "mutation_log": [
+        "rsi_overbought: 64 -> 62",
+        "atr_period: 15 -> 15",
+        "volume_sma: 20 -> 23",
+        "volume_threshold: 1.83 -> 1.91"
+      ],
+      "fitness": 9.0094,
+      "passes_filter": "False"
+    },
+    {
+      "genome_id": "GEN-02a299ebf2",
+      "generation": 24,
+      "genes": {
+        "rsi_period": 8,
+        "rsi_oversold": 17,
+        "rsi_overbought": 62,
+        "ma_fast": 14,
+        "ma_slow": 71,
+        "atr_period": 15,
+        "atr_sl_mult": 1.45,
+        "atr_tp_mult": 3.6,
+        "bb_period": 12,
+        "bb_std": 2.78,
+        "macd_fast": 16,
+        "macd_slow": 28,
+        "macd_signal": 11,
+        "volume_sma": 20,
+        "volume_threshold": 1.83
+      },
+      "entry_rules": [
+        "rsi_divergence"
+      ],
+      "exit_rules": [
+        "atr_trailing_stop",
+        "ma_cross_down"
+      ],
+      "sharpe": -3.598,
+      "ic": 0.3364,
+      "win_rate": 52.38,
+      "profit_factor": 0.593,
+      "total_trades": 21,
+      "max_drawdown": -9.17,
+      "expectancy_r": -0.1274,
+      "parents": [
+        "GEN-1223faf4f0",
+        "GEN-841cfd8a0a"
+      ],
+      "mutation_log": [],
+      "fitness": 9.0094,
+      "passes_filter": "False"
+    },
+    {
+      "genome_id": "GEN-a0508e1ee9",
+      "generation": 24,
+      "genes": {
+        "rsi_period": 8,
+        "rsi_oversold": 17,
+        "rsi_overbought": 64,
+        "ma_fast": 14,
+        "ma_slow": 71,
+        "atr_period": 15,
+        "atr_sl_mult": 1.45,
+        "atr_tp_mult": 3.6,
+        "bb_period": 12,
+        "bb_std": 2.85,
+        "macd_fast": 16,
+        "macd_slow": 28,
+        "macd_signal": 11,
+        "volume_sma": 20,
+        "volume_threshold": 1.64
+      },
+      "entry_rules": [
+        "rsi_divergence"
+      ],
+      "exit_rules": [
+        "atr_trailing_stop"
+      ],
+      "sharpe": -3.598,
+      "ic": 0.3364,
+      "win_rate": 52.38,
+      "profit_factor": 0.593,
+      "total_trades": 21,
+      "max_drawdown": -9.17,
+      "expectancy_r": -0.1274,
+      "parents": [
+        "GEN-7bfeaacc46"
+      ],
+      "mutation_log": [
+        "bb_std: 2.78 -> 2.85",
+        "volume_threshold: 1.83 -> 1.64"
+      ],
+      "fitness": 9.0094,
+      "passes_filter": "False"
+    },
+    {
+      "genome_id": "GEN-933d22ab13",
+      "generation": 24,
+      "genes": {
+        "rsi_period": 8,
+        "rsi_oversold": 17,
+        "rsi_overbought": 64,
+        "ma_fast": 14,
+        "ma_slow": 71,
+        "atr_period": 15,
+        "atr_sl_mult": 1.45,
+        "atr_tp_mult": 3.6,
+        "bb_period": 12,
+        "bb_std": 2.82,
+        "macd_fast": 16,
+        "macd_slow": 28,
+        "macd_signal": 11,
+        "volume_sma": 20,
+        "volume_threshold": 1.83
+      },
+      "entry_rules": [
+        "rsi_divergence"
+      ],
+      "exit_rules": [
+        "atr_trailing_stop"
+      ],
+      "sharpe": -3.598,
+      "ic": 0.3364,
+      "win_rate": 52.38,
+      "profit_factor": 0.593,
+      "total_trades": 21,
+      "max_drawdown": -9.17,
+      "expectancy_r": -0.1274,
+      "parents": [
+        "GEN-841cfd8a0a",
+        "GEN-7bfeaacc46"
+      ],
+      "mutation_log": [],
+      "fitness": 9.0094,
+      "passes_filter": "False"
+    }
+  ],
+  "passing_count": 0,
+  "passing_genomes": [],
+  "generation_stats": [
+    {
+      "generation": 0,
+      "best_fitness": -999.0,
+      "avg_fitness": -999.0,
+      "median_fitness": -999.0,
+      "passing": 0,
+      "best_sharpe": 0.0,
+      "best_ic": 0.0,
+      "best_trades": 0
+    },
+    {
+      "generation": 1,
+      "best_fitness": -0.791,
+      "avg_fitness": -974.0448,
+      "median_fitness": -999.0,
+      "passing": 0,
+      "best_sharpe": -3.579,
+      "best_ic": 0.0247,
+      "best_trades": 23
+    },
+    {
+      "generation": 2,
+      "best_fitness": 6.799,
+      "avg_fitness": -899.075,
+      "median_fitness": -999.0,
+      "passing": 0,
+      "best_sharpe": -3.579,
+      "best_ic": 0.2777,
+      "best_trades": 23
+    },
+    {
+      "generation": 3,
+      "best_fitness": 6.799,
+      "avg_fitness": -724.2508,
+      "median_fitness": -999.0,
+      "passing": 0,
+      "best_sharpe": -3.579,
+      "best_ic": 0.2777,
+      "best_trades": 23
+    },
+    {
+      "generation": 4,
+      "best_fitness": 7.954,
+      "avg_fitness": -148.8359,
+      "median_fitness": -0.9542,
+      "passing": 0,
+      "best_sharpe": -3.579,
+      "best_ic": 0.3162,
+      "best_trades": 23
+    },
+    {
+      "generation": 5,
+      "best_fitness": 8.185,
+      "avg_fitness": -169.3775,
+      "median_fitness": 6.799,
+      "passing": 0,
+      "best_sharpe": -3.999,
+      "best_ic": 0.3152,
+      "best_trades": 23
+    },
+    {
+      "generation": 6,
+      "best_fitness": 8.8144,
+      "avg_fitness": -143.466,
+      "median_fitness": 7.4752,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3299,
+      "best_trades": 21
+    },
+    {
+      "generation": 7,
+      "best_fitness": 9.0094,
+      "avg_fitness": -143.2658,
+      "median_fitness": 7.954,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 8,
+      "best_fitness": 9.0094,
+      "avg_fitness": -167.7847,
+      "median_fitness": 8.8144,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 9,
+      "best_fitness": 9.0094,
+      "avg_fitness": -243.302,
+      "median_fitness": 8.8144,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 10,
+      "best_fitness": 9.0094,
+      "avg_fitness": -117.2513,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 11,
+      "best_fitness": 9.0094,
+      "avg_fitness": -67.4801,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 12,
+      "best_fitness": 9.0094,
+      "avg_fitness": -67.2585,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 13,
+      "best_fitness": 9.0094,
+      "avg_fitness": -91.9987,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 14,
+      "best_fitness": 9.0094,
+      "avg_fitness": -117.402,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 15,
+      "best_fitness": 9.0094,
+      "avg_fitness": -67.098,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 16,
+      "best_fitness": 9.0094,
+      "avg_fitness": -218.1678,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 17,
+      "best_fitness": 9.0094,
+      "avg_fitness": -192.7647,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 18,
+      "best_fitness": 9.0094,
+      "avg_fitness": -117.5267,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 19,
+      "best_fitness": 9.0094,
+      "avg_fitness": -318.9669,
+      "median_fitness": 8.9899,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 20,
+      "best_fitness": 9.0094,
+      "avg_fitness": -142.6582,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 21,
+      "best_fitness": 9.0094,
+      "avg_fitness": -67.2683,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 22,
+      "best_fitness": 9.0094,
+      "avg_fitness": -92.4316,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 23,
+      "best_fitness": 9.0094,
+      "avg_fitness": -143.0637,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    },
+    {
+      "generation": 24,
+      "best_fitness": 9.0094,
+      "avg_fitness": -117.6044,
+      "median_fitness": 9.0094,
+      "passing": 0,
+      "best_sharpe": -3.598,
+      "best_ic": 0.3364,
+      "best_trades": 21
+    }
+  ]
+}

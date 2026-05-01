@@ -1,0 +1,78 @@
+{
+  "kind": "premarket",
+  "generated_at": "2026-04-27T12:02:20.538662+00:00",
+  "prioritized": {
+    "kind": "premarket",
+    "headline": "Preapertura \u2014 briefing operativo ATLAS Quant",
+    "opportunities": [],
+    "risks": [
+      "Readiness: vision provider_ready=false; revisa POST /operation/vision/provider o arranque (QUANT_DEFAULT_VISION_PROVIDER).",
+      "Failsafe activo: safe_default_bootstrap",
+      "Scanner: radar_http_error_503:{\"detail\":{\"ok\":false,\"code\":\"RADAR_MULTI_SYMBOL_DISABLED\",\"message\":\"Radar multi-s\u00edmbolo desactivado en este servidor. Establezca ATLAS_RADAR_MULTI_SYMBOL_ENABLED=1 para habilitar estos endpoints.\"}}",
+      "Aprendizaje: reconciliaci\u00f3n posiblemente detenida o lenta",
+      "Learning: loop no marcado como running"
+    ],
+    "positions_focus": [
+      {
+        "symbol": "OS",
+        "unrealized_pnl": -720.6,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "stalled",
+      "phase_notes": [
+        "loop no marcado como running"
+      ],
+      "orchestrator": {
+        "reconcile_count": 0,
+        "trades_processed_total": 0,
+        "last_ic_by_method": {},
+        "readiness_live": null
+      },
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-27T01:39:37.132105+00:00"
+      },
+      "policy_can_weight": false
+    },
+    "session_plan": [
+      "1) Resolver readiness antes de operar tama\u00f1o real.",
+      "2) Sin candidatos destacados del scanner; operar solo setups de alta convicci\u00f3n manual.",
+      "3) Mantener disciplina de salida (governance + time stop).",
+      "4) Registrar decisiones en journal para cerrar el loop de aprendizaje."
+    ],
+    "open_close_criteria": {
+      "open": [
+        "Readiness OK y proveedor de visi\u00f3n acorde al modo.",
+        "Se\u00f1al con score \u2265 umbral din\u00e1mico del scanner / pol\u00edtica IC.",
+        "Spread y drift de entrada dentro de l\u00edmites (entry validation)."
+      ],
+      "close": [
+        "Take profit / hard loss R seg\u00fan exit governance (TP R\u22480.75).",
+        "Time stop y trailing floor si aplica.",
+        "Cierre si thesis drift o heat de s\u00edmbolo excede pol\u00edtica."
+      ]
+    },
+    "metrics": {
+      "readiness_ready": false,
+      "scanner_running": false,
+      "open_positions": 1
+    },
+    "raw_refs": {
+      "generated_at": "2026-04-27T12:02:20.538662+00:00"
+    }
+  },
+  "context_summary": {
+    "readiness_ready": false,
+    "open_positions": 1
+  },
+  "dispatch": {
+    "fingerprint": "5040b8a8c68971ec6df0",
+    "ok": true,
+    "detail": "sent"
+  }
+}

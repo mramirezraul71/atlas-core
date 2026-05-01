@@ -1,0 +1,62 @@
+{
+  "kind": "eod",
+  "generated_at": "2026-04-26T20:15:22.937137+00:00",
+  "prioritized": {
+    "kind": "eod",
+    "headline": "Cierre de sesi\u00f3n \u2014 resumen operativo ATLAS Quant",
+    "opportunities": [],
+    "risks": [
+      "Readiness: vision provider_ready=false; revisa POST /operation/vision/provider o arranque (QUANT_DEFAULT_VISION_PROVIDER).",
+      "Failsafe activo: safe_default_bootstrap",
+      "Aprendizaje: reconciliaci\u00f3n posiblemente detenida o lenta",
+      "Learning: loop no marcado como running",
+      "EoD: PnL diario estimado sin match exacto de sesion; revisar timezone/journal antes de usarlo contablemente."
+    ],
+    "positions_focus": [
+      {
+        "symbol": "OS",
+        "unrealized_pnl": -720.6,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "stalled",
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-26T20:11:04.862899+00:00"
+      }
+    },
+    "session_plan": [
+      "Reforzar lo que funciona: equity_short PF\u2248999.0",
+      "Vigilar o recortar: untracked PF\u22480.0",
+      "Revisar causas de salida en journal y ajustar governance si hay salidas reactivas."
+    ],
+    "open_close_criteria": {},
+    "metrics": {
+      "pnl_day_estimate": 0.0,
+      "pnl_day_session_date": "2026-04-26",
+      "pnl_day_matched_date": "2026-04-13",
+      "pnl_day_match_source": "latest_row_fallback",
+      "pnl_day_timezone": "America/New_York",
+      "trades_analytics_rows": 6807,
+      "r_distribution_summary": "{'values': [-1.99, -1.98, -2.04, -2.0, -2.05, -2.03, -2.0, -1.91, -1.98, -2.0, -1.96, -2.0, -1.96, -2.0, -2.2, -1.93, -1.99, -2.06, -2.02, -1.99, -1.98, -2.04, -2.0, -2.05, -2.03, -2.0, -1.91, -1.98, "
+    },
+    "raw_refs": {
+      "analytics_generated_at": "2026-04-26T20:15:24.751193+00:00",
+      "eod_day_match": {
+        "session_day": "2026-04-26",
+        "matched_day": "2026-04-13",
+        "match_source": "latest_row_fallback",
+        "timezone": "America/New_York"
+      }
+    }
+  },
+  "dispatch": {
+    "fingerprint": "112397155de4989bf15d",
+    "ok": true,
+    "detail": "sent"
+  }
+}

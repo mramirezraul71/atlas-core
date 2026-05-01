@@ -1,0 +1,75 @@
+{
+  "kind": "premarket",
+  "generated_at": "2026-04-25T12:00:24.913041+00:00",
+  "prioritized": {
+    "kind": "premarket",
+    "headline": "Preapertura \u2014 briefing operativo ATLAS Quant",
+    "opportunities": [],
+    "risks": [
+      "Failsafe activo: safe_default_bootstrap",
+      "Learning: pocas operaciones reconciliadas a\u00fan"
+    ],
+    "positions_focus": [
+      {
+        "symbol": "OS",
+        "unrealized_pnl": -720.6,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "warming_up",
+      "phase_notes": [
+        "pocas operaciones reconciliadas a\u00fan"
+      ],
+      "orchestrator": {
+        "reconcile_count": 1,
+        "trades_processed_total": 0,
+        "last_ic_by_method": {},
+        "readiness_live": null
+      },
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-25T11:56:41.646174+00:00"
+      },
+      "policy_can_weight": false
+    },
+    "session_plan": [
+      "1) Confirmar readiness y visi\u00f3n antes de tama\u00f1os.",
+      "2) Sin candidatos destacados del scanner; operar solo setups de alta convicci\u00f3n manual.",
+      "3) Mantener disciplina de salida (governance + time stop).",
+      "4) Registrar decisiones en journal para cerrar el loop de aprendizaje."
+    ],
+    "open_close_criteria": {
+      "open": [
+        "Readiness OK y proveedor de visi\u00f3n acorde al modo.",
+        "Se\u00f1al con score \u2265 umbral din\u00e1mico del scanner / pol\u00edtica IC.",
+        "Spread y drift de entrada dentro de l\u00edmites (entry validation)."
+      ],
+      "close": [
+        "Take profit / hard loss R seg\u00fan exit governance (TP R\u22480.75).",
+        "Time stop y trailing floor si aplica.",
+        "Cierre si thesis drift o heat de s\u00edmbolo excede pol\u00edtica."
+      ]
+    },
+    "metrics": {
+      "readiness_ready": true,
+      "scanner_running": true,
+      "open_positions": 1
+    },
+    "raw_refs": {
+      "generated_at": "2026-04-25T12:00:24.913041+00:00"
+    }
+  },
+  "context_summary": {
+    "readiness_ready": true,
+    "open_positions": 1
+  },
+  "dispatch": {
+    "fingerprint": "a7e5803e926d3ffb9557",
+    "ok": true,
+    "detail": "sent"
+  }
+}

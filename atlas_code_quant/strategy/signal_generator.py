@@ -1,0 +1,896 @@
+"""Módulo 4 — Generador de Señales + Lógica de Entrada/Salida.
+
+Criterios de entrada (todos deben cumplirse):
+  1. Scanner: IV Rank >70 + IV/HV Ratio >1.2
+  2. Régimen: Bull/Bear/Sideways (confianza ≥65%)
+  3. RSI divergencia + MACD hist cruce + Volume spike >1.8×
+  4. CVD >+1σ (comprador) o <-1σ (vendedor)
+  5. Visual trigger: OCR confirma precio dentro del rango esperado
+
+Criterios de salida:
+  - TP: 2×ATR desde entrada
+  - SL: 2.5×ATR desde entrada
+  - Trailing: activo en régimen Trend
+  - Time exit: 5-20 días
+  - Divergencia opuesta: señal contraria cierra posición
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional
+
+logger = logging.getLogger("atlas.strategy.signals")
+
+
+class SignalType(str, Enum):
+    BUY  = "BUY"
+    SELL = "SELL"
+    FLAT = "FLAT"    # sin señal
+    EXIT = "EXIT"    # salir posición existente
+
+
+class ScoreTier(str, Enum):
+    """Tier de ejecución basado en signal_score final."""
+    FULL   = "FULL"    # score >= 0.75 → Kelly × hasta 2.0
+    NORMAL = "NORMAL"  # score >= 0.65 → Kelly base
+    SMALL  = "SMALL"   # score >= 0.55 → Kelly × 0.50
+    SKIP   = "SKIP"    # score <  0.55 → no ejecutar
+
+
+# ── Componentes del score final ───────────────────────────────────────────────
+
+from dataclasses import dataclass as _dc  # noqa: E402 (antes de otros imports)
+
+
+@_dc
+class SignalComponents:
+    """Entradas normalizadas para ``final_signal_score()``.
+
+    Todos los campos deberían estar en [0, 1]:
+      * ``motif_edge``       — edge_score de MotifLabService (0=bajista, 0.5=neutro, 1=alcista)
+      * ``tin_score``        — probabilidad de subida del TechnicalIndicatorNet
+      * ``mtf_coherence``    — coherencia multi-timeframe
+      * ``regime_confidence``— confianza del clasificador de régimen
+    """
+    motif_edge:         float = 0.5
+    tin_score:          float = 0.5
+    mtf_coherence:      float = 0.5
+    regime_confidence:  float = 0.5
+
+
+# Re-export para conveniencia — la lógica granular vive en position_manager.py
+from atlas_code_quant.execution.position_manager import SignalKind  # noqa: E402
+
+
+@dataclass
+class TradeSignal:
+    """Señal de trading generada por el motor de estrategia."""
+    symbol: str
+    signal_type: SignalType
+    timestamp: float
+    entry_price: float
+    take_profit: float
+    stop_loss: float
+    atr: float
+    confidence: float
+    regime: str = ""
+    strategy: str = ""
+    position_size: int = 0
+    kelly_fraction: float = 0.0
+    iv_rank: float = 0.0
+    cvd_delta: float = 0.0
+    rsi: float = 50.0
+    volume_ratio: float = 1.0
+    visual_confirmed: bool = False
+    exit_reason: str = ""
+    max_hold_days: int = 10
+    trailing_active: bool = False
+    metadata: dict = field(default_factory=dict)
+    # Tipo granular (opcional — no rompe código existente que no lo use)
+    signal_kind: str = SignalKind.FLAT
+    # ── Multi-asset (Fases 1-4) ────────────────────────────────────────────
+    asset_class: str = "equity_stock"          # AssetClass.value
+    use_options: bool = False                  # True → construir orden de opciones
+    option_strategy_type: str = ""             # StrategyType hint
+    preferred_dte_range: tuple = (14, 45)      # (min_dte, max_dte)
+    iv_hv_ratio: float = 1.0                   # IV / HV histórica
+
+
+@dataclass
+class OpenPosition:
+    """Posición abierta con estado de trailing y time exit."""
+    symbol: str
+    side: SignalType
+    entry_price: float
+    current_price: float
+    take_profit: float
+    stop_loss: float
+    trailing_stop: float
+    atr: float
+    quantity: int
+    opened_at: float
+    max_hold_days: int
+    strategy: str
+    highest_price: float = 0.0   # para trailing long
+    lowest_price: float = 999999.0  # para trailing short
+
+
+class SignalGenerator:
+    """Motor central de señales de trading.
+
+    Integra régimen ML, indicadores técnicos, CVD y confirmación visual
+    para generar señales de alta probabilidad.
+
+    Uso::
+
+        gen = SignalGenerator()
+        signal = gen.evaluate(
+            symbol="AAPL",
+            regime=regime_output,
+            tech=tech_snapshot,
+            cvd=cvd_snapshot,
+            iv=iv_metrics,
+            entry_price=185.50,
+            ocr_price=185.48,    # precio confirmado por OCR
+        )
+    """
+
+    # ── Umbrales de entrada ───────────────────────────────────────────────────
+    MIN_IV_RANK           = 30.0     # IV Rank mínimo para considerar (scanner ya filtra en 70)
+    MIN_IV_HV_RATIO       = 0.8      # IV/HV mínimo (bajado para no descartar señales válidas)
+    MIN_VOLUME_SPIKE      = 1.8      # multiplicador de volumen
+    MIN_MTF_COHERENCE     = 0.75     # coherencia multi-TF mínima para operar
+
+    # ── Umbrales de decisión opciones ────────────────────────────────────────
+    OPT_MIN_IV_RANK       = 40.0     # IV Rank mínimo para usar opciones
+    OPT_MIN_IV_HV_RATIO   = 1.1      # IV/HV mínimo para usar opciones
+    OPT_MIN_SIGNAL_SCORE  = 0.65     # score mínimo para instrumento opciones
+    OPT_HIGH_IV_RANK      = 75.0     # IV Rank alto → estrategias de venta de vol
+    RSI_OVERBOUGHT        = 70.0
+    RSI_OVERSOLD          = 30.0
+    CVD_ZSCORE_THRESHOLD  = 1.0      # desviaciones estándar
+
+    # ── Score tiers (espejan KellyRiskEngine) ─────────────────────────────────
+    TIER_FULL   = 0.75    # Kelly × hasta 2.0
+    TIER_NORMAL = 0.65    # Kelly base
+    TIER_SMALL  = 0.50    # Kelly × 0.50 — permite operar en condiciones neutrales (cold-start)
+    # SKIP: score < TIER_SMALL → no ejecutar
+    VISUAL_PRICE_TOLERANCE = 0.005   # 0.5% tolerancia OCR vs API
+    VISUAL_SCORE_WEIGHT = 0.12       # ajuste maximo absoluto al signal score
+    ALIGNMENT_SCORE_WEIGHT = 0.08    # ajuste por calibracion activa del chart
+
+    # ── Parámetros de salida ──────────────────────────────────────────────────
+    TP_ATR_MULT = 2.0
+    SL_ATR_MULT = 2.5
+    MIN_HOLD_DAYS = 5
+    MAX_HOLD_DAYS = 20
+    TRAILING_ACTIVATION = 1.5  # activar trailing cuando ganancia ≥ 1.5×ATR
+
+    def __init__(self, learning_brain=None, pattern_lab=None) -> None:
+        self._positions: dict[str, OpenPosition] = {}
+        self._signal_history: list[TradeSignal] = []
+        self._cvd_history: list[float] = []   # para z-score
+        self._learning_brain = learning_brain  # AtlasLearningBrain opcional
+        self._pattern_lab = pattern_lab        # PatternLabService opcional
+
+    # ── Score final ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def final_signal_score(components: SignalComponents) -> float:
+        """Fórmula definitiva de score de señal.
+
+        Ponderación optimizada (sensitivity_analysis.py, 20k señales):
+            30% motif_edge   — patrón temporal (normalizado a [0,1])
+            30% tin_score    — red neuronal de indicadores técnicos
+            20% mtf_coherence— alineación multi-timeframe
+            20% regime_conf  — confianza del clasificador de régimen
+
+        La normalización ``(motif_edge + 1) / 2`` convierte el rango [-1, 1]
+        a [0, 1]; si motif_edge ya está en [0, 1] el resultado se mantiene
+        dentro del rango válido.
+
+        Returns:
+            float en [0.0, 1.0]
+        """
+        motif_norm  = max(0.0, min(1.0, (float(components.motif_edge) + 1.0) / 2.0))
+        tin_norm    = max(0.0, min(1.0, float(components.tin_score)))
+        mtf_norm    = max(0.0, min(1.0, float(components.mtf_coherence)))
+        regime_norm = max(0.0, min(1.0, float(components.regime_confidence)))
+        score = (0.30 * motif_norm
+               + 0.30 * tin_norm
+               + 0.20 * mtf_norm
+               + 0.20 * regime_norm)
+        return float(max(0.0, min(1.0, score)))
+
+    @staticmethod
+    def score_tier(score: float) -> ScoreTier:
+        """Devuelve el tier de ejecución para un score dado."""
+        if score >= 0.75:
+            return ScoreTier.FULL
+        if score >= 0.65:
+            return ScoreTier.NORMAL
+        if score >= 0.55:
+            return ScoreTier.SMALL
+        return ScoreTier.SKIP
+
+    # ── Evaluación de señal ───────────────────────────────────────────────────
+
+    def evaluate(
+        self,
+        symbol: str,
+        regime,
+        tech,
+        cvd,
+        iv,
+        entry_price: float,
+        ocr_price: float | None = None,
+        ocr_result=None,
+        current_capital: float = 100_000.0,
+        position_size: int = 0,
+        bar_state=None,         # BarState opcional — activa filtro de momentum si se provee
+        pattern_lab_ctx=None,   # PatternLabContext opcional — gate de signal_score
+        motif_edge: float = 0.5,  # edge_score de MotifLabService [0-1], 0.5=neutral
+        tin_score: float = 0.5,   # TechnicalIndicatorNet prob [0-1], 0.5=neutral
+        mtf_report=None,          # MultiTFReport opcional — gate de coherencia MTF
+    ) -> TradeSignal:
+        """Evalúa condiciones y retorna señal de trading o FLAT."""
+
+        atr = tech.atr_20
+
+        # ── 1. Verificar posición abierta (gestión de salida) ──
+        if symbol in self._positions:
+            exit_signal = self._check_exit(
+                self._positions[symbol], entry_price
+            )
+            if exit_signal is not None:
+                return exit_signal
+
+        # ── 2. Scanner: IV Rank y IV/HV ──────────────────────────────────────
+        if iv.iv_rank_30d < self.MIN_IV_RANK:
+            return self._flat(symbol, entry_price, atr, "iv_rank_below_threshold",
+                              iv.iv_rank_30d)
+
+        if iv.iv_hv_ratio < self.MIN_IV_HV_RATIO:
+            return self._flat(symbol, entry_price, atr, "iv_hv_ratio_below_threshold",
+                              iv.iv_hv_ratio)
+
+        # ── 3. Régimen ML ─────────────────────────────────────────────────────
+        from atlas_code_quant.models.regime_classifier import MarketRegime
+
+        if regime.regime == MarketRegime.FLAT:
+            return self._flat(symbol, entry_price, atr, "regime_confidence_low",
+                              regime.confidence)
+
+        # ── 3.5. Gate Multi-TF coherence ──────────────────────────────────────
+        if mtf_report is not None:
+            _coh = float(mtf_report.coherence_score)
+            if _coh < self.MIN_MTF_COHERENCE:
+                return self._flat(
+                    symbol, entry_price, atr,
+                    f"mtf_coherence_low",
+                    _coh,
+                )
+
+        # ── 4. Señal técnica ──────────────────────────────────────────────────
+        signal_dir = self._get_technical_direction(tech, regime)
+        if signal_dir == SignalType.FLAT:
+            return self._flat(symbol, entry_price, atr, "no_technical_confluence", 0.0)
+
+        # ── 5. CVD z-score ────────────────────────────────────────────────────
+        self._cvd_history.append(cvd.delta_imbalance)
+        if len(self._cvd_history) > 200:
+            self._cvd_history.pop(0)
+
+        cvd_z = self._compute_zscore(cvd.delta_imbalance)
+
+        if signal_dir == SignalType.BUY and cvd_z < self.CVD_ZSCORE_THRESHOLD:
+            return self._flat(symbol, entry_price, atr, "cvd_not_confirming_buy", cvd_z)
+
+        if signal_dir == SignalType.SELL and cvd_z > -self.CVD_ZSCORE_THRESHOLD:
+            return self._flat(symbol, entry_price, atr, "cvd_not_confirming_sell", cvd_z)
+
+        # ── 6. Volume spike ───────────────────────────────────────────────────
+        if tech.volume_ratio < self.MIN_VOLUME_SPIKE:
+            return self._flat(symbol, entry_price, atr, "volume_spike_insufficient",
+                              tech.volume_ratio)
+
+        # ── 7. Confirmacion visual OCR / Insta360 ─────────────────────────────
+        visual_edge = self._assess_visual_edge(
+            signal_dir=signal_dir,
+            entry_price=entry_price,
+            ocr_price=ocr_price,
+            ocr_result=ocr_result,
+        )
+        entry_alignment = self._assess_entry_alignment(
+            signal_dir=signal_dir,
+            entry_price=entry_price,
+            ocr_price=ocr_price,
+            ocr_result=ocr_result,
+        )
+        visual_ok = bool(visual_edge["confirmed"])
+
+        # ── 7.5. Filtro de momentum (velas 1m) — sólo si se provee bar_state ──
+        if bar_state is not None:
+            from atlas_code_quant.strategy.momentum import (
+                MomentumConfig,
+                should_open_momentum_long,
+                should_open_momentum_short,
+            )
+            _mcfg = MomentumConfig()
+            if signal_dir == SignalType.BUY:
+                if not should_open_momentum_long(bar_state, tech, cvd, regime, _mcfg):
+                    return self._flat(symbol, entry_price, atr,
+                                      "momentum_not_confirmed_long", 0.0)
+            else:
+                if not should_open_momentum_short(bar_state, tech, cvd, regime, _mcfg):
+                    return self._flat(symbol, entry_price, atr,
+                                      "momentum_not_confirmed_short", 0.0)
+
+        # ── 7.8. Pattern Lab gate (signal_score) ──────────────────────────────
+        _pattern_score = 0.5   # neutral si no hay contexto
+        if pattern_lab_ctx is not None:
+            _pattern_score = float(getattr(pattern_lab_ctx, "signal_score", 0.5))
+            _min_score = getattr(
+                getattr(self._pattern_lab, "config", None), "min_signal_score_to_pass", 0.55
+            ) if self._pattern_lab is not None else 0.55
+            if _pattern_score < _min_score:
+                return self._flat(symbol, entry_price, atr,
+                                  "pattern_lab_score_below_threshold", _pattern_score)
+
+        # ── 8. Construir señal confirmada ─────────────────────────────────────
+        tp, sl = self._compute_tp_sl(entry_price, atr, signal_dir)
+        trailing = regime.regime in (MarketRegime.BULL, MarketRegime.BEAR)
+
+        # ── Fórmula definitiva: 25% motif + 35% TIN + 20% MTF + 20% regime ──
+        _base_score  = float(regime.confidence)
+        _mtf_coh_val = (float(mtf_report.coherence_score)
+                        if mtf_report is not None else 0.5)
+        _components  = SignalComponents(
+            motif_edge        = float(motif_edge),
+            tin_score         = float(tin_score),
+            mtf_coherence     = _mtf_coh_val,
+            regime_confidence = _base_score,
+        )
+        _signal_score = self.final_signal_score(_components)
+        _signal_score = max(
+            0.0,
+            min(
+                1.0,
+                _signal_score + (float(visual_edge["overall_score"]) - 0.5) * self.VISUAL_SCORE_WEIGHT,
+            ),
+        )
+        _signal_score = max(
+            0.0,
+            min(
+                1.0,
+                _signal_score + (float(entry_alignment["score"]) - 0.5) * self.ALIGNMENT_SCORE_WEIGHT,
+            ),
+        )
+        _tier         = self.score_tier(_signal_score)
+
+        # ── 8.1. Decisión de instrumento: equity vs opciones ─────────────────
+        _iv_rank_val  = float(iv.iv_rank_30d)
+        _iv_hv_val    = float(getattr(iv, "iv_hv_ratio", 1.0))
+        _use_options  = (
+            _iv_rank_val  >= self.OPT_MIN_IV_RANK
+            and _iv_hv_val >= self.OPT_MIN_IV_HV_RATIO
+            and regime.regime in (MarketRegime.BULL, MarketRegime.BEAR)
+            and _signal_score >= self.OPT_MIN_SIGNAL_SCORE
+        )
+        _option_strategy = (
+            self._pick_option_strategy(regime.regime, signal_dir, _iv_rank_val)
+            if _use_options else ""
+        )
+
+        if _use_options:
+            logger.info(
+                "OPTIONS %s | strategy=%s iv_rank=%.1f iv_hv=%.2f score=%.3f",
+                symbol, _option_strategy, _iv_rank_val, _iv_hv_val, _signal_score,
+            )
+        else:
+            logger.info(
+                "EQUITY %s | iv_rank=%.1f (need>=%.0f) iv_hv=%.2f (need>=%.1f) score=%.3f",
+                symbol, _iv_rank_val, self.OPT_MIN_IV_RANK,
+                _iv_hv_val, self.OPT_MIN_IV_HV_RATIO, _signal_score,
+            )
+
+        signal = TradeSignal(
+            symbol         = symbol,
+            signal_type    = signal_dir,
+            timestamp      = time.time(),
+            entry_price    = entry_price,
+            take_profit    = tp,
+            signal_kind    = (SignalKind.OPEN_LONG if signal_dir == SignalType.BUY
+                              else SignalKind.OPEN_SHORT),
+            stop_loss      = sl,
+            atr            = atr,
+            confidence     = _signal_score,
+            regime         = regime.regime.value,
+            strategy       = self._pick_strategy(regime.regime),
+            position_size  = position_size,
+            iv_rank        = iv.iv_rank_30d,
+            iv_hv_ratio    = _iv_hv_val,
+            cvd_delta      = cvd.delta_imbalance,
+            rsi            = tech.rsi_14,
+            volume_ratio   = tech.volume_ratio,
+            visual_confirmed = visual_ok,
+            max_hold_days  = self.MAX_HOLD_DAYS,
+            trailing_active = trailing,
+            use_options          = _use_options,
+            option_strategy_type = _option_strategy,
+        )
+
+        # Metadata — scores de todos los componentes
+        signal.metadata["regime_confidence"]   = round(_base_score, 4)
+        signal.metadata["motif_edge"]          = round(float(motif_edge), 4)
+        signal.metadata["tin_score"]           = round(float(tin_score), 4)
+        signal.metadata["mtf_coherence"]       = round(_mtf_coh_val, 4)
+        signal.metadata["signal_score"]        = round(_signal_score, 4)
+        signal.metadata["score_tier"]          = _tier.value
+        signal.metadata["use_options"]         = _use_options
+        signal.metadata["option_strategy_type"]= _option_strategy
+        signal.metadata["visual_edge_score"]   = round(float(visual_edge["overall_score"]), 4)
+        signal.metadata["visual_price_score"]  = round(float(visual_edge["price_score"]), 4)
+        signal.metadata["visual_color_score"]  = round(float(visual_edge["color_score"]), 4)
+        signal.metadata["visual_pattern_score"]= round(float(visual_edge["pattern_score"]), 4)
+        signal.metadata["visual_conf_score"]   = round(float(visual_edge["confidence_score"]), 4)
+        signal.metadata["visual_reason"]       = str(visual_edge["reason"])
+        signal.metadata["visual_mode"]         = str(visual_edge["mode"])
+        signal.metadata["visual_price"]        = visual_edge["ocr_price"]
+        signal.metadata["visual_chart_color"]  = visual_edge["chart_color"]
+        signal.metadata["visual_pattern"]      = visual_edge["pattern"]
+        signal.metadata["entry_alignment_score"] = round(float(entry_alignment["score"]), 4)
+        signal.metadata["entry_alignment_ready"] = bool(entry_alignment["ready"])
+        signal.metadata["entry_alignment_reason"] = str(entry_alignment["reason"])
+        signal.metadata["entry_alignment_sample_count"] = int(entry_alignment["sample_count"])
+        signal.metadata["entry_alignment_calibration_quality"] = round(float(entry_alignment["calibration_quality"]), 4)
+        if pattern_lab_ctx is not None:
+            signal.metadata["pattern_score"]   = round(_pattern_score, 4)
+            signal.metadata["tin_prob"]        = round(getattr(pattern_lab_ctx, "tin_prob_positive", 0.5), 4)
+            signal.metadata["arima_deviation"] = round(getattr(pattern_lab_ctx, "arima_deviation", 0.0), 6)
+            signal.metadata["n_motifs"]        = getattr(pattern_lab_ctx, "n_motifs_found", 0)
+
+        # ── Log greppable: componentes desglosados + tier ─────────────────────
+        # "SIGNAL SPY | score=0.72 | 0.45+0.85+0.82+0.65 | tier=NORMAL"
+        # La parte "size=Xx" la añade live_loop tras compute_size_dynamic()
+        logger.info(
+            "SIGNAL %s | score=%.2f | %.2f+%.2f+%.2f+%.2f | tier=%s | TP=%.2f SL=%.2f",
+            symbol, _signal_score,
+            float(motif_edge), float(tin_score), _mtf_coh_val, _base_score,
+            _tier.value, tp, sl,
+        )
+
+        # Registrar posición abierta
+        self._positions[symbol] = OpenPosition(
+            symbol        = symbol,
+            side          = signal_dir,
+            entry_price   = entry_price,
+            current_price = entry_price,
+            take_profit   = tp,
+            stop_loss     = sl,
+            trailing_stop = sl,
+            atr           = atr,
+            quantity      = position_size,
+            opened_at     = time.time(),
+            max_hold_days = self.MAX_HOLD_DAYS,
+            strategy      = signal.strategy,
+            highest_price = entry_price,
+            lowest_price  = entry_price,
+        )
+
+        self._signal_history.append(signal)
+
+        # ── 9. Scoring de aprendizaje (AtlasLearningBrain) ───────────────────
+        if self._learning_brain is not None:
+            try:
+                from atlas_code_quant.learning.trade_events import SignalContext
+                import datetime as _dt
+                ctx = SignalContext(
+                    symbol=symbol,
+                    asset_class=signal.asset_class,
+                    side=signal_dir.value,
+                    setup_type=signal.strategy or "unknown",
+                    regime=signal.regime,
+                    timeframe="1m",
+                    entry_price=entry_price,
+                    stop_loss_price=sl,
+                    r_initial=abs(entry_price - sl),
+                    rsi=tech.rsi_14,
+                    macd_hist=getattr(tech, "macd_hist", 0.0),
+                    atr=atr,
+                    bb_pct=getattr(tech, "bb_pct", 0.0),
+                    volume_ratio=tech.volume_ratio,
+                    cvd=cvd.delta_imbalance,
+                    iv_rank=iv.iv_rank_30d,
+                    iv_hv_ratio=getattr(iv, "iv_hv_ratio", 1.0),
+                    capital=current_capital,
+                    position_size=float(position_size),
+                    signal_time=_dt.datetime.utcnow(),
+                )
+                score_result = self._learning_brain.score_signal(ctx)
+                signal.metadata["learning_score"] = score_result.total_score
+                signal.metadata["learning_approved"] = score_result.approved
+                signal.metadata["learning_reasoning"] = score_result.reasoning
+                signal.metadata["size_multiplier"] = score_result.size_multiplier
+
+                if not score_result.approved:
+                    logger.info(
+                        "SEÑAL %s %s BLOQUEADA por learning_brain: score=%.3f < threshold=%.2f — %s",
+                        signal_dir.value, symbol, score_result.total_score,
+                        score_result.threshold_used, score_result.reasoning,
+                    )
+                    return self._flat(symbol, entry_price, atr, "learning_score_below_threshold",
+                                      score_result.total_score)
+            except Exception as _lb_exc:
+                logger.warning("learning_brain.score_signal error: %s", _lb_exc)
+
+        return signal
+
+    # ── Gestión de salida ─────────────────────────────────────────────────────
+
+    def _check_exit(self, pos: OpenPosition, current_price: float) -> Optional[TradeSignal]:
+        """Verifica si la posición abierta debe cerrarse."""
+        pos.current_price = current_price
+        reason = ""
+
+        if pos.side == SignalType.BUY:
+            pos.highest_price = max(pos.highest_price, current_price)
+
+            # Trailing stop para posición long
+            if pos.trailing_active:
+                new_trail = pos.highest_price - pos.atr * self.SL_ATR_MULT
+                pos.trailing_stop = max(pos.trailing_stop, new_trail)
+
+            if current_price >= pos.take_profit:
+                reason = "take_profit"
+            elif current_price <= pos.trailing_stop:
+                reason = "trailing_stop" if current_price < pos.stop_loss else "stop_loss"
+
+        else:  # SELL
+            pos.lowest_price = min(pos.lowest_price, current_price)
+
+            if pos.trailing_active:
+                new_trail = pos.lowest_price + pos.atr * self.SL_ATR_MULT
+                pos.trailing_stop = min(pos.trailing_stop, new_trail)
+
+            if current_price <= pos.take_profit:
+                reason = "take_profit"
+            elif current_price >= pos.trailing_stop:
+                reason = "stop_loss"
+
+        # Time exit
+        days_open = (time.time() - pos.opened_at) / 86400
+        if days_open >= pos.max_hold_days:
+            reason = "time_exit"
+
+        if reason:
+            del self._positions[pos.symbol]
+            _kind_map = {
+                "take_profit":   SignalKind.CLOSE_TP,
+                "stop_loss":     SignalKind.CLOSE_SL,
+                "trailing_stop": SignalKind.CLOSE_TRAIL,
+                "time_exit":     SignalKind.CLOSE_TIME,
+            }
+            return TradeSignal(
+                symbol       = pos.symbol,
+                signal_type  = SignalType.EXIT,
+                timestamp    = time.time(),
+                entry_price  = current_price,
+                take_profit  = pos.take_profit,
+                stop_loss    = pos.stop_loss,
+                atr          = pos.atr,
+                confidence   = 1.0,
+                exit_reason  = reason,
+                strategy     = pos.strategy,
+                signal_kind  = _kind_map.get(reason, SignalKind.CLOSE_SL),
+            )
+
+        return None
+
+    # ── Dirección técnica ─────────────────────────────────────────────────────
+
+    def _get_technical_direction(self, tech, regime) -> SignalType:
+        """Bull/Bear según régimen + confirmación RSI/MACD."""
+        from atlas_code_quant.models.regime_classifier import MarketRegime
+
+        is_bull = regime.regime == MarketRegime.BULL
+        is_bear = regime.regime == MarketRegime.BEAR
+        is_sideways = regime.regime == MarketRegime.SIDEWAYS
+
+        # MACD cruce
+        macd_bullish = tech.macd > tech.macd_signal and tech.macd_hist > 0
+        macd_bearish = tech.macd < tech.macd_signal and tech.macd_hist < 0
+
+        # RSI divergencia (oversold en bull, overbought en bear, extremos en sideways)
+        rsi_bull = tech.rsi_14 < self.RSI_OVERSOLD + 15   # RSI saliendo de oversold
+        rsi_bear = tech.rsi_14 > self.RSI_OVERBOUGHT - 15
+
+        if is_bull and macd_bullish and rsi_bull:
+            return SignalType.BUY
+        if is_bear and macd_bearish and rsi_bear:
+            return SignalType.SELL
+        if is_sideways:
+            # Mean reversion: comprar oversold, vender overbought
+            if tech.rsi_14 < self.RSI_OVERSOLD and macd_bullish:
+                return SignalType.BUY
+            if tech.rsi_14 > self.RSI_OVERBOUGHT and macd_bearish:
+                return SignalType.SELL
+
+        return SignalType.FLAT
+
+    # ── Utilidades ────────────────────────────────────────────────────────────
+
+    def _compute_tp_sl(
+        self, price: float, atr: float, direction: SignalType
+    ) -> tuple[float, float]:
+        if direction == SignalType.BUY:
+            tp = price + atr * self.TP_ATR_MULT
+            sl = price - atr * self.SL_ATR_MULT
+        else:
+            tp = price - atr * self.TP_ATR_MULT
+            sl = price + atr * self.SL_ATR_MULT
+        return round(tp, 2), round(sl, 2)
+
+    def _pick_strategy(self, regime) -> str:
+        from atlas_code_quant.models.regime_classifier import MarketRegime
+        map_ = {
+            MarketRegime.BULL:     "trend_following",
+            MarketRegime.BEAR:     "trend_following_short",
+            MarketRegime.SIDEWAYS: "mean_reversion",
+        }
+        return map_.get(regime, "unknown")
+
+    def _pick_option_strategy(self, regime, direction: SignalType, iv_rank: float) -> str:
+        """Selecciona la estrategia de opciones según régimen, dirección e IV Rank.
+
+        Lógica:
+          - IV Rank > OPT_HIGH_IV_RANK (75): IV alta → vender vol → SHORT_STRANGLE
+          - Bull + BUY                      → Bull call spread → CALL_VERTICAL
+          - Bear + SELL                     → Bear put spread  → PUT_VERTICAL
+          - Sideways (no debería llegar)    → SINGLE_LEG como fallback
+
+        Returns:
+            str — uno de: CALL_VERTICAL, PUT_VERTICAL, SHORT_STRANGLE, SINGLE_LEG
+        """
+        from atlas_code_quant.models.regime_classifier import MarketRegime
+
+        if iv_rank >= self.OPT_HIGH_IV_RANK:
+            return "SHORT_STRANGLE"
+
+        if regime == MarketRegime.BULL and direction == SignalType.BUY:
+            return "CALL_VERTICAL"
+
+        if regime == MarketRegime.BEAR and direction == SignalType.SELL:
+            return "PUT_VERTICAL"
+
+        # Fallback: dirección única sin cobertura
+        return "SINGLE_LEG"
+
+    def _check_visual(self, api_price: float, ocr_price: Optional[float]) -> bool:
+        """Compatibilidad con callers antiguos: delega en el score visual."""
+        return bool(
+            self._assess_visual_edge(
+                signal_dir=SignalType.BUY,
+                entry_price=api_price,
+                ocr_price=ocr_price,
+                ocr_result=None,
+            )["confirmed"]
+        )
+
+    def _assess_visual_edge(
+        self,
+        *,
+        signal_dir: SignalType,
+        entry_price: float,
+        ocr_price: Optional[float] = None,
+        ocr_result=None,
+    ) -> dict:
+        """Convierte la lectura visual en una puntuacion de conviccion."""
+        if entry_price <= 0:
+            return {
+                "confirmed": False,
+                "overall_score": 0.0,
+                "price_score": 0.0,
+                "color_score": 0.0,
+                "pattern_score": 0.0,
+                "confidence_score": 0.0,
+                "ocr_price": None,
+                "chart_color": "unknown",
+                "pattern": "",
+                "reason": "invalid_entry_price",
+                "mode": "visual_unavailable",
+            }
+
+        if ocr_result is None and ocr_price is None:
+            return {
+                "confirmed": False,
+                "overall_score": 0.5,
+                "price_score": 0.5,
+                "color_score": 0.5,
+                "pattern_score": 0.5,
+                "confidence_score": 0.0,
+                "ocr_price": None,
+                "chart_color": "unknown",
+                "pattern": "",
+                "reason": "visual_unavailable",
+                "mode": "visual_unavailable",
+            }
+
+        prices = list(getattr(ocr_result, "prices", []) or [])
+        chart_color = str(getattr(ocr_result, "chart_color", "unknown") or "unknown").lower()
+        pattern = str(getattr(ocr_result, "pattern_detected", "") or "").lower()
+        confidence = float(getattr(ocr_result, "ocr_confidence", 0.0) or 0.0)
+        safe_mode = bool(getattr(ocr_result, "safe_mode", False))
+
+        best_price = ocr_price
+        if prices:
+            best_price = min(prices, key=lambda p: abs(p - entry_price))
+
+        if best_price is None:
+            price_score = 0.25
+        else:
+            diff = abs(float(best_price) - entry_price) / entry_price
+            price_score = max(0.0, 1.0 - (diff / max(self.VISUAL_PRICE_TOLERANCE, 1e-6)))
+
+        confidence_score = (
+            max(0.0, min(1.0, confidence / 0.92))
+            if confidence > 0
+            else (0.75 if best_price is not None else 0.0)
+        )
+
+        expected_colors = {"green", "bullish"} if signal_dir == SignalType.BUY else {"red", "bearish"}
+        opposite_colors = {"red", "bearish"} if signal_dir == SignalType.BUY else {"green", "bullish"}
+        if chart_color in expected_colors:
+            color_score = 1.0
+        elif chart_color in opposite_colors:
+            color_score = 0.0
+        else:
+            color_score = 0.5
+
+        bullish_patterns = ("breakout", "uptrend", "bounce", "pullback", "flag", "bandera", "ruptura", "alcista")
+        bearish_patterns = ("breakdown", "downtrend", "reversal", "dump", "selloff", "bajista")
+        if signal_dir == SignalType.BUY:
+            if any(token in pattern for token in bullish_patterns):
+                pattern_score = 1.0
+            elif any(token in pattern for token in bearish_patterns):
+                pattern_score = 0.0
+            else:
+                pattern_score = 0.5
+        else:
+            if any(token in pattern for token in bearish_patterns):
+                pattern_score = 1.0
+            elif any(token in pattern for token in bullish_patterns):
+                pattern_score = 0.0
+            else:
+                pattern_score = 0.5
+
+        if safe_mode:
+            overall = 0.1
+            reason = "visual_safe_mode"
+            mode = "visual_degraded"
+        else:
+            overall = (
+                0.50 * price_score
+                + 0.20 * confidence_score
+                + 0.20 * color_score
+                + 0.10 * pattern_score
+            )
+            if overall >= 0.72 and price_score >= 0.8:
+                reason = "visual_confirmed"
+                mode = "visual_confirmed"
+            elif overall >= 0.5:
+                reason = "visual_neutral"
+                mode = "visual_neutral"
+            else:
+                reason = "visual_degraded"
+                mode = "visual_degraded"
+
+        return {
+            "confirmed": bool(reason == "visual_confirmed"),
+            "overall_score": round(float(overall), 4),
+            "price_score": round(float(price_score), 4),
+            "color_score": round(float(color_score), 4),
+            "pattern_score": round(float(pattern_score), 4),
+            "confidence_score": round(float(confidence_score), 4),
+            "ocr_price": float(best_price) if best_price is not None else None,
+            "chart_color": chart_color,
+            "pattern": pattern,
+            "reason": reason,
+            "mode": mode,
+        }
+
+    def _assess_entry_alignment(
+        self,
+        *,
+        signal_dir: SignalType,
+        entry_price: float,
+        ocr_price: Optional[float] = None,
+        ocr_result=None,
+    ) -> dict:
+        """Usa la calibracion de chart para resumir alineacion de entrada."""
+        if ocr_result is None:
+            return {
+                "ready": False,
+                "score": 0.5,
+                "reason": "alignment_requires_visual_state",
+                "sample_count": 0,
+                "calibration_quality": 0.0,
+            }
+        try:
+            from atlas_code_quant.operations.vision_calibration import VisionCalibrationService
+
+            service = VisionCalibrationService()
+            side = "buy" if signal_dir == SignalType.BUY else "sell"
+            result = service.evaluate_entry_alignment(
+                entry_price=float(entry_price),
+                signal_side=side,
+                ocr_price=float(ocr_price) if ocr_price is not None else None,
+                confidence=float(getattr(ocr_result, "ocr_confidence", 0.0) or 0.0),
+                chart_color=str(getattr(ocr_result, "chart_color", "") or ""),
+                pattern_detected=str(getattr(ocr_result, "pattern_detected", "") or ""),
+            )
+            return {
+                "ready": bool(result.get("ready")),
+                "score": float(result.get("score", 0.5)),
+                "reason": str(result.get("reason", "alignment_unavailable")),
+                "sample_count": int(result.get("sample_count", 0)),
+                "calibration_quality": float(result.get("calibration_quality", 0.0)),
+            }
+        except Exception:
+            return {
+                "ready": False,
+                "score": 0.5,
+                "reason": "alignment_unavailable",
+                "sample_count": 0,
+                "calibration_quality": 0.0,
+            }
+
+    def _compute_zscore(self, value: float) -> float:
+        if len(self._cvd_history) < 10:
+            return 0.0
+        import numpy as np
+        arr = self._cvd_history[-100:]
+        mean = float(sum(arr) / len(arr))
+        std  = float((sum((x - mean) ** 2 for x in arr) / len(arr)) ** 0.5)
+        return (value - mean) / std if std > 1e-10 else 0.0
+
+    # Razones que son ruido normal — solo debug
+    _FLAT_DEBUG_REASONS = frozenset({
+        "no_technical_confluence",
+        "cvd_not_confirming_buy",
+        "cvd_not_confirming_sell",
+        "volume_spike_insufficient",
+        "momentum_not_confirmed_long",
+        "momentum_not_confirmed_short",
+    })
+
+    def _flat(self, symbol: str, price: float, atr: float,
+              reason: str, value: float) -> TradeSignal:
+        if reason in self._FLAT_DEBUG_REASONS:
+            logger.debug("FLAT %s — %s (%.3f)", symbol, reason, value)
+        else:
+            logger.info(
+                "FLAT %s | reason=%s value=%.3f",
+                symbol, reason, value,
+            )
+        return TradeSignal(
+            symbol      = symbol,
+            signal_type = SignalType.FLAT,
+            timestamp   = time.time(),
+            entry_price = price,
+            take_profit = price + atr * self.TP_ATR_MULT,
+            stop_loss   = price - atr * self.SL_ATR_MULT,
+            atr         = atr,
+            confidence  = 0.0,
+            exit_reason = reason,
+        )
+
+    def open_positions(self) -> dict[str, OpenPosition]:
+        return dict(self._positions)
+
+    def signal_history(self, last_n: int = 50) -> list[TradeSignal]:
+        return self._signal_history[-last_n:]

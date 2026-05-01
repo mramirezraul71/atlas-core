@@ -1,0 +1,9 @@
+# Atlas Code-Quant — entorno de desarrollo (además del core)
+# Instalación: pip install -r requirements.txt && pip install -r requirements-dev.txt
+#
+# Incluye herramientas que no son necesarias en producción mínima.
+-r requirements.txt
+
+# Calidad / tests locales (opcional)
+# pytest-xdist>=3.5.0
+# ruff>=0.4.0

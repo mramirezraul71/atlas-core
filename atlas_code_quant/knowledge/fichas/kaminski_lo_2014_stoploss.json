@@ -1,0 +1,43 @@
+{
+  "id": "kaminski_lo_2014_stoploss",
+  "title": "When Do Stop-Loss Rules Stop Losses?",
+  "authors": [
+    "Kathryn Kaminski",
+    "Andrew Lo"
+  ],
+  "year": 2014,
+  "source": "Journal of Financial Markets",
+  "url": "https://www.sciencedirect.com/science/article/pii/S1386418113000645",
+  "category": "CAT5",
+  "topic": "stop_loss",
+  "subtopics": [
+    "stop_loss_effectiveness",
+    "drawdown_control",
+    "regime_dependent"
+  ],
+  "timeframes": [
+    "short",
+    "swing"
+  ],
+  "markets": [
+    "equity",
+    "futures"
+  ],
+  "method": "empirical_simulation",
+  "key_findings": "Los stops basados en reglas sistemáticas (volatilidad-adaptive) reducen drawdown sin sacrificar retorno esperado en mercados con momentum. Los stops fijos degradan el rendimiento en mercados de alta volatilidad. La efectividad depende del régimen: stops son más útiles en mercados trending que en ranging.",
+  "limitations": "En mercados con gap overnight, los stops no protegen completamente. En opciones, el stop del subyacente no equivale al stop de la posición.",
+  "atlas_utility": "Valida el uso de ATR como base para stops dinámicos en el StrategySelector. Sugiere adaptar el stop según el régimen (RegimeClassifier output). En régimen trending: stop más amplio. En ranging: stop más estrecho o no operar.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "trend_ema_stack",
+    "breakout_donchian"
+  ],
+  "tags": [
+    "stop_loss",
+    "ATR",
+    "regime_adaptive",
+    "drawdown",
+    "exit_governance"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.919687+00:00"
+}

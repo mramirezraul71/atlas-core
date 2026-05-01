@@ -1,0 +1,2 @@
+total_trades,winning_trades,win_rate_pct,profit_factor,sharpe_ratio,max_single_loss,max_drawdown_pct,total_profit,total_loss,avg_win,avg_loss,avg_hold_minutes,trades_per_day,roi_pct,magnet_accuracy_pct,on_magnet_win_rate_pct,afternoon_pin_pct,consecutive_losses,capital_final
+1379,1379,100.0,999.0,0.0,492.57667331582235,0.0,3032514733543.3643,0.0,2199067972.112664,0.0,0.0,7.0,30325147335.433643,85.06163886874548,100.0,100.0,0,3032514743543.3643

@@ -1,0 +1,11 @@
+{
+  "metrics": {
+    "total_trades": 0,
+    "error": "No trades"
+  },
+  "files": {
+    "metrics_csv": "data\\backtest\\backtest_results\\iron_butterfly\\iron_butterfly_results.csv",
+    "magnet_csv": "data\\backtest\\backtest_results\\iron_butterfly\\magnet_strike_accuracy.csv",
+    "html_report": "data\\backtest\\backtest_results\\iron_butterfly\\equity_curve.html"
+  }
+}

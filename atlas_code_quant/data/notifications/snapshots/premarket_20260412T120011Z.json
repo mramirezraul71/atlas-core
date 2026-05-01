@@ -1,0 +1,163 @@
+{
+  "kind": "premarket",
+  "generated_at": "2026-04-12T12:00:08.603258+00:00",
+  "prioritized": {
+    "kind": "premarket",
+    "headline": "Preapertura \u2014 briefing operativo ATLAS Quant",
+    "opportunities": [
+      {
+        "symbol": "BBGI",
+        "selection_score": 85.36,
+        "timeframe": "5m",
+        "method": null,
+        "win_rate_local": 60.17,
+        "profit_factor_local": 2.62,
+        "expectancy_hint": null
+      },
+      {
+        "symbol": "BBGI",
+        "selection_score": 74.06,
+        "timeframe": "15m",
+        "method": null,
+        "win_rate_local": 57.27,
+        "profit_factor_local": 1.227,
+        "expectancy_hint": null
+      },
+      {
+        "symbol": "BBT",
+        "selection_score": 72.63,
+        "timeframe": "1h",
+        "method": null,
+        "win_rate_local": 59.72,
+        "profit_factor_local": 1.6,
+        "expectancy_hint": null
+      },
+      {
+        "symbol": "BCAX",
+        "selection_score": 72.22,
+        "timeframe": "4h",
+        "method": null,
+        "win_rate_local": 55.93,
+        "profit_factor_local": 1.279,
+        "expectancy_hint": null
+      },
+      {
+        "symbol": "BCPC",
+        "selection_score": 68.16,
+        "timeframe": "1h",
+        "method": null,
+        "win_rate_local": 65.38,
+        "profit_factor_local": 1.559,
+        "expectancy_hint": null
+      }
+    ],
+    "risks": [
+      "Aprendizaje: reconciliaci\u00f3n posiblemente detenida o lenta",
+      "Learning: loop no marcado como running"
+    ],
+    "positions_focus": [
+      {
+        "symbol": "BKNG",
+        "unrealized_pnl": 4003.83,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "IREN260417C00035000",
+        "unrealized_pnl": -1941.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "IREN260417C00036000",
+        "unrealized_pnl": 1821.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "HLT260417P00307500",
+        "unrealized_pnl": 1340.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "HLT260417P00305000",
+        "unrealized_pnl": -1115.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "MRVL260417P00104000",
+        "unrealized_pnl": -1089.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "MRVL260417P00100000",
+        "unrealized_pnl": 710.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "POWL",
+        "unrealized_pnl": -704.56,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "stalled",
+      "phase_notes": [
+        "loop no marcado como running"
+      ],
+      "orchestrator": {
+        "reconcile_count": 0,
+        "trades_processed_total": 0,
+        "last_ic_by_method": {},
+        "readiness_live": null
+      },
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-12T11:59:21.369236+00:00"
+      },
+      "policy_can_weight": false
+    },
+    "session_plan": [
+      "1) Confirmar readiness y visi\u00f3n antes de tama\u00f1os.",
+      "2) Priorizar revisi\u00f3n: BBGI (score 85.36) alineado con contexto y pol\u00edtica IC.",
+      "3) Mantener disciplina de salida (governance + time stop).",
+      "4) Registrar decisiones en journal para cerrar el loop de aprendizaje."
+    ],
+    "open_close_criteria": {
+      "open": [
+        "Readiness OK y proveedor de visi\u00f3n acorde al modo.",
+        "Se\u00f1al con score \u2265 umbral din\u00e1mico del scanner / pol\u00edtica IC.",
+        "Spread y drift de entrada dentro de l\u00edmites (entry validation)."
+      ],
+      "close": [
+        "Take profit / hard loss R seg\u00fan exit governance (TP R\u22480.75).",
+        "Time stop y trailing floor si aplica.",
+        "Cierre si thesis drift o heat de s\u00edmbolo excede pol\u00edtica."
+      ]
+    },
+    "metrics": {
+      "readiness_ready": true,
+      "scanner_running": true,
+      "open_positions": 493
+    },
+    "raw_refs": {
+      "generated_at": "2026-04-12T12:00:08.603258+00:00"
+    }
+  },
+  "context_summary": {
+    "readiness_ready": true,
+    "open_positions": 493
+  },
+  "dispatch": {
+    "fingerprint": "a23519d663fa86b6adce",
+    "ok": true,
+    "detail": "sent"
+  }
+}

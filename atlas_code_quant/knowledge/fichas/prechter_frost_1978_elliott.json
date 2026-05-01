@@ -1,0 +1,41 @@
+{
+  "id": "prechter_frost_1978_elliott",
+  "title": "Elliott Wave Principle — Key to Market Behavior",
+  "authors": [
+    "Robert Prechter",
+    "A.J. Frost"
+  ],
+  "year": 1978,
+  "source": "New Classics Library",
+  "url": "https://elliottwave.com/free-updates/educational/elliott-wave-principle-key-to-market-behavior/",
+  "category": "CAT3",
+  "topic": "elliott_waves",
+  "subtopics": [
+    "wave_count",
+    "fractal_structure",
+    "market_cycles"
+  ],
+  "timeframes": [
+    "all"
+  ],
+  "markets": [
+    "equity",
+    "fx",
+    "commodities"
+  ],
+  "method": "pattern_classification",
+  "key_findings": "Los mercados siguen una estructura fractal de 5 ondas impulsivas y 3 correctivas. La cuenta de onda permite identificar la posición en el ciclo y proyectar objetivos. La estructura se replica en múltiples temporalidades simultáneamente.",
+  "limitations": "El conteo de ondas es altamente subjetivo — distintos analistas llegan a conclusiones opuestas con el mismo gráfico. La evidencia empírica de profitabilidad es débil. Ver: Poser (2003) que revisa la efectividad con evidencia mixta.",
+  "atlas_utility": "WARNING: baja confianza empírica para trading algorítmico. Útil como marco conceptual para identificar estructuras de mercado, pero NO como señal de entrada autónoma. Usar solo como contexto de chart_plan visual, no como trigger.",
+  "confidence_level": "low",
+  "scanner_methods": [],
+  "tags": [
+    "elliott",
+    "waves",
+    "fractal",
+    "subjective",
+    "warning",
+    "low_confidence"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.913172+00:00"
+}

@@ -1,0 +1,98 @@
+{
+  "kind": "eod",
+  "generated_at": "2026-04-13T20:10:08.288744+00:00",
+  "prioritized": {
+    "kind": "eod",
+    "headline": "Cierre de sesi\u00f3n \u2014 resumen operativo ATLAS Quant",
+    "opportunities": [],
+    "risks": [],
+    "positions_focus": [
+      {
+        "symbol": "OS",
+        "unrealized_pnl": -720.6,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ALM",
+        "unrealized_pnl": 126.36,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AEHR",
+        "unrealized_pnl": -85.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AAOI",
+        "unrealized_pnl": 78.66,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AVT",
+        "unrealized_pnl": 70.11,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ALAB",
+        "unrealized_pnl": 66.81,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ARW",
+        "unrealized_pnl": 55.425,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "BKSY",
+        "unrealized_pnl": -47.96,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "ready",
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-13T20:09:22.474006+00:00"
+      }
+    },
+    "session_plan": [
+      "Reforzar lo que funciona: put_debit_butterfly PF\u2248999.0",
+      "Vigilar o recortar: untracked PF\u22480.0",
+      "Revisar causas de salida en journal y ajustar governance si hay salidas reactivas."
+    ],
+    "open_close_criteria": {},
+    "metrics": {
+      "pnl_day_estimate": 0.0,
+      "pnl_day_session_date": "2026-04-13",
+      "pnl_day_matched_date": "2026-04-13",
+      "pnl_day_match_source": "session_day_exact",
+      "pnl_day_timezone": "America/New_York",
+      "trades_analytics_rows": 6807,
+      "r_distribution_summary": "{'values': [-1.99, -1.98, -2.04, -2.0, -2.05, -2.03, -2.0, -1.91, -1.98, -2.0, -1.96, -2.0, -1.96, -2.0, -2.2, -1.93, -1.99, -2.06, -2.02, -1.99, -1.98, -2.04, -2.0, -2.05, -2.03, -2.0, -1.91, -1.98, "
+    },
+    "raw_refs": {
+      "analytics_generated_at": "2026-04-13T20:10:09.091855+00:00",
+      "eod_day_match": {
+        "session_day": "2026-04-13",
+        "matched_day": "2026-04-13",
+        "match_source": "session_day_exact",
+        "timezone": "America/New_York"
+      }
+    }
+  },
+  "dispatch": {
+    "fingerprint": "ef814322bc0df09b20f9",
+    "ok": true,
+    "detail": "sent"
+  }
+}

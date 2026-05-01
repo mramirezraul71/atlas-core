@@ -1,0 +1,53 @@
+{
+  "account_scope": "paper",
+  "account_id": "VA9201365",
+  "start_date": "2026-04-11",
+  "end_date": "2026-04-11",
+  "symbols": [],
+  "events_considered": 0,
+  "closed_positions_considered": 0,
+  "history_source": "trade_events",
+  "journal_rebuilt": 0,
+  "invalid_rebuilt_rows": 0,
+  "invalid_rebuilt_row_samples": [],
+  "deleted_existing": 0,
+  "invalidated_negative_price_rows": 14873,
+  "score_calidad": 100.0,
+  "ml_habilitado": false,
+  "quality": {
+    "status": "watch",
+    "score_pct": 100.0,
+    "learning_allowed": false,
+    "total_closed_count": 0,
+    "row_level_clean_count": 0,
+    "trusted_closed_count": 0,
+    "row_level_clean_ratio_pct": 0.0,
+    "trusted_ratio_pct": 0.0,
+    "blocked_reasons": [],
+    "row_reason_counts": {},
+    "metrics": {
+      "negative_entry_price_count": 0,
+      "negative_exit_price_count": 0,
+      "short_duration_count": 0,
+      "max_outlier_day_share_pct": 0.0
+    },
+    "outlier_days": [],
+    "strategy_anomalies": []
+  },
+  "adaptive_snapshot_cutoff": "2026-04-11",
+  "adaptive_snapshot_sample_count": 0,
+  "operation_reset": {
+    "ok": true,
+    "account_scope": "paper",
+    "post_journal_rebuild_guard": {
+      "active": true,
+      "scope": "paper",
+      "activated_at": "2026-04-12T04:06:46.115802",
+      "expires_at": "2026-04-12T16:06:46.115802",
+      "reason": "journal_rebuild_reset"
+    },
+    "last_decision": null,
+    "last_candidate": null
+  },
+  "export_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\data\\cache\\journal_rebuild\\journal_rebuild_paper_2026-04-11_2026-04-11.json"
+}

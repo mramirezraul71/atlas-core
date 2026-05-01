@@ -1,0 +1,48 @@
+{
+  "ok": true,
+  "closed_trades_total": 465,
+  "wins_total": 465,
+  "losses_total": 0,
+  "win_rate_pct": 100.0,
+  "win_rate_ratio": 1.0,
+  "profit_factor": 99.0,
+  "pnl_total_usd": 311.954462,
+  "net_realized_pnl_usd": 311.954462,
+  "pnl_avg_usd": 0.67087,
+  "equity_usd": 10311.954462,
+  "drawdown_pct": 0.0,
+  "max_drawdown_usd": 0.0,
+  "events_today": 1509,
+  "sessions_today": 392,
+  "go_sessions_today": 392,
+  "closed_today": 374,
+  "blocked_sessions_today": 0,
+  "blocked_sessions_total": 0,
+  "open_trades_count": 1,
+  "phantom_today": 0,
+  "last_write_age_seconds": 18.840121030807495,
+  "initial_capital_usd": 10000.0,
+  "parse_warnings": 0,
+  "rolling_7d": {
+    "closed_trades": 465,
+    "win_rate_pct": 100.0,
+    "profit_factor": 99.0
+  },
+  "by_strategy": {
+    "bull_call_debit_spread": {
+      "closed_trades_total": 465,
+      "wins_total": 465,
+      "losses_total": 0,
+      "win_rate_pct": 100.0,
+      "profit_factor": 99.0,
+      "pnl_total_usd": 311.954462,
+      "pnl_avg_usd": 0.67087
+    }
+  },
+  "by_strategy_regime": {
+    "bull_call_debit_spread": {
+      "unknown": 100.0
+    }
+  },
+  "generated_at_utc": "2026-04-26T22:36:31.119543Z"
+}

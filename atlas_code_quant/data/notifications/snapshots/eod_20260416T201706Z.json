@@ -1,0 +1,102 @@
+{
+  "kind": "eod",
+  "generated_at": "2026-04-16T20:16:36.093777+00:00",
+  "prioritized": {
+    "kind": "eod",
+    "headline": "Cierre de sesi\u00f3n \u2014 resumen operativo ATLAS Quant",
+    "opportunities": [],
+    "risks": [
+      "Aprendizaje: reconciliaci\u00f3n posiblemente detenida o lenta",
+      "Learning: loop no marcado como running",
+      "EoD: PnL diario estimado sin match exacto de sesion; revisar timezone/journal antes de usarlo contablemente."
+    ],
+    "positions_focus": [
+      {
+        "symbol": "AEHR",
+        "unrealized_pnl": 887.0,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ALM",
+        "unrealized_pnl": 819.72,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ADTN",
+        "unrealized_pnl": 734.45,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "OS",
+        "unrealized_pnl": -720.6,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "BEX",
+        "unrealized_pnl": 255.75,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "ATEN",
+        "unrealized_pnl": 244.8,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "APGE",
+        "unrealized_pnl": 221.85,
+        "strategy_type": null,
+        "days_open": null
+      },
+      {
+        "symbol": "AMKR",
+        "unrealized_pnl": 217.88,
+        "strategy_type": null,
+        "days_open": null
+      }
+    ],
+    "learning_summary": {
+      "phase": "stalled",
+      "adaptive": {
+        "reliable": false,
+        "headline": "Adaptive policy cargada",
+        "bias": {},
+        "generated_at": "2026-04-16T20:16:33.441015+00:00"
+      }
+    },
+    "session_plan": [
+      "Reforzar lo que funciona: bear_put_debit_spread PF\u2248999.0",
+      "Vigilar o recortar: untracked PF\u22480.0",
+      "Revisar causas de salida en journal y ajustar governance si hay salidas reactivas."
+    ],
+    "open_close_criteria": {},
+    "metrics": {
+      "pnl_day_estimate": 0.0,
+      "pnl_day_session_date": "2026-04-16",
+      "pnl_day_matched_date": "2026-04-13",
+      "pnl_day_match_source": "latest_row_fallback",
+      "pnl_day_timezone": "America/New_York",
+      "trades_analytics_rows": 6807,
+      "r_distribution_summary": "{'values': [-1.99, -1.98, -2.04, -2.0, -2.05, -2.03, -2.0, -1.91, -1.98, -2.0, -1.96, -2.0, -1.96, -2.0, -2.2, -1.93, -1.99, -2.06, -2.02, -1.99, -1.98, -2.04, -2.0, -2.05, -2.03, -2.0, -1.91, -1.98, "
+    },
+    "raw_refs": {
+      "analytics_generated_at": "2026-04-16T20:17:03.168053+00:00",
+      "eod_day_match": {
+        "session_day": "2026-04-16",
+        "matched_day": "2026-04-13",
+        "match_source": "latest_row_fallback",
+        "timezone": "America/New_York"
+      }
+    }
+  },
+  "dispatch": {
+    "fingerprint": "a62076e3ebf0a6877398",
+    "ok": true,
+    "detail": "sent"
+  }
+}

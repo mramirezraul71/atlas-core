@@ -1,0 +1,43 @@
+{
+  "id": "daniel_hirshleifer_subrahmanyam_1998",
+  "title": "Investor Psychology and Security Market Under- and Overreactions",
+  "authors": [
+    "Kent Daniel",
+    "David Hirshleifer",
+    "Avanidhar Subrahmanyam"
+  ],
+  "year": 1998,
+  "source": "Journal of Finance",
+  "url": "https://www.jstor.org/stable/117429",
+  "category": "CAT4",
+  "topic": "behavioral_finance",
+  "subtopics": [
+    "overconfidence",
+    "self_attribution",
+    "momentum_explanation"
+  ],
+  "timeframes": [
+    "swing",
+    "medium",
+    "long"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "theoretical_model",
+  "key_findings": "El momentum de medio plazo y la reversión de largo plazo son explicables por sobreconfianza y sesgo de autoatribución. Los inversores sobrereaccionan a señales privadas y subreaccionan a señales públicas. El modelo predice momentum seguido de reversión.",
+  "limitations": "Es un modelo explicativo, no predictivo. La calibración del horizonte temporal varía entre mercados. No genera señales operativas directas.",
+  "atlas_utility": "Explica por qué la cadena trend_ema_stack → relative_strength puede tener edge: los inversores sobrereaccionan a señales privadas (generando momentum) y luego corrigen. Sugiere tomar profits antes de la reversión (exit governance activo).",
+  "confidence_level": "medium",
+  "scanner_methods": [
+    "trend_ema_stack",
+    "rsi_pullback_trend"
+  ],
+  "tags": [
+    "behavioral",
+    "overconfidence",
+    "momentum_explanation",
+    "reversal_warning"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.914171+00:00"
+}

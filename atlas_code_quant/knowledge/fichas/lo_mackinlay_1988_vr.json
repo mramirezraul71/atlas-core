@@ -1,0 +1,41 @@
+{
+  "id": "lo_mackinlay_1988_vr",
+  "title": "Stock Market Prices Do Not Follow Random Walks",
+  "authors": [
+    "Andrew W. Lo",
+    "A. Craig MacKinlay"
+  ],
+  "year": 1988,
+  "source": "Review of Financial Studies",
+  "url": "https://www.jstor.org/stable/2961965",
+  "category": "CAT1",
+  "topic": "random_walk",
+  "subtopics": [
+    "variance_ratio",
+    "autocorrelation",
+    "predictability"
+  ],
+  "timeframes": [
+    "short",
+    "swing"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "variance_ratio_test",
+  "key_findings": "El test de ratio de varianza rechaza la hipótesis de caminata aleatoria para horizontes semanales. Existe autocorrelación positiva en retornos de corto plazo para acciones de pequeña capitalización. Los retornos de índices muestran mayor predictabilidad que los de acciones individuales.",
+  "limitations": "La autocorrelación positiva puede ser artefacto de no-trading (bid-ask bounce) o de baja liquidez. No implica profit after costos de transacción.",
+  "atlas_utility": "Valida que existen desviaciones de la caminata aleatoria explotables en horizontes cortos. Sustenta el uso de momentum de corto plazo con filtros de liquidez.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "trend_ema_stack",
+    "breakout_donchian"
+  ],
+  "tags": [
+    "variance_ratio",
+    "autocorrelation",
+    "short_term",
+    "predictability"
+  ],
+  "_generated_at": "2026-04-21T04:36:24.910163+00:00"
+}

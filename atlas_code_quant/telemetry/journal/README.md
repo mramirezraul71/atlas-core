@@ -1,0 +1,10 @@
+# telemetry.journal (scaffold)
+
+**Estado:** scaffold F1 — sin lógica.
+
+Journal sync canónico (decisiones, fills, estados FSM). TODO: re-host de `atlas_code_quant/journal/` sin romper sqlalchemy current.
+
+## Reglas F1
+- No importar desde runtime productivo.
+- No usar en `atlas_code_quant/api/main.py` ni en `operation_center`.
+- Cualquier stub debe estar marcado `TODO` y nunca debe ser invocado en F1.
