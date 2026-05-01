@@ -3,11 +3,18 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 
+# operation_center importa ``backtesting.*`` como paquete de nivel superior
+# (árbol bajo atlas_code_quant/). Hay que anteponer ese directorio a sys.path.
 ROOT = Path(__file__).resolve().parents[2]
 QUANT_ROOT = ROOT / "atlas_code_quant"
 if str(QUANT_ROOT) not in sys.path:
     sys.path.insert(0, str(QUANT_ROOT))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+pytest.importorskip("pytz", reason="operation_center requiere pytz (requirements-dev)")
 
 from api.schemas import OrderRequest
 from operations.operation_center import OperationCenter

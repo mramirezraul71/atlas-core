@@ -3,6 +3,8 @@
 Este directorio es un **marcador de posición** para un proyecto generado con
 [Lean CLI](https://github.com/QuantConnect/lean-cli) (`lean create-project`).
 
+Guía rápida en el repo: `scripts/bootstrap_lean_cli.ps1` en la raíz del monorepo (solo imprime pasos y variables).
+
 Pasos recomendados:
 
 1. Instalar el CLI de QuantConnect y Docker o runtime LEAN según la documentación oficial.

@@ -10,6 +10,11 @@
 
 Ver docstring en `atlas_code_quant/lean/config.py` y bloque en `config/atlas.env.example`.
 
+## Desarrollo y tests
+
+Antes de `pytest tests/atlas_code_quant/` completo:  
+`pip install -r atlas_code_quant/requirements.txt -r atlas_code_quant/requirements-dev.txt`
+
 ## Reglas
 
 - No ejecuta órdenes reales; no sustituye Tradier.

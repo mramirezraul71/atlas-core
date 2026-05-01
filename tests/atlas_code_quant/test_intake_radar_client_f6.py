@@ -2,8 +2,8 @@
 
 Cubre:
     * Parseo de un payload Radar válido → batch interno.
-    * Mapeo desde un Pydantic ``RadarOpportunitiesResponse`` real (atlas_adapter)
-      preservando ``trace_id``, ``score``, ``classification``, etc.
+    * Mapeo desde modelos Pydantic v2 **locales** (misma forma que el Radar;
+      sin importar ``atlas_adapter`` para evitar path/env cruzados).
     * Item malformado dentro del batch no rompe el resto.
     * Filtros: ``filter_by_min_score``, ``filter_by_asset_class``.
     * Cliente:
@@ -23,16 +23,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import pytest
-
-from atlas_adapter.routes.radar_schemas import (
-    RadarOpportunity,
-    RadarOpportunitiesResponse,
-    RadarOpportunitySnapshot,
-)
+from pydantic import BaseModel, ConfigDict, Field
 
 from atlas_code_quant.intake.opportunity import (
     RadarIntakeDegradation,
@@ -52,6 +47,45 @@ from atlas_code_quant.intake.radar_client import (
     RadarClientConfig,
     fetch_opportunities_snapshot,
 )
+
+
+# --- Modelos Pydantic locales (forma compatible con Radar / intake) ----------
+# No importar atlas_adapter: en máquinas con varios worktrees en PYTHONPATH
+# el paquete resuelto puede no coincidir con el árbol del repo bajo prueba.
+
+
+class RadarOpportunitySnapshot(BaseModel):
+    """Snapshot anidado (subset estable para tests)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    timestamp: str = ""
+    snapshot_classification: str = ""
+    fast_pressure_score: float = 0.0
+
+
+class RadarOpportunity(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    symbol: str
+    asset_class: str
+    sector: str | None = None
+    optionable: bool = True
+    score: float = 0.0
+    classification: str = ""
+    direction: str = "neutral"
+    timestamp: str = ""
+    horizon_min: int | None = None
+    snapshot: dict[str, Any] | RadarOpportunitySnapshot = Field(default_factory=dict)
+    degradations_active: list[dict[str, Any]] = Field(default_factory=list)
+    source: Literal["quant", "stub"] = "quant"
+    trace_id: str = ""
+
+
+class RadarOpportunitiesResponse(BaseModel):
+    """Envelope batch: ``extra=allow`` conserva ``items`` y metadatos del fixture."""
+
+    model_config = ConfigDict(extra="allow")
 
 
 # ---------------------------------------------------------------------------

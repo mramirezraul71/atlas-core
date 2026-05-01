@@ -4,6 +4,10 @@
 # Incluye herramientas que no son necesarias en producción mínima.
 -r requirements.txt
 
+# Runtime usado por tests de integración (operation_center, TZ mercado)
+pytz>=2024.1
+
 # Calidad / tests locales (opcional)
+pytest>=8.0.0
 # pytest-xdist>=3.5.0
 # ruff>=0.4.0

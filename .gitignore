@@ -112,3 +112,7 @@ nexus/**/__pycache__/
 atlas_code_quant/logs/
 atlas_code_quant/data/journal/
 atlas_code_quant/data/operation/brain_audit_log.jsonl
+
+# Worktrees / datos locales masivos (no son el monorepo canónico)
+_wt_*/
+appsmith_data/

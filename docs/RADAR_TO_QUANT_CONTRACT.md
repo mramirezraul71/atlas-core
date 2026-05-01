@@ -73,3 +73,9 @@ Fusionar este worktree a la rama principal cuando valides en runtime (8791 / 879
 
 - `atlas_code_quant.backtest.unified_engine`: LEAN CLI (`ATLAS_LEAN_USE_CLI`) → adapter F13 → degradación GBM (`ATLAS_LEAN_DEGRADE_TO_GBM`).
 - Tests: `tests/atlas_code_quant/test_plan_radar_lean_pipeline.py`.
+
+## Canon de clon (evitar drift)
+
+- Un solo remoto: `https://github.com/mramirezraul71/atlas-core.git`.
+- Rama de trabajo acordada: **`intent-input-rename`** (misma que CI en `.github/workflows/code-quant-tests.yml`).
+- Evitar editar en paralelo `C:\ATLAS_PUSH` y otra copia bajo `ATLAS_NEXUS\atlas-core` sin `git pull`/`push`; preferir **una** ruta como fuente de verdad local.
