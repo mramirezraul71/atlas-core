@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 TIMEOUT_SEC = 5
 
@@ -20,13 +20,43 @@ def _exe_exists(path: Path) -> bool:
     return path.exists() and path.suffix.lower() in (".exe", "") and path.is_file()
 
 
+def resolve_cloudflared_path() -> Optional[Path]:
+    """Localiza ``cloudflared.exe``: variable de entorno, bin ATLAS, instalación típica, ``where``."""
+    raw = (os.getenv("CLOUDFLARE_CLOUDFLARED_PATH") or "").strip()
+    push_root = Path(os.getenv("ATLAS_PUSH_ROOT", r"C:\ATLAS_PUSH")).expanduser().resolve()
+    candidates: list[Path] = []
+    if raw:
+        p = Path(raw).expanduser()
+        candidates.append(p.resolve() if p.is_absolute() else (Path(os.getcwd()) / p).resolve())
+    candidates.append((push_root / "bin" / "cloudflared.exe").resolve())
+    candidates.append(Path(r"C:\Program Files (x86)\cloudflared\cloudflared.exe"))
+    candidates.append(Path(r"C:\Program Files\cloudflared\cloudflared.exe"))
+    for path in candidates:
+        if _exe_exists(path):
+            return path
+    try:
+        r = subprocess.run(
+            ["where", "cloudflared"],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SEC,
+        )
+        if r.returncode == 0 and (r.stdout or "").strip():
+            w = Path((r.stdout or "").strip().splitlines()[0].strip())
+            if _exe_exists(w):
+                return w
+    except Exception:
+        pass
+    return None
+
+
 def detect_cloudflared() -> Dict[str, Any]:
-    path = _env_path(
+    path = resolve_cloudflared_path() or _env_path(
         "CLOUDFLARE_CLOUDFLARED_PATH", "C:\\ATLAS_PUSH\\bin\\cloudflared.exe"
     )
     if not path.is_absolute():
         path = Path(os.getcwd()) / path
-    present = _exe_exists(path)
+    present = _exe_exists(path) if path else False
     token = bool(os.getenv("CLOUDFLARE_TOKEN", "").strip())
     tunnel_url = os.getenv("CLOUDFLARE_TUNNEL_URL", "").strip()
     tunnel_name = os.getenv("CLOUDFLARE_TUNNEL_NAME", "").strip()

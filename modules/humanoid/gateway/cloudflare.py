@@ -11,8 +11,13 @@ TIMEOUT_START = 15
 
 
 def _cloudflared_path() -> Path:
-    p = os.getenv("CLOUDFLARE_CLOUDFLARED_PATH", "C:\\ATLAS_PUSH\\bin\\cloudflared.exe")
-    return Path(p).expanduser().resolve()
+    from . import detector
+
+    resolved = detector.resolve_cloudflared_path()
+    if resolved is not None:
+        return resolved
+    raw = os.getenv("CLOUDFLARE_CLOUDFLARED_PATH", "C:\\ATLAS_PUSH\\bin\\cloudflared.exe")
+    return Path(raw).expanduser().resolve()
 
 
 def status() -> Dict[str, Any]:
