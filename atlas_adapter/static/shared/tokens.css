@@ -1,0 +1,40 @@
+/* ATLAS — tokens compartidos (v4 + futuros dashboards). Sincronizado con v4/style.css :root */
+:root, [data-theme="cyan"] {
+  --bg:            #0a0e14;
+  --bg-card:       #131920;
+  --bg-elevated:   #1a2130;
+  --bg-input:      #0d1117;
+  --bg-hover:      rgba(57,211,196,0.06);
+  --border:        #1e2a3a;
+  --border-focus:  #39d3c4;
+  --text:          #e6edf3;
+  --text-secondary:#8b949e;
+  --text-muted:    #484f58;
+  --accent:        #39d3c4;
+  --accent-blue:   #58a6ff;
+  --accent-green:  #3fb950;
+  --accent-purple: #a371f7;
+  --accent-pink:   #f778ba;
+  --accent-orange: #d29922;
+  --accent-red:    #f85149;
+  --accent-gold:   #fbbf24;
+  --glow:          rgba(57,211,196,0.12);
+  --glow-strong:   rgba(57,211,196,0.35);
+  --radius-sm:     6px;
+  --radius-md:     12px;
+  --radius-lg:     20px;
+  --radius-xl:     28px;
+  --shadow-sm:     0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md:     0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg:     0 8px 32px rgba(0,0,0,0.5);
+  --transition:    0.2s cubic-bezier(0.4,0,0.2,1);
+  --font:          'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:     'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+[data-theme="purple"]  { --accent: #a371f7; --glow: rgba(163,113,247,0.12); --glow-strong: rgba(163,113,247,0.35); --border-focus: #a371f7; }
+[data-theme="green"]   { --accent: #3fb950; --glow: rgba(63,185,80,0.12);   --glow-strong: rgba(63,185,80,0.35);  --border-focus: #3fb950; }
+[data-theme="blue"]    { --accent: #3b82f6; --glow: rgba(59,130,246,0.12);  --glow-strong: rgba(59,130,246,0.35); --border-focus: #3b82f6; }
+[data-theme="orange"]  { --accent: #f59e0b; --glow: rgba(245,158,11,0.12);  --glow-strong: rgba(245,158,11,0.35); --border-focus: #f59e0b; }
+[data-theme="pink"]    { --accent: #f778ba; --glow: rgba(247,120,186,0.12); --glow-strong: rgba(247,120,186,0.35); --border-focus: #f778ba; }
+[data-theme="red"]     { --accent: #ef4444; --glow: rgba(239,68,68,0.12);   --glow-strong: rgba(239,68,68,0.35);  --border-focus: #ef4444; }
+[data-theme="gold"]    { --accent: #fbbf24; --glow: rgba(251,191,36,0.12);  --glow-strong: rgba(251,191,36,0.35); --border-focus: #fbbf24; }

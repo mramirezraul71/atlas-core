@@ -3876,6 +3876,54 @@ def product_status():
 # Dashboard UI (fallback: if UI fails, API still works)
 STATIC_DIR = BASE_DIR / "atlas_adapter" / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+_SHARED_STATIC = STATIC_DIR / "shared"
+
+
+def _dashboard_missing_page(title: str, detail: str) -> HTMLResponse:
+    """Respuesta HTML estable cuando falta un asset de UI (evita JSON confuso en el navegador)."""
+    links = (
+        ("Ir a /ui (v4)", "/ui"),
+        ("Dashboard v3", "/v3"),
+        ("Workspace", "/workspace"),
+        ("Panel NEXUS", "/nexus"),
+        ("Salud API", "/health"),
+    )
+    nav = "".join(f'<p style="margin:.35em 0"><a href="{href}">{label}</a></p>' for href, label in links)
+    html = f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>{title}</title>
+<style>body{{font-family:system-ui,Segoe UI,sans-serif;background:#0a0e14;color:#e6edf3;padding:28px 20px;max-width:560px;margin:0 auto;line-height:1.55}}
+a{{color:#58a6ff}}</style></head><body>
+<h1 style="font-size:1.05rem;margin:0 0 12px">{title}</h1>
+<p style="opacity:.9;margin:0 0 16px">{detail}</p>
+{nav}
+<p style="margin-top:20px;font-size:12px;opacity:.65">Ctrl+Shift+R si la caché muestra una versión vieja.</p>
+</body></html>"""
+    return HTMLResponse(html, status_code=503)
+
+
+def _static_file_response(path: Path, *, cache: bool = False) -> FileResponse:
+    if cache:
+        headers = {"Cache-Control": "public, max-age=300"}
+    else:
+        headers = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+    return FileResponse(path, headers=headers)
+
+
+@app.get("/static/shared/{file_path:path}")
+def serve_static_shared(file_path: str):
+    """Tokens y CSS compartidos (p. ej. v4/index.html → /static/shared/tokens.css)."""
+    from fastapi import HTTPException
+
+    safe = (file_path or "").replace("..", "").strip("/").replace("\\", "")
+    if not safe or safe.startswith("."):
+        raise HTTPException(status_code=404, detail="invalid path")
+    path = _SHARED_STATIC / safe
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="shared asset not found")
+    ct_map = {".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".woff2": "font/woff2"}
+    ct = ct_map.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.get("/")
@@ -3892,8 +3940,8 @@ def serve_ui():
     # v4 landing is canonical at /ui (presentation)
     path = STATIC_DIR / "v4" / "index.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
-    return {"ok": False, "error": "v4/index.html not found"}
+        return _static_file_response(path)
+    return _dashboard_missing_page("ATLAS v4 no disponible", "No se encontró atlas_adapter/static/v4/index.html en el despliegue.")
 
 
 @app.get("/v3")
@@ -3901,8 +3949,8 @@ def serve_v3():
     """Legacy dashboard v3.8.0 (operational UI)."""
     path = STATIC_DIR / "dashboard.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
-    return {"ok": False, "error": "dashboard.html not found"}
+        return _static_file_response(path)
+    return _dashboard_missing_page("Dashboard v3 no disponible", "No se encontró atlas_adapter/static/dashboard.html.")
 
 
 @app.get("/ui-legacy")
@@ -3915,8 +3963,8 @@ def serve_ui_legacy():
         raise HTTPException(status_code=404, detail="not_found")
     path = STATIC_DIR / "dashboard.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
-    return {"ok": False, "error": "dashboard.html not found"}
+        return _static_file_response(path)
+    return _dashboard_missing_page("UI legacy no disponible", "No se encontró dashboard.html.")
 
 
 @app.get("/ui/static/{file_path:path}")
@@ -3929,7 +3977,7 @@ def serve_ui_static(file_path: str):
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail=f"ui asset not found: {safe}")
     ct_map = {".js": "application/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
-    ct = ct_map.get(path.suffix, "application/octet-stream")
+    ct = ct_map.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
@@ -3938,8 +3986,8 @@ def serve_workspace():
     """ATLAS Agent Workspace — IDE-style interface para comandar ATLAS en tiempo real."""
     path = STATIC_DIR / "workspace.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
-    return {"ok": False, "error": "workspace.html not found"}
+        return _static_file_response(path)
+    return _dashboard_missing_page("Workspace no disponible", "No se encontró atlas_adapter/static/workspace.html.")
 
 
 @app.get("/v4")
@@ -3959,7 +4007,7 @@ def serve_v4_static(file_path: str):
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail=f"v4 asset not found: {safe}")
     ct_map = {".js": "application/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
-    ct = ct_map.get(path.suffix, "application/octet-stream")
+    ct = ct_map.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
@@ -3968,8 +4016,8 @@ def serve_nexus():
     """Panel de Control ATLAS — vista consolidada del sistema (antes en puerto 8000)."""
     path = STATIC_DIR / "nexus.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
-    return {"ok": False, "error": "nexus.html not found"}
+        return _static_file_response(path)
+    return _dashboard_missing_page("Panel NEXUS no disponible", "No se encontró atlas_adapter/static/nexus.html.")
 
 
 # ----------------------------------------------------------------------------
@@ -5770,7 +5818,10 @@ async def autonomous_dashboard():
     """Dashboard UI de ATLAS AUTONOMOUS: health, servicios, healing, learning."""
     html_file = BASE_DIR / "templates" / "autonomous_dashboard.html"
     if not html_file.exists():
-        return HTMLResponse("<h1>Dashboard no encontrado</h1>", status_code=404)
+        return _dashboard_missing_page(
+            "Autonomous dashboard no instalado",
+            f"No existe templates/autonomous_dashboard.html bajo {BASE_DIR}.",
+        )
     return HTMLResponse(html_file.read_text(encoding="utf-8"))
 
 # --- /actions/log — log de acciones (antes proxy a NEXUS, ahora local) ---
