@@ -10,10 +10,41 @@ Triggers:
 
 Severidad: LOW
 """
+from __future__ import annotations
+
+import os
+
 from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
 
 
+def _push_base_url() -> str:
+    """Base URL del PUSH (8791 por defecto). Prioridad: ATLAS_PUSH_BASE_URL, ATLAS_DASHBOARD_URL, host+SERVICE_PORT."""
+    base = (os.getenv("ATLAS_PUSH_BASE_URL") or os.getenv("ATLAS_DASHBOARD_URL") or "").strip().rstrip("/")
+    if base:
+        return base
+    port = int(os.getenv("SERVICE_PORT", "8791") or 8791)
+    host = (os.getenv("ATLAS_PUSH_HOST") or "127.0.0.1").strip()
+    return f"http://{host}:{port}"
+
+
+def _robot_base_url() -> str:
+    """Base URL del backend Robot (8002 por defecto)."""
+    base = (
+        os.getenv("ATLAS_ROBOT_BASE_URL")
+        or os.getenv("ROBOT_BASE_URL")
+        or os.getenv("NEXUS_ROBOT_API_URL")
+        or ""
+    ).strip().rstrip("/")
+    if base:
+        return base
+    port = int(os.getenv("ROBOT_PORT", "8002") or 8002)
+    host = (os.getenv("ROBOT_HOST") or "127.0.0.1").strip()
+    return f"http://{host}:{port}"
+
+
 def get_pot() -> POT:
+    push = _push_base_url()
+    robot = _robot_base_url()
     return POT(
         id="session_startup",
         name="Inicio de Sesión ATLAS",
@@ -67,8 +98,9 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
 
 ### Comandos Útiles Post-Startup
 - `git status -sb` - Ver estado rápido
-- `curl localhost:8791/health` - Health check
-- `curl localhost:8791/status` - Estado detallado
+- Health/status del PUSH: contra la base configurada (env `ATLAS_PUSH_BASE_URL` / host + `SERVICE_PORT`), por ejemplo `GET .../health` y `GET .../status`
+
+Variables de entorno relevantes: `ATLAS_PUSH_BASE_URL`, `ATLAS_DASHBOARD_URL`, `SERVICE_PORT`, `ATLAS_PUSH_HOST`; Robot: `ATLAS_ROBOT_BASE_URL`, `ROBOT_BASE_URL`, `NEXUS_ROBOT_API_URL`, `ROBOT_PORT`, `ROBOT_HOST`.
         """.strip(),
         
         best_practices=[
@@ -117,7 +149,7 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 description="Health check general",
                 step_type=StepType.HTTP,
                 http_method="GET",
-                http_url="http://127.0.0.1:8791/health",
+                http_url=f"{push}/health",
                 timeout_seconds=15,
                 capture_output=True,
                 continue_on_failure=True,
@@ -129,7 +161,7 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 description="Confirmar Robot disponible",
                 step_type=StepType.HTTP,
                 http_method="GET",
-                http_url="http://127.0.0.1:8002/api/health",
+                http_url=f"{robot}/api/health",
                 timeout_seconds=15,
                 continue_on_failure=True,
             ),
@@ -140,7 +172,7 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 description="Ver si hay algo que atender",
                 step_type=StepType.HTTP,
                 http_method="GET",
-                http_url="http://127.0.0.1:8791/ans/incidents?status=open",
+                http_url=f"{push}/ans/incidents?status=open",
                 timeout_seconds=10,
                 capture_output=True,
                 continue_on_failure=True,
@@ -152,7 +184,7 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 description="Ver si hay approvals esperando",
                 step_type=StepType.HTTP,
                 http_method="GET",
-                http_url="http://127.0.0.1:8791/approvals/pending",
+                http_url=f"{push}/approvals/pending",
                 timeout_seconds=10,
                 capture_output=True,
                 continue_on_failure=True,
@@ -164,7 +196,7 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 description="Log en bitácora ANS",
                 step_type=StepType.HTTP,
                 http_method="POST",
-                http_url="http://127.0.0.1:8791/ans/evolution-log",
+                http_url=f"{push}/ans/evolution-log",
                 http_body={
                     "message": "[SESSION] Inicio de sesión - Sistema preparado",
                     "ok": True,
