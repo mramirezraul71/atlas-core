@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field, field_validator
 from ..config import RadarSettings, get_settings
 from ..brain import BrainDecision
 from ..executor import OrderResult
-from ..profiles import RADAR_PROFILE_PRESETS
+from ..profiles import RADAR_DEFAULT_PROFILE, RADAR_PROFILE_PRESETS
 from ..autotune import AutoTuneConfig, AutoTuneController, AutoTunePatch
 from ..backtest import BTConfig, run_experiment
 from ..risk import PositionSize
@@ -50,7 +50,7 @@ from ..state.journal import Journal
 from ..metrics import compute as compute_perf, prometheus_text
 
 # Visible en /ui/radar: si no coincide tras pull, reiniciar proceso :8791.
-RADAR_UI_BUILD = "20260502-radar-entry-block-v1"
+RADAR_UI_BUILD = "20260502-radar-default-paper-aggressive-v1"
 _RADAR_PROFILE_OVERRIDE_KEYS = (
     "RADAR_EDGE_NET_MIN",
     "RADAR_CONFIDENCE_MIN",
@@ -560,7 +560,10 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
         },
         "radar_ui_build": RADAR_UI_BUILD,
         "radar_profile": (
-            str(getattr(orch, "profile", "") or os.getenv("RADAR_PROFILE", "paper_safe"))
+            str(
+                getattr(orch, "profile", "")
+                or os.getenv("RADAR_PROFILE", RADAR_DEFAULT_PROFILE)
+            )
         ),
         "profile_overrides_active": profile_overrides_active,
         "edge_threshold": state.settings.edge_threshold,
@@ -803,7 +806,7 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
         ).expanduser()
         selected_profile = (
             payload.radar_profile
-            or str(os.getenv("RADAR_PROFILE", "paper_safe")).strip().lower()
+            or str(os.getenv("RADAR_PROFILE", RADAR_DEFAULT_PROFILE)).strip().lower()
         )
         if _remediation_policy_enforced():
             if execution_mode != "paper":
@@ -811,12 +814,12 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                     status_code=400,
                     detail="Política de remediación activa: execution_mode debe ser paper.",
                 )
-            # Solo se endurece 'aggressive' → 'balanced'. paper_calib / paper_safe
+            # Solo se endurece 'aggressive' → 'balanced'. paper_* queda igual.
             # se respetan para calibración en paper con credenciales opcionales.
             if selected_profile == "aggressive":
                 selected_profile = "balanced"
         if selected_profile not in RADAR_PROFILE_PRESETS:
-            selected_profile = "paper_safe"
+            selected_profile = RADAR_DEFAULT_PROFILE
         p_gate = RADAR_PROFILE_PRESETS[selected_profile]["gate"]
         p_risk = RADAR_PROFILE_PRESETS[selected_profile]["risk"]
 
@@ -1646,6 +1649,7 @@ _RADAR_HTML = r"""<!doctype html>
       <input id="cfg_paper" type="number" min="1" step="1" value="1000" />
       <label for="cfg_profile">Perfil</label>
       <select id="cfg_profile">
+        <option value="paper_aggressive">paper_aggressive (predeterminado · paper activo)</option>
         <option value="paper_calib">paper_calib (calibrar paper, menos exigente)</option>
         <option value="paper_safe">paper_safe</option>
         <option value="balanced">balanced</option>
@@ -1680,18 +1684,18 @@ _RADAR_HTML = r"""<!doctype html>
       <div class="ctrl" style="margin-top:6px;align-items:flex-end">
         <label for="auto_mode">Modo</label>
         <select id="auto_mode">
-          <option value="manual">manual</option>
+          <option value="auto" selected>auto (predeterminado)</option>
           <option value="assisted">assisted</option>
-          <option value="auto">auto</option>
+          <option value="manual">manual</option>
         </select>
         <label for="auto_enabled">
-          <input id="auto_enabled" type="checkbox" />
+          <input id="auto_enabled" type="checkbox" checked />
           AutoTune activo
         </label>
         <label for="auto_interval">Intervalo (s)</label>
-        <input id="auto_interval" type="number" min="30" max="86400" step="10" value="900" />
+        <input id="auto_interval" type="number" min="30" max="86400" step="10" value="120" />
         <label for="exp_window">Ventana online (s)</label>
-        <input id="exp_window" type="number" min="30" max="7200" step="30" value="600" />
+        <input id="exp_window" type="number" min="30" max="7200" step="30" value="180" />
         <button class="btn" onclick="saveAutoTune()">Guardar AutoTune</button>
         <button class="btn" onclick="proposeAutoTune()">Proponer</button>
         <button class="btn" onclick="applyAutoTune()">Aplicar propuesta</button>
@@ -1700,11 +1704,11 @@ _RADAR_HTML = r"""<!doctype html>
         <button class="btn" onclick="runOnlineExperiment()">Exp. Online</button>
       </div>
       <p class="mut" style="margin:8px 0 0;font-size:11px;line-height:1.45">
-        El modo <strong>auto</strong> solo aplica parches de AutoTune en segundo plano si marcas
-        <strong>AutoTune activo</strong> y pulsas <em>Guardar AutoTune</em>. Eso no es “operar solo”:
-        las órdenes siguen dependiendo del <strong>gating</strong> (edge neto, confianza, liquidez, cooldown)
-        y del <strong>motor de riesgo</strong> (Kelly, límites de exposición, max_open). Si ves decisiones en vivo
-        pero la última orden es antigua, revisa el panel <strong>Por qué no hubo entrada</strong> abajo.
+        Por defecto el panel arranca en <strong>auto</strong> + <strong>AutoTune activo</strong>; si editas valores,
+        pulsa <em>Guardar AutoTune</em>. Eso solo ajusta parches en segundo plano — no es “operar solo”:
+        las órdenes siguen pasando por <strong>gating</strong> (edge neto, confianza, liquidez, cooldown)
+        y <strong>riesgo</strong> (Kelly, exposición, max_open). Si ves decisiones pero órdenes viejas,
+        usa <strong>Por qué no hubo entrada</strong> abajo.
       </p>
       <div class="mut" id="autotune_msg" style="margin-top:8px"></div>
     </div>
@@ -1962,7 +1966,7 @@ function updateExecBanner(s){
   }
   const pp = $('#profile_pill');
   if (pp) {
-    const rp = (s.radar_profile || 'paper_safe');
+    const rp = (s.radar_profile || 'paper_aggressive');
     pp.textContent = 'PROFILE: ' + rp;
     pp.className = 'pill ok';
   }
@@ -2063,7 +2067,7 @@ async function loadConfig(){
       $('#cfg_kelly').value = String(Math.round(kf * 100));
     }
     if ($('#cfg_profile')) {
-      $('#cfg_profile').value = cfg.radar_profile || 'paper_safe';
+      $('#cfg_profile').value = cfg.radar_profile || 'paper_aggressive';
     }
     updateModeSelectClass();
     updateExecBanner(cfg);
@@ -2100,7 +2104,7 @@ async function applyConfig(){
     execution_mode: $('#cfg_mode').value,
     paper_balance_usd: Number($('#cfg_paper').value || 0),
     private_key_path: $('#cfg_pem').value || null,
-    radar_profile: $('#cfg_profile').value || 'paper_safe',
+    radar_profile: $('#cfg_profile').value || 'paper_aggressive',
     clear_profile_overrides: !!($('#cfg_profile_only') && $('#cfg_profile_only').checked),
     persist_env: true,
   };

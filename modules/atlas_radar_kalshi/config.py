@@ -85,6 +85,30 @@ def _load_env() -> None:
             except OSError:
                 pass
             break
+    _apply_radar_runtime_defaults()
+
+
+def _seed_env_if_unset(key: str, value: str) -> None:
+    if not (os.getenv(key) or "").strip():
+        os.environ[key] = value
+
+
+def _apply_radar_runtime_defaults() -> None:
+    """
+    Paper + perfil operativo activo + AutoTune auto cuando no hay .env explícito.
+
+    No fuerza KALSHI_ENV (demo vs prod): sigue el valor cargado o el default del
+    modelo (demo) para no romper keys solo-demo.
+    """
+    from .profiles import RADAR_DEFAULT_PROFILE
+
+    _seed_env_if_unset("RADAR_PROFILE", RADAR_DEFAULT_PROFILE)
+    _seed_env_if_unset("RADAR_AUTOTUNE_MODE", "auto")
+    _seed_env_if_unset("RADAR_AUTOTUNE_ENABLED", "1")
+    _seed_env_if_unset("RADAR_AUTOTUNE_INTERVAL_S", "120")
+    _seed_env_if_unset("RADAR_AUTOTUNE_OBS_S", "180")
+    _seed_env_if_unset("ATLAS_RADAR_EXECUTION_MODE", "paper")
+    _seed_env_if_unset("ATLAS_RADAR_LIVE", "0")
 
 
 # ---------------------------------------------------------------------------

@@ -39,7 +39,7 @@ from .scanner import KalshiScanner, MarketEvent, OrderBookSnapshot
 from .signals import EnsembleWeights, SignalEnsemble, SignalReadout
 from .state.journal import Journal
 from .utils.logger import get_logger
-from .profiles import RADAR_PROFILE_PRESETS
+from .profiles import RADAR_DEFAULT_PROFILE, RADAR_PROFILE_PRESETS
 
 
 # ===========================================================================
@@ -101,12 +101,14 @@ class Orchestrator:
         self.state = state or RadarState(self.settings)
         self.log = get_logger("orchestrator", self.settings.log_dir,
                               self.settings.log_level)
-        profile = (os.getenv("RADAR_PROFILE", "paper_safe") or "").strip().lower()
+        profile = (os.getenv("RADAR_PROFILE", RADAR_DEFAULT_PROFILE) or "").strip().lower()
         if profile not in RADAR_PROFILE_PRESETS:
             self.log.warning(
-                "RADAR_PROFILE desconocido '%s'; usando paper_safe", profile
+                "RADAR_PROFILE desconocido '%s'; usando %s",
+                profile,
+                RADAR_DEFAULT_PROFILE,
             )
-            profile = "paper_safe"
+            profile = RADAR_DEFAULT_PROFILE
         self.profile = profile
         p_gate = RADAR_PROFILE_PRESETS[self.profile]["gate"]
         p_risk = RADAR_PROFILE_PRESETS[self.profile]["risk"]

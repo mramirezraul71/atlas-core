@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+# Sin RADAR_PROFILE en entorno: paper con reglas cercanas a aggressive pero gating
+# tolerante a libros finos (REST/demo/prod) para que haya flujo de órdenes virtuales.
+RADAR_DEFAULT_PROFILE: str = "paper_aggressive"
+
 RADAR_PROFILE_PRESETS: dict[str, dict[str, dict[str, float | int]]] = {
     # Calibración en paper (feed REST/Kalshi público, libros 1-cara): gating
     # permisivo; riesgo acotado pero sin cortar por DD pequeño como aggressive.
@@ -98,6 +102,31 @@ RADAR_PROFILE_PRESETS: dict[str, dict[str, dict[str, float | int]]] = {
             "max_consecutive_losses": 7,
             "max_open_positions": 15,
             "max_orders_per_minute": 20,
+        },
+    },
+    # Paper + datos reales (demo o prod) + intención agresiva: riesgo alto pero
+    # gating compatible con profundidad baja / colas REST (evita “solo decisiones”).
+    "paper_aggressive": {
+        "gate": {
+            "edge_net_min": 0.0135,
+            "confidence_min": 0.40,
+            "spread_max_ticks": 8,
+            "min_depth_yes": 8,
+            "min_depth_no": 8,
+            "max_quote_age_ms": 25000,
+            "max_latency_ms": 1800,
+            "cooldown_seconds": 28,
+        },
+        "risk": {
+            "kelly_fraction": 0.28,
+            "max_position_pct": 0.038,
+            "max_market_exposure_pct": 0.18,
+            "max_total_exposure_pct": 0.62,
+            "daily_dd_limit_pct": 0.05,
+            "weekly_dd_limit_pct": 0.10,
+            "max_consecutive_losses": 7,
+            "max_open_positions": 14,
+            "max_orders_per_minute": 22,
         },
     },
 }
