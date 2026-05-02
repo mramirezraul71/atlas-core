@@ -50,7 +50,7 @@ from ..state.journal import Journal
 from ..metrics import compute as compute_perf, prometheus_text
 
 # Visible en /ui/radar: si no coincide tras pull, reiniciar proceso :8791.
-RADAR_UI_BUILD = "20260502-radar-calib-ans-v1"
+RADAR_UI_BUILD = "20260502-radar-autonomy-strip-v1"
 _RADAR_PROFILE_OVERRIDE_KEYS = (
     "RADAR_EDGE_NET_MIN",
     "RADAR_CONFIDENCE_MIN",
@@ -1547,6 +1547,21 @@ _RADAR_HTML = r"""<!doctype html>
     line-height:1.35;word-break:break-word
   }
   #calib_log .calib-line:last-child{border-bottom:none}
+  .autonomy-strip{
+    font-size:11px;
+    color:var(--muted);
+    margin:0 0 10px;
+    padding:6px 9px;
+    background:rgba(88,166,255,.06);
+    border:1px solid var(--line);
+    border-radius:6px;
+    line-height:1.45;
+    word-break:break-word;
+  }
+  .autonomy-strip.autonomy-err{
+    border-color:rgba(248,81,73,.45);
+    color:var(--fg);
+  }
 </style>
 </head>
 <body>
@@ -1582,6 +1597,9 @@ _RADAR_HTML = r"""<!doctype html>
     <strong>bitácora ANS</strong> (<code>source=radar_calib</code>) para trazabilidad del robot.
     Scripts pueden usar <code>POST /api/radar/calibration-events</code>.
   </p>
+  <div id="autonomy_strip" class="autonomy-strip mut" role="status" aria-live="polite" title="Operador periódico: saneo de riesgo, max_open (paper) y supervisor LLM (RADAR_AUTONOMY_*)">
+    Autonomía: cargando…
+  </div>
   <div id="calib_log" role="log" aria-live="polite" aria-label="Bitácora de calibración radar"></div>
 </section>
 
@@ -1927,6 +1945,38 @@ function updateExecBanner(s){
   }
 }
 
+function fmtAutonomyPulse(ts){
+  if(ts == null || ts <= 0) return 'sin pulso aún';
+  const sec = Math.max(0, Math.floor(Date.now()/1000 - Number(ts)));
+  if(sec < 90) return 'hace ' + sec + 's';
+  if(sec < 3600) return 'hace ' + Math.floor(sec/60) + ' min';
+  return 'hace ' + Math.floor(sec/3600) + ' h';
+}
+
+function updateAutonomyStrip(au){
+  const el = $('#autonomy_strip');
+  if(!el) return;
+  if(!au || !au.ok){
+    el.textContent = 'Autonomía: no disponible (API).';
+    el.className = 'autonomy-strip autonomy-err';
+    return;
+  }
+  const st = au.status || {};
+  const en = st.enabled !== false;
+  const tick = fmtAutonomyPulse(st.last_tick_ts);
+  const acts = (Array.isArray(st.last_actions) ? st.last_actions : []).slice(-5).join(' · ') || '—';
+  let llmS = '';
+  const llm = st.last_llm_action;
+  if(llm && typeof llm === 'object'){
+    const sm = llm.summary ? String(llm.summary).slice(0, 96) : '';
+    llmS = ' · LLM ' + (llm.action || '?') + (sm ? ': ' + sm : '');
+  }
+  const err = (st.last_error || '').trim();
+  el.textContent = (en ? 'Autonomía: activa' : 'Autonomía: off (RADAR_AUTONOMY_DISABLE)')
+    + ' · últ. pulso ' + tick + ' · ' + acts + llmS + (err ? ' · ERROR: ' + err.slice(0, 140) : '');
+  el.className = 'autonomy-strip' + (err ? ' autonomy-err' : '');
+}
+
 async function refreshCalibLog(){
   try{
     const res = await fetch('/api/radar/calibration-events?limit=28');
@@ -1993,6 +2043,12 @@ async function loadConfig(){
       llm.title = 'Radar LLM backend (RADAR_LLM_BACKEND). atlas_brain usa POST /brain/process.';
     }
     await refreshCalibLog();
+    try{
+      const au = await fetch('/api/radar/autonomy/status').then(r => r.json());
+      updateAutonomyStrip(au);
+    }catch(_e){
+      updateAutonomyStrip({ok: false});
+    }
   }catch(err){
     setCfgMsg('Error leyendo configuración: '+err, false);
   }
@@ -2049,11 +2105,13 @@ async function resume(){await fetch('/api/radar/resume',{method:'POST'}); refres
 
 async function refresh(){
   try {
-    const [s, m, mk] = await Promise.all([
+    const [s, m, mk, au] = await Promise.all([
       fetch('/api/radar/status').then(r => r.json()),
       fetch('/api/radar/metrics').then(r => r.json()),
       fetch('/api/radar/markets').then(r => r.json()),
+      fetch('/api/radar/autonomy/status').then(r => r.json()).catch(() => ({ok:false})),
     ]);
+    updateAutonomyStrip(au);
     $('#env').textContent = s.environment;
     $('#mode').textContent = s.execution_mode || 'paper';
     updateModeSelectClass();
