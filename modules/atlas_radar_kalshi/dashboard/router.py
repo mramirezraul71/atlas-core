@@ -9,6 +9,8 @@ Se monta en ``atlas_adapter.atlas_http_api:app`` (puerto 8791) y expone:
 - ``GET  /api/radar/decisions``    → últimas N :class:`BrainDecision`.
 - ``GET  /api/radar/orders``       → órdenes enviadas (audit log).
 - ``GET  /api/radar/metrics``      → KPIs (PnL acumulado, hit-rate, etc.).
+- ``GET  /api/radar/calibration-events`` → últimos ajustes (panel + bitácora ANS).
+- ``POST /api/radar/calibration-events`` → registro externo (scripts).
 - ``WS   /api/radar/stream``       → canal en vivo (eventos del scanner
                                      + decisiones brain).
 
@@ -47,7 +49,7 @@ from ..state.journal import Journal
 from ..metrics import compute as compute_perf, prometheus_text
 
 # Visible en /ui/radar: si no coincide tras pull, reiniciar proceso :8791.
-RADAR_UI_BUILD = "20260429-watchdog-health-v1"
+RADAR_UI_BUILD = "20260502-radar-calib-ans-v1"
 _RADAR_PROFILE_OVERRIDE_KEYS = (
     "RADAR_EDGE_NET_MIN",
     "RADAR_CONFIDENCE_MIN",
@@ -114,6 +116,7 @@ class RadarState:
             "result": None,
             "error": None,
         }
+        self.calibration_events: Deque[dict[str, Any]] = deque(maxlen=100)
 
     # ------------------------------------------------------------------
     async def broadcast(self, payload: dict[str, Any]) -> None:
@@ -139,6 +142,75 @@ class RadarState:
 
     def update_market(self, ticker: str, data: dict) -> None:
         self.markets[ticker] = {**self.markets.get(ticker, {}), **data}
+
+
+def _record_radar_calibration_event(
+    state: RadarState,
+    source: str,
+    summary: str,
+    detail: Optional[dict[str, Any]] = None,
+    *,
+    ans_ok: bool = True,
+) -> None:
+    """Panel radar + bitácora ANS (evolution_bitacora, source=radar_calib)."""
+    from datetime import datetime, timezone
+
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "source": (source or "radar")[:80],
+        "summary": (summary or "").strip()[:500],
+        "detail": detail or {},
+    }
+    state.calibration_events.append(entry)
+    msg = f"[{entry['source']}] {entry['summary']}"
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+
+        append_evolution_log(msg[:500], ok=ans_ok, source="radar_calib")
+    except Exception:
+        pass
+
+
+def _summarize_radar_config_payload(
+    payload: "RadarRuntimeConfigBody", applied_profile: str
+) -> str:
+    parts = [
+        f"env={payload.environment}",
+        f"mode={payload.execution_mode}",
+        f"paper_usd={payload.paper_balance_usd:.2f}",
+        f"profile={applied_profile}",
+    ]
+    if payload.clear_profile_overrides:
+        parts.append("clear_profile_overrides=1")
+    if payload.persist_env:
+        parts.append("persist_env=1")
+    if payload.edge_threshold is not None:
+        parts.append(f"edge_thr={payload.edge_threshold:.4f}")
+    if payload.edge_net_min is not None:
+        parts.append(f"edge_net_min={payload.edge_net_min:.4f}")
+    if payload.kelly_fraction is not None:
+        parts.append(f"kelly={payload.kelly_fraction:.4f}")
+    if payload.confidence_min is not None:
+        parts.append(f"conf_min={payload.confidence_min:.4f}")
+    if payload.spread_max_ticks is not None:
+        parts.append(f"spread_max={payload.spread_max_ticks}")
+    if payload.min_depth_yes is not None:
+        parts.append(f"depth_yes={payload.min_depth_yes}")
+    if payload.min_depth_no is not None:
+        parts.append(f"depth_no={payload.min_depth_no}")
+    if payload.max_open_positions is not None:
+        parts.append(f"max_open={payload.max_open_positions}")
+    if payload.max_orders_per_minute is not None:
+        parts.append(f"max_opm={payload.max_orders_per_minute}")
+    if payload.max_total_exposure_pct is not None:
+        parts.append(f"max_tot_exp={payload.max_total_exposure_pct:.4f}")
+    if payload.max_quote_age_ms is not None:
+        parts.append(f"quote_age_ms={payload.max_quote_age_ms}")
+    if payload.max_latency_ms is not None:
+        parts.append(f"latency_ms={payload.max_latency_ms}")
+    if payload.cooldown_seconds is not None:
+        parts.append(f"cooldown_s={payload.cooldown_seconds}")
+    return " · ".join(parts)
 
 
 class RadarRuntimeConfigBody(BaseModel):
@@ -193,6 +265,18 @@ class RadarRuntimeConfigBody(BaseModel):
     max_total_exposure_pct: Optional[float] = Field(
         default=None,
         description="Exposicion total maxima runtime (0.90 = 90%).",
+    )
+    max_quote_age_ms: Optional[int] = Field(
+        default=None,
+        description="Antigüedad máxima de la cotización (ms). Subir con feed REST público lento.",
+    )
+    max_latency_ms: Optional[int] = Field(
+        default=None,
+        description="Techo de latencia simulada/medida (ms) para el gate.",
+    )
+    cooldown_seconds: Optional[int] = Field(
+        default=None,
+        description="Cooldown entre decisiones por ticker (s).",
     )
 
     @field_validator("environment")
@@ -284,6 +368,17 @@ class RadarRuntimeConfigBody(BaseModel):
             raise ValueError("max_total_exposure_pct debe estar entre 0.01 y 1.0")
         return v
 
+    @field_validator("max_quote_age_ms", "max_latency_ms", "cooldown_seconds")
+    @classmethod
+    def _v_gate_timing(cls, v: Optional[int]) -> Optional[int]:
+        if v is None:
+            return v
+        iv = int(v)
+        cap = 7 * 24 * 60 * 60 * 1000
+        if not 0 <= iv <= cap:
+            raise ValueError("max_quote_age_ms / max_latency_ms / cooldown_seconds fuera de rango")
+        return iv
+
 
 class RadarAutoTuneConfigBody(BaseModel):
     mode: str = "manual"  # manual | assisted | auto
@@ -319,6 +414,16 @@ class RadarExperimentBody(BaseModel):
         if vv not in {"offline", "online"}:
             raise ValueError("kind debe ser offline|online")
         return vv
+
+
+class RadarCalibrationLogBody(BaseModel):
+    """Entrada externa (p. ej. script híbrido) para panel + bitácora ANS."""
+
+    source: str = Field(default="radar_hybrid_calibrate", max_length=80)
+    summary: str = Field(..., min_length=2, max_length=500)
+    detail: Optional[dict[str, Any]] = None
+    ans_ok: bool = True
+
 
 def _repo_root_from_router() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -467,6 +572,22 @@ def _runtime_snapshot(state: RadarState) -> dict[str, Any]:
             if orch is not None and getattr(orch, "risk", None) is not None
             else int(os.getenv("RADAR_MAX_OPEN", "10"))
         ),
+        "max_quote_age_ms": (
+            int(orch.gating.cfg.max_quote_age_ms)
+            if orch is not None and getattr(orch, "gating", None) is not None
+            else int(os.getenv("RADAR_MAX_QUOTE_AGE_MS", "60000"))
+        ),
+        "max_latency_ms": (
+            int(orch.gating.cfg.max_latency_ms)
+            if orch is not None and getattr(orch, "gating", None) is not None
+            else int(os.getenv("RADAR_MAX_LATENCY_MS", "5000"))
+        ),
+        "cooldown_seconds": (
+            int(orch.gating.cfg.cooldown_seconds)
+            if orch is not None and getattr(orch, "gating", None) is not None
+            else int(os.getenv("RADAR_COOLDOWN_S", "30"))
+        ),
+        "llm_backend": str(getattr(state.settings, "llm_backend", "ollama") or "ollama"),
         "remediation_policy_enforced": _remediation_policy_enforced(),
     }
 
@@ -539,6 +660,39 @@ def _apply_runtime_patch(state: RadarState, patch: AutoTunePatch) -> None:
     if patch.max_open_positions is not None:
         orch.risk.limits = orch.risk.limits.model_copy(
             update={"max_open_positions": int(patch.max_open_positions)}
+        )
+
+    pd = patch.model_dump(exclude_none=True)
+    if any(
+        k in pd
+        for k in (
+            "edge_threshold",
+            "edge_net_min",
+            "kelly_fraction",
+            "confidence_min",
+            "max_open_positions",
+        )
+    ):
+        bits = []
+        if patch.edge_threshold is not None:
+            bits.append(f"edge_thr={patch.edge_threshold}")
+        if patch.edge_net_min is not None:
+            bits.append(f"edge_net_min={patch.edge_net_min}")
+        if patch.kelly_fraction is not None:
+            bits.append(f"kelly={patch.kelly_fraction}")
+        if patch.confidence_min is not None:
+            bits.append(f"conf_min={patch.confidence_min}")
+        if patch.max_open_positions is not None:
+            bits.append(f"max_open={patch.max_open_positions}")
+        reason = (patch.reason or "").strip()[:120]
+        if reason:
+            bits.append(f"reason={reason}")
+        _record_radar_calibration_event(
+            state,
+            "autotune_runtime_patch",
+            " · ".join(bits),
+            pd,
+            ans_ok=True,
         )
 
 
@@ -771,6 +925,12 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                     gate_updates["min_depth_yes"] = payload.min_depth_yes
                 if payload.min_depth_no is not None:
                     gate_updates["min_depth_no"] = payload.min_depth_no
+                if payload.max_quote_age_ms is not None:
+                    gate_updates["max_quote_age_ms"] = int(payload.max_quote_age_ms)
+                if payload.max_latency_ms is not None:
+                    gate_updates["max_latency_ms"] = int(payload.max_latency_ms)
+                if payload.cooldown_seconds is not None:
+                    gate_updates["cooldown_seconds"] = int(payload.cooldown_seconds)
                 if gate_updates:
                     orch.gating.cfg = orch.gating.cfg.model_copy(update=gate_updates)
                 risk_updates: dict[str, Any] = {}
@@ -816,6 +976,12 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 updates["RADAR_MAX_OPM"] = str(payload.max_orders_per_minute)
             if payload.max_total_exposure_pct is not None:
                 updates["RADAR_MAX_TOTAL_EXP"] = str(payload.max_total_exposure_pct)
+            if payload.max_quote_age_ms is not None:
+                updates["RADAR_MAX_QUOTE_AGE_MS"] = str(int(payload.max_quote_age_ms))
+            if payload.max_latency_ms is not None:
+                updates["RADAR_MAX_LATENCY_MS"] = str(int(payload.max_latency_ms))
+            if payload.cooldown_seconds is not None:
+                updates["RADAR_COOLDOWN_S"] = str(int(payload.cooldown_seconds))
             try:
                 for env_path in _env_file_paths():
                     if payload.clear_profile_overrides:
@@ -848,12 +1014,44 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                     detail=f"No se pudo persistir .env: {exc}",
                 ) from exc
 
+        applied_snap = _runtime_snapshot(state)
+        _record_radar_calibration_event(
+            state,
+            "api_radar_config",
+            _summarize_radar_config_payload(payload, selected_profile),
+            {
+                "llm_backend": applied_snap.get("llm_backend"),
+                "max_quote_age_ms": applied_snap.get("max_quote_age_ms"),
+                "max_latency_ms": applied_snap.get("max_latency_ms"),
+                "cooldown_seconds": applied_snap.get("cooldown_seconds"),
+            },
+            ans_ok=True,
+        )
+
         return {
             "ok": True,
             "message": "Configuración de radar aplicada.",
-            "applied": _runtime_snapshot(state),
+            "applied": applied_snap,
             "persisted_env": payload.persist_env,
         }
+
+    @router.get("/api/radar/calibration-events")
+    def calibration_events_list(limit: int = 40) -> dict:
+        n = max(1, min(100, int(limit)))
+        items = list(state.calibration_events)[-n:]
+        return {"ok": True, "items": items, "count": len(items)}
+
+    @router.post("/api/radar/calibration-events")
+    def calibration_events_append(body: RadarCalibrationLogBody) -> dict:
+        src = (body.source or "external").strip()[:80]
+        _record_radar_calibration_event(
+            state,
+            src,
+            body.summary.strip(),
+            body.detail,
+            ans_ok=bool(body.ans_ok),
+        )
+        return {"ok": True, "logged": True}
 
     @router.get("/api/radar/markets")
     def markets() -> dict:
@@ -1331,6 +1529,11 @@ _RADAR_HTML = r"""<!doctype html>
   .threshold-box .mut-hint{font-size:11px;color:var(--muted);font-weight:400}
   .threshold-box .ctrl{gap:10px}
   .threshold-box input{min-width:4.5em}
+  #calib_log .calib-line{
+    border-bottom:1px solid var(--line);padding:5px 0;font-size:12px;color:var(--fg);
+    line-height:1.35;word-break:break-word
+  }
+  #calib_log .calib-line:last-child{border-bottom:none}
 </style>
 </head>
 <body>
@@ -1355,6 +1558,19 @@ _RADAR_HTML = r"""<!doctype html>
 <div id="exec_banner" class="exec-banner paper" role="status" aria-live="polite">
   Cargando estado (paper = datos reales + órdenes virtuales)…
 </div>
+
+<section class="card" style="margin:0 14px 14px">
+  <div class="row">
+    <strong>Ajustes y calibración</strong>
+    <span class="pill ok" id="llm_backend_pill" title="RADAR_LLM_BACKEND">LLM: …</span>
+  </div>
+  <p class="mut" style="margin:6px 0 10px;font-size:12px">
+    Historial de cambios aplicados (API config, AutoTune, rollback). Cada línea se replica en la
+    <strong>bitácora ANS</strong> (<code>source=radar_calib</code>) para trazabilidad del robot.
+    Scripts pueden usar <code>POST /api/radar/calibration-events</code>.
+  </p>
+  <div id="calib_log" role="log" aria-live="polite" aria-label="Bitácora de calibración radar"></div>
+</section>
 
 <section class="grid" style="grid-template-columns:repeat(4,1fr)">
   <div class="tile" style="grid-column:span 4">
@@ -1698,6 +1914,29 @@ function updateExecBanner(s){
   }
 }
 
+async function refreshCalibLog(){
+  try{
+    const res = await fetch('/api/radar/calibration-events?limit=28');
+    const d = await res.json();
+    const el = $('#calib_log');
+    if(!el || !d.ok || !Array.isArray(d.items)) return;
+    el.innerHTML = '';
+    [...d.items].reverse().forEach(ev => {
+      const div = document.createElement('div');
+      div.className = 'calib-line';
+      const ts = (ev.ts || '').replace('T',' ').replace('+00:00',' UTC');
+      div.textContent = ts + ' · [' + (ev.source||'') + '] ' + (ev.summary||'');
+      el.appendChild(div);
+    });
+    if(!d.items.length){
+      const div = document.createElement('div');
+      div.className = 'calib-line mut';
+      div.textContent = '(Sin eventos aún; al aplicar configuración o AutoTune aparecerán aquí.)';
+      el.appendChild(div);
+    }
+  }catch(_e){ /* silencioso */ }
+}
+
 async function loadConfig(){
   try{
     const res = await fetch('/api/radar/config');
@@ -1733,6 +1972,14 @@ async function loadConfig(){
     }
     updateModeSelectClass();
     updateExecBanner(cfg);
+    const llm = $('#llm_backend_pill');
+    if(llm){
+      const b = cfg.llm_backend || 'ollama';
+      llm.textContent = 'LLM: ' + b;
+      llm.className = 'pill ' + (b === 'atlas_brain' ? 'warn' : 'ok');
+      llm.title = 'Radar LLM backend (RADAR_LLM_BACKEND). atlas_brain usa POST /brain/process.';
+    }
+    await refreshCalibLog();
   }catch(err){
     setCfgMsg('Error leyendo configuración: '+err, false);
   }
@@ -1867,6 +2114,7 @@ async function refresh(){
     $('#updated').textContent = new Date().toLocaleTimeString();
     const ub = $('#radar_ui_build');
     if (ub && s.radar_ui_build) ub.textContent = s.radar_ui_build;
+    refreshCalibLog();
   } catch(e){ log('ko', 'refresh failed: '+e); }
 }
 
@@ -1917,7 +2165,7 @@ function connectWS(){
   };
 }
 
-loadConfig(); loadAutoTune(); refresh();
+loadConfig(); loadAutoTune(); refresh(); refreshCalibLog();
 setInterval(refresh, 5000);
 connectWS();
 </script>

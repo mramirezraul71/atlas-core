@@ -121,10 +121,10 @@ async def test_brain_uses_executable_side_for_edge() -> None:
     brain = RadarBrain()
     brain.settings.edge_threshold = 0.01
 
-    async def _fake_ask(*args, **kwargs):
+    async def _fake_ollama_prompt(prompt: str) -> LLMReading:
         return LLMReading(p_yes=0.55, confidence=0.9, rationale="ok")
 
-    brain._ask_ollama = _fake_ask  # type: ignore[method-assign]
+    brain._call_ollama_prompt = _fake_ollama_prompt  # type: ignore[method-assign]
     brain._markov_p_yes = lambda hist: 0.55  # type: ignore[method-assign]
     brain._monte_carlo = lambda p_mix, hist: 0.50  # type: ignore[method-assign]
 

@@ -12,6 +12,13 @@ Responsabilidades
 4. Centralizar parámetros del módulo (umbrales de edge, tamaño
    máximo de posición, fracción de Kelly, etc.) tipados con Pydantic.
 
+Backends LLM del radar (``RadarSettings.llm_backend``)
+------------------------------------------------------
+- ``ollama`` (default): solo habla con el servidor Ollama local.
+- ``atlas_brain``: envía el mismo prompt a PUSH ``/brain/process`` para usar
+  el enrutamiento multi-especialista; si falla o el JSON es inválido, se hace
+  *fallback* a Ollama si está disponible.
+
 Por qué Pydantic
 ----------------
 - Validación estricta de tipos en runtime.
@@ -129,6 +136,30 @@ class RadarSettings(BaseModel):
         ge=5,
         le=3600,
         description="Backoff tras error de Ollama para evitar tormenta de reintentos.",
+    )
+
+    llm_backend: str = Field(
+        default="ollama",
+        description="'ollama' | 'atlas_brain'. Si atlas_brain falla, se intenta Ollama.",
+    )
+    atlas_brain_base_url: str = Field(
+        default="http://127.0.0.1:8791",
+        description="Base URL de PUSH para POST /brain/process (sin barra final).",
+    )
+    atlas_brain_timeout_seconds: float = Field(
+        default=45.0,
+        ge=2.0,
+        le=180.0,
+        description="Timeout HTTP hacia /brain/process por evaluación.",
+    )
+    atlas_brain_fallback_ollama: bool = Field(
+        default=True,
+        description="Si True, tras fallo de atlas_brain se llama a Ollama con el mismo prompt.",
+    )
+    atlas_brain_allow_paid: bool = Field(
+        default=True,
+        description="Solo documentación/operador: el uso de APIs de pago lo decide la cascada "
+        "en el servidor PUSH (brain_state). Si False, configura manualmente especialistas locales.",
     )
 
     # --- Dashboard / Atlas Core -------------------------------------------
@@ -253,6 +284,14 @@ class RadarSettings(BaseModel):
             )
         return v
 
+    @field_validator("llm_backend")
+    @classmethod
+    def _v_llm_backend(cls, v: str) -> str:
+        s = (v or "ollama").strip().lower()
+        if s not in {"ollama", "atlas_brain"}:
+            raise ValueError("llm_backend debe ser 'ollama' o 'atlas_brain'")
+        return s
+
     # ------------------------------------------------------------------
     # Endpoints derivados
     # ------------------------------------------------------------------
@@ -299,6 +338,17 @@ def get_settings() -> RadarSettings:
         ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"),
         ollama_timeout_seconds=float(os.getenv("RADAR_OLLAMA_TIMEOUT_S", "20")),
         ollama_backoff_seconds=int(os.getenv("RADAR_OLLAMA_BACKOFF_S", "120")),
+        llm_backend=os.getenv("RADAR_LLM_BACKEND", "ollama"),
+        atlas_brain_base_url=(
+            os.getenv("RADAR_BRAIN_BASE_URL", "").strip()
+            or os.getenv("ATLAS_DASHBOARD_URL", "http://127.0.0.1:8791").strip()
+            or "http://127.0.0.1:8791"
+        ),
+        atlas_brain_timeout_seconds=float(os.getenv("RADAR_BRAIN_TIMEOUT_S", "45")),
+        atlas_brain_fallback_ollama=os.getenv("RADAR_BRAIN_FALLBACK_OLLAMA", "1").strip()
+        not in ("0", "false", "no"),
+        atlas_brain_allow_paid=os.getenv("RADAR_BRAIN_ALLOW_PAID", "1").strip()
+        not in ("0", "false", "no"),
         atlas_dashboard_url=os.getenv("ATLAS_DASHBOARD_URL", "http://127.0.0.1:8791"),
         edge_threshold=float(os.getenv("RADAR_EDGE_THRESHOLD", "0.05")),
         kelly_fraction=float(os.getenv("RADAR_KELLY_FRACTION", "0.25")),

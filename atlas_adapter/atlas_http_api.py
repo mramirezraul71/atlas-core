@@ -7618,6 +7618,10 @@ _TASK_PROFILES = {
                                "piensa", "plan", "estrategia", "arquitectura", "disena",
                                "pros y contras", "ventajas", "desventajas", "opinion"],
                   "local": "deepseek-r1:14b"},
+    "prediction": {"keywords": ["kalshi", "mercado predictivo", "mercado de predicción", "evento binario",
+                                "probabilidad implícita", "contrato de evento", "p_yes", "probabilidad real",
+                                "razonamiento probabilístico", "analisis cuantitativo"],
+                   "local": "deepseek-r1:14b"},
     "general":   {"keywords": [],
                   "local": "deepseek-r1:14b"},
 }
@@ -7665,6 +7669,14 @@ _FAST_SPECIALIST_PRIORITY = {
         "xai:grok-3-fast",
         "openai:gpt-4.1-mini",
     ],
+    "prediction": [
+        "bedrock:us.anthropic.claude-opus-4-6-v1:0",
+        "bedrock:us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "openai:gpt-4.1",
+        "anthropic:claude-sonnet-4-latest",
+        "deepseek:deepseek-reasoner",
+        "gemini:gemini-2.5-flash",
+    ],
 }
 
 
@@ -7691,6 +7703,7 @@ def _pick_specialist_model(goal: str, prefer_fast: bool = True) -> tuple[Optiona
     slot_by_task = {
         "code": "code",
         "reasoning": "analysis",
+        "prediction": "prediction",
         "self": "analysis",
         "general": "chat",
     }

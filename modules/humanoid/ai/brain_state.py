@@ -28,6 +28,7 @@ DEFAULT_STATE = {
         "vision": "ollama:llama3.2-vision:11b",
         "chat": "ollama:llama3.1:latest",
         "analysis": "ollama:deepseek-r1:14b",
+        "prediction": "ollama:deepseek-r1:14b",
         "creative": "ollama:llama3.1:latest",
     },
     "parameters": {

@@ -1,14 +1,25 @@
 """
-brain.py — Capa 2: Cerebro local del Radar.
+brain.py — Capa 2: Cerebro de inferencia del Radar Kalshi.
+
+Arquitectura (no confundir con otros “cerebros” de Atlas)
+--------------------------------------------------------
+- **RadarBrain (este módulo):** estima *p* para contratos Kalshi y emite
+  :class:`BrainDecision`. La lectura LLM puede ser **Ollama directo** (HTTP
+  a ``OLLAMA_ENDPOINT``) o **cerebro multi-IA PUSH** vía
+  ``POST {RADAR_BRAIN_BASE_URL}/brain/process`` (enrutamiento por especialistas
+  según ``brain_state.json`` en el proceso :8791). Markov + Monte Carlo siguen
+  siendo locales.
+- **Cerebro ATLAS (``atlas_http_api``):** ``/brain/process``, cascada de
+  proveedores y slots ``analysis`` / ``prediction`` / etc. El radar solo lo
+  consume como cliente HTTP cuando ``RADAR_LLM_BACKEND=atlas_brain``.
+- **Robot :8002:** cuerpo y visión; no forma parte del pipeline de trading
+  Kalshi descrito aquí.
 
 Combina tres motores para estimar la probabilidad real de éxito de
 un contrato Kalshi y producir una :class:`BrainDecision`:
 
-1. **Sentimiento / razonamiento (Ollama)**
-   Llama al endpoint local ``/api/generate`` (o ``/api/chat``) con un
-   prompt estructurado que incluye ticker, descripción del evento y
-   noticias recientes. El modelo devuelve un JSON con
-   ``{p_yes, confidence, rationale}``.
+1. **Sentimiento / razonamiento (LLM: Ollama o cerebro ATLAS vía HTTP)**
+   Devuelve JSON ``{p_yes, confidence, rationale}`` (ver ``RadarSettings.llm_backend``).
 
 2. **Cadena de Markov (1er orden) sobre buckets de precio**
    Construye una matriz de transición a partir del histórico de
@@ -115,8 +126,10 @@ class RadarBrain:
         """
         meta = self._market_meta.get(ticker, {})
 
-        # 1) LLM
-        llm = await self._ask_ollama(ticker, meta, news_context, book, history)
+        # 1) LLM (Ollama directo o cerebro ATLAS /brain/process)
+        llm = await self._resolve_llm_reading(
+            ticker, meta, news_context, book, history
+        )
 
         # 2) Markov (offload CPU para no bloquear el event loop principal)
         p_markov = await asyncio.to_thread(self._markov_p_yes, history)
@@ -196,12 +209,61 @@ class RadarBrain:
         }
 
     # ------------------------------------------------------------------
-    # 1) Ollama
+    # 1) LLM: atlas_brain (/brain/process) u Ollama
     # ------------------------------------------------------------------
-    async def _ask_ollama(
-        self, ticker: str, meta: dict, news: str,
-        book: OrderBookSnapshot, history: pd.DataFrame,
+    async def _resolve_llm_reading(
+        self,
+        ticker: str,
+        meta: dict,
+        news: str,
+        book: OrderBookSnapshot,
+        history: pd.DataFrame,
     ) -> LLMReading:
+        prompt = self._build_prompt(ticker, meta, news, book, history)
+        backend = self.settings.llm_backend
+        if backend == "atlas_brain":
+            try:
+                return await self._ask_atlas_brain(prompt)
+            except Exception as exc:
+                self.log.warning(
+                    "Atlas brain (/brain/process) no disponible (%s)", exc
+                )
+                if self.settings.atlas_brain_fallback_ollama:
+                    return await self._call_ollama_prompt(prompt)
+                return LLMReading(
+                    p_yes=0.5,
+                    confidence=0.1,
+                    rationale=f"atlas_brain_failed:{exc}",
+                )
+        return await self._call_ollama_prompt(prompt)
+
+    async def _ask_atlas_brain(self, prompt: str) -> LLMReading:
+        """POST al cerebro multi-IA de PUSH; la respuesta debe contener JSON legible."""
+        base = self.settings.atlas_brain_base_url.rstrip("/")
+        url = f"{base}/brain/process"
+        timeout = float(self.settings.atlas_brain_timeout_seconds)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.post(url, json={"text": prompt})
+            r.raise_for_status()
+            payload = r.json()
+        if not payload.get("ok"):
+            err = str(payload.get("error") or payload.get("detail") or "brain_error")
+            raise RuntimeError(err)
+        raw = payload.get("response")
+        if raw is None:
+            raise RuntimeError("brain_empty_response")
+        extracted = self._extract_json_payload(str(raw))
+        model_note = payload.get("model_used") or "atlas_brain"
+        rationale = str(extracted.get("rationale") or "")[:480]
+        if not rationale:
+            rationale = f"model={model_note}"
+        return LLMReading(
+            p_yes=float(extracted.get("p_yes", 0.5)),
+            confidence=float(extracted.get("confidence", 0.3)),
+            rationale=rationale,
+        )
+
+    async def _call_ollama_prompt(self, prompt: str) -> LLMReading:
         now = time.time()
         if now < self._ollama_backoff_until:
             return LLMReading(
@@ -210,7 +272,6 @@ class RadarBrain:
                 rationale="ollama_backoff_active",
             )
 
-        prompt = self._build_prompt(ticker, meta, news, book, history)
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.ollama_timeout_seconds
@@ -218,7 +279,7 @@ class RadarBrain:
                 base_url = self.settings.ollama_endpoint.rstrip("/")
                 installed = await self._fetch_installed_models(client, base_url)
                 candidates = self._candidate_ollama_models(installed)
-                data = {}
+                data: Dict[str, float | str] = {}
                 last_error: Optional[str] = None
                 for model in candidates:
                     try:
@@ -233,9 +294,7 @@ class RadarBrain:
                     except httpx.HTTPStatusError as exc:
                         body = (exc.response.text or "").lower()
                         if exc.response.status_code == 404 and "model" in body:
-                            last_error = (
-                                f"model_not_found:{model}"
-                            )
+                            last_error = f"model_not_found:{model}"
                             continue
                         raise
                     except Exception as exc:
@@ -249,7 +308,9 @@ class RadarBrain:
             return LLMReading(
                 p_yes=float(data.get("p_yes", 0.5)),
                 confidence=float(data.get("confidence", 0.3)),
-                rationale=str(data.get("rationale", f"model={self._active_ollama_model}")),
+                rationale=str(
+                    data.get("rationale", f"model={self._active_ollama_model}")
+                ),
             )
         except Exception as exc:
             self._ollama_backoff_until = (
@@ -348,6 +409,9 @@ class RadarBrain:
         close = meta.get("close_time") or meta.get("expiration_time") or "n/a"
         last = float(hist["yes_mid"].iloc[-1]) if len(hist) else book.yes_mid
         return (
+            "Tarea de razonamiento probabilístico y análisis cuantitativo "
+            "(mercado predictivo binario Kalshi). Evalúa escenarios y estima "
+            "probabilidades; responde solo JSON.\n"
             "Eres un analista cuantitativo experto en mercados de eventos "
             "(Kalshi). Devuelve EXCLUSIVAMENTE un JSON válido con las "
             "claves {p_yes, confidence, rationale}.\n"
