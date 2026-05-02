@@ -68,3 +68,38 @@ def test_auto_cycle_inactive_reasons_expose_startup_blockers(monkeypatch) -> Non
     assert "autocycle_auto_start_disabled" in reasons
     assert "scanner_auto_start_disabled" in reasons
     assert "auton_mode_off" in reasons
+
+
+def test_radar_scanner_adapter_converts_slots_opportunity_payload_to_selector_candidate() -> None:
+    row = {
+        "symbol": "SPY",
+        "asset_class": "etf",
+        "score": 84.5,
+        "classification": "high_conviction",
+        "timestamp": "2026-05-01T14:00:00Z",
+        "horizon_min": 60,
+        "direction": "long",
+        "source": "quant",
+        "trace_id": "tr_1",
+        "payload": {
+            "price": 512.34,
+            "volume": 1000000,
+            "predicted_move_pct": 2.2,
+            "confirmation": {"direction": "alcista", "higher_timeframe": "1d"},
+            "market_regime": "BULL",
+            "iv_rank": 38.0,
+            "iv_hv_ratio": 1.05,
+            "liquidity_score": 0.91,
+            "order_flow": {"direction": "alcista", "confidence_pct": 70.0},
+        },
+    }
+
+    candidate = main.RadarScannerAdapter._to_candidate(row)
+
+    assert candidate["symbol"] == "SPY"
+    assert candidate["direction"] == "alcista"
+    assert candidate["price"] == 512.34
+    assert candidate["volume"] == 1000000
+    assert candidate["has_options"] is True
+    assert candidate["confirmation"]["direction"] == "alcista"
+    assert candidate["market_regime"] == "BULL"

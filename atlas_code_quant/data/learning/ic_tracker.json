@@ -4445,7 +4445,98 @@
       "actual_return_pct": null,
       "measured_at": null,
       "outcome_available": false
+    },
+    "411ab00f-8e65-4ab7-93dd-b215c15303b8": {
+      "signal_id": "411ab00f-8e65-4ab7-93dd-b215c15303b8",
+      "symbol": "AMZN",
+      "method": "unknown",
+      "predicted_move_pct": 2.32,
+      "entry_price": 268.58,
+      "timeframe": "1h",
+      "selection_score": 83.76,
+      "recorded_at": "2026-05-01T19:44:17.281587+00:00",
+      "actual_return_pct": null,
+      "measured_at": null,
+      "outcome_available": false
+    },
+    "b58da428-c6c0-4b0c-b2d1-71db9a6824ac": {
+      "signal_id": "b58da428-c6c0-4b0c-b2d1-71db9a6824ac",
+      "symbol": "AMZN",
+      "method": "unknown",
+      "predicted_move_pct": 2.32,
+      "entry_price": 268.58,
+      "timeframe": "1h",
+      "selection_score": 85.64,
+      "recorded_at": "2026-05-01T19:46:41.145963+00:00",
+      "actual_return_pct": null,
+      "measured_at": null,
+      "outcome_available": false
+    },
+    "f1c322d7-4877-4924-97b7-2ce4ccf5131e": {
+      "signal_id": "f1c322d7-4877-4924-97b7-2ce4ccf5131e",
+      "symbol": "AMZN",
+      "method": "unknown",
+      "predicted_move_pct": 2.32,
+      "entry_price": 268.58,
+      "timeframe": "1h",
+      "selection_score": 85.64,
+      "recorded_at": "2026-05-01T19:49:05.174685+00:00",
+      "actual_return_pct": null,
+      "measured_at": null,
+      "outcome_available": false
+    },
+    "827bd529-c774-46fa-80f5-d949a7105634": {
+      "signal_id": "827bd529-c774-46fa-80f5-d949a7105634",
+      "symbol": "AMZN",
+      "method": "unknown",
+      "predicted_move_pct": 2.34,
+      "entry_price": 268.27,
+      "timeframe": "1h",
+      "selection_score": 83.96,
+      "recorded_at": "2026-05-01T19:51:29.159223+00:00",
+      "actual_return_pct": null,
+      "measured_at": null,
+      "outcome_available": false
+    },
+    "8df3b4dd-672d-4e5a-9b5f-4a2ea50c58f1": {
+      "signal_id": "8df3b4dd-672d-4e5a-9b5f-4a2ea50c58f1",
+      "symbol": "AMZN",
+      "method": "unknown",
+      "predicted_move_pct": 2.37,
+      "entry_price": 267.9,
+      "timeframe": "1h",
+      "selection_score": 84.05,
+      "recorded_at": "2026-05-01T19:53:53.312973+00:00",
+      "actual_return_pct": null,
+      "measured_at": null,
+      "outcome_available": false
+    },
+    "41a6d83c-0568-4884-b3f7-9ddd28d23f2d": {
+      "signal_id": "41a6d83c-0568-4884-b3f7-9ddd28d23f2d",
+      "symbol": "AMZN",
+      "method": "unknown",
+      "predicted_move_pct": 2.37,
+      "entry_price": 267.9,
+      "timeframe": "1h",
+      "selection_score": 84.05,
+      "recorded_at": "2026-05-01T19:56:18.217579+00:00",
+      "actual_return_pct": null,
+      "measured_at": null,
+      "outcome_available": false
+    },
+    "91263f36-c626-4ec9-b1f2-02118e6f5051": {
+      "signal_id": "91263f36-c626-4ec9-b1f2-02118e6f5051",
+      "symbol": "AMZN",
+      "method": "unknown",
+      "predicted_move_pct": 2.37,
+      "entry_price": 268.075,
+      "timeframe": "1h",
+      "selection_score": 84.97,
+      "recorded_at": "2026-05-01T19:58:41.967701+00:00",
+      "actual_return_pct": null,
+      "measured_at": null,
+      "outcome_available": false
     }
   },
-  "updated_at": "2026-04-20T13:32:42.918920+00:00"
+  "updated_at": "2026-05-01T19:58:41.967701+00:00"
 }

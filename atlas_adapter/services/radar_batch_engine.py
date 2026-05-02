@@ -87,6 +87,7 @@ def _horizon_minutes(cand: dict[str, Any] | None, *, stub: bool) -> int:
 def _slim_snapshot(body: dict[str, Any]) -> dict[str, Any]:
     sig = (body.get("radar") or {}).get("signal") or {}
     meta = sig.get("meta") or {}
+    kpis = body.get("kpis") or {}
     return {
         "symbol": body.get("symbol"),
         "last_update": body.get("last_update"),
@@ -94,7 +95,46 @@ def _slim_snapshot(body: dict[str, Any]) -> dict[str, Any]:
         "snapshot_classification": meta.get("snapshot_classification"),
         "fast_pressure_score": meta.get("fast_pressure_score"),
         "structural_confidence_score": meta.get("structural_confidence_score"),
+        "price": body.get("price") or kpis.get("price") or meta.get("price"),
     }
+
+
+def _direction_for_quant(value: Any) -> str:
+    direction = str(value or "").strip().lower()
+    if direction in {"alcista", "bullish", "bull", "long", "buy", "up"}:
+        return "alcista"
+    if direction in {"bajista", "bearish", "bear", "short", "sell", "down"}:
+        return "bajista"
+    return "neutral"
+
+
+def _copy_candidate_fields(cand: dict[str, Any] | None) -> dict[str, Any]:
+    if not cand:
+        return {}
+    keys = (
+        "price",
+        "bid",
+        "ask",
+        "volume",
+        "bar_volume",
+        "predicted_move_pct",
+        "confirmation",
+        "market_regime",
+        "regime",
+        "iv_rank",
+        "iv_rank_pct",
+        "iv_hv_ratio",
+        "liquidity_score",
+        "skew_pct",
+        "term_structure_slope",
+        "options_thesis",
+        "thesis",
+        "order_flow",
+        "strategy_key",
+        "strategy_type",
+        "has_options",
+    )
+    return {key: cand.get(key) for key in keys if cand.get(key) is not None}
 
 
 def _merge_global_degradations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -157,7 +197,7 @@ async def build_radar_opportunities_batch(
         snap_cls = str(meta.get("snapshot_classification") or "")
         sc = score_from_summary(body)
         cls = opportunity_classification(sc, min_score, snap_cls)
-        direction = str(((body.get("radar") or {}).get("signal") or {}).get("bias") or "neutral")
+        direction = _direction_for_quant(((body.get("radar") or {}).get("signal") or {}).get("bias") or "neutral")
         row = {
             "symbol": ent.symbol,
             "asset_class": ent.asset_class,
@@ -170,6 +210,7 @@ async def build_radar_opportunities_batch(
             "degradations_active": list(body.get("degradations_active") or []),
             "source": "quant" if live else "stub",
             "trace_id": f"{trace_id}:{ent.symbol}",
+            **_copy_candidate_fields(cand),
         }
         raw_rows.append(row)
         logger.debug(

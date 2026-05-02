@@ -37,6 +37,42 @@ class TradierOrderBlocked(Exception):
         self.payload = payload or {}
 
 
+def _tradier_dry_run_enabled() -> bool:
+    value = os.getenv("ATLAS_TRADIER_DRY_RUN", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _paper_dry_run_response(
+    *,
+    session: TradierAccountSession,
+    payload: dict[str, Any],
+    body: OrderRequest,
+) -> dict[str, Any]:
+    order_id = (
+        "TRADIER-PAPER-DRYRUN-"
+        f"{int(time.time())}-{str(body.symbol or 'UNKNOWN').strip().upper()}"
+    )
+    return {
+        "order_id": order_id,
+        "id": order_id,
+        "status": "accepted",
+        "filled_qty": 0.0,
+        "method_used": "local_paper_dry_run",
+        "account_id": session.account_id,
+        "scope": session.scope,
+        "classification": session.classification,
+        "preview": bool(body.preview),
+        "request_payload": dict(payload),
+        "raw_response": {
+            "id": order_id,
+            "status": "accepted",
+            "provider": "tradier",
+            "paper_virtual": True,
+            "dry_run": True,
+        },
+    }
+
+
 def should_route_to_tradier(body: OrderRequest) -> bool:
     return any(
         (
@@ -395,8 +431,9 @@ def _polling_get_orders(
     session: TradierAccountSession,
     payload: dict[str, Any],
     timeout_sec: int,
+    submitted_response: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    submitted = client.place_order(session.account_id, payload)
+    submitted = submitted_response if submitted_response is not None else client.place_order(session.account_id, payload)
     submitted_id = _extract_order_id(submitted)
     deadline = time.time() + max(float(timeout_sec), 0.5)
     while time.time() <= deadline:
@@ -423,6 +460,51 @@ def _polling_get_orders(
                 }
         time.sleep(0.5)
     raise TimeoutError(f"polling could not find matching order after {timeout_sec}s")
+
+
+def _place_order_with_confirmation(
+    client: TradierClient,
+    session: TradierAccountSession,
+    payload: dict[str, Any],
+    *,
+    timeout_sec: int,
+    submitted_at: datetime,
+) -> dict[str, Any]:
+    """Submit exactly once, then reconcile without placing duplicate orders."""
+    submitted = client.place_order(session.account_id, payload)
+    submitted_id = _extract_order_id(submitted)
+    if submitted_id:
+        return {
+            "order_id": submitted_id,
+            "status": str(submitted.get("status") or "accepted"),
+            "filled_qty": _safe_float(submitted.get("exec_quantity") or submitted.get("filled_quantity"), 0.0),
+            "method_used": "direct_submission_response",
+            "raw_response": submitted,
+        }
+    try:
+        return _polling_get_orders(
+            client=client,
+            session=session,
+            payload=payload,
+            timeout_sec=timeout_sec,
+            submitted_response=submitted,
+        )
+    except Exception as exc:
+        recovered = _reconcile_recent_order_after_timeout(
+            client,
+            session,
+            payload=payload,
+            submitted_at=submitted_at,
+            attempts=2,
+            backoff_sec=0.75,
+        )
+        if recovered is not None:
+            recovered["submitted_response"] = submitted
+            return recovered
+        raise TimeoutError(
+            "Failed to confirm order after single submission: "
+            f"submission response missing order_id; reconciliation failed: {exc}"
+        ) from exc
 
 
 def _execute_with_fallback(
@@ -478,11 +560,27 @@ def _execute_with_fallback(
 
 def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
     effective_scope = body.account_scope or settings.tradier_default_scope
-    client, session = resolve_account_session(
-        account_scope=effective_scope,  # type: ignore[arg-type]
-        account_id=body.account_id,
-    )
     order_class, position_effect, payload = build_tradier_order_payload(body)
+    if effective_scope == "paper" and _tradier_dry_run_enabled():
+        client = None
+        session = TradierAccountSession(
+            scope="paper",
+            classification="paper",
+            account_id=body.account_id or settings.tradier_paper_account_id or "PAPER-DRYRUN",
+            account_name="ATLAS paper dry-run",
+            base_url=settings.tradier_paper_base_url,
+            total_equity=100000.0,
+            cash_available=100000.0,
+            option_buying_power=100000.0,
+            current_requirement=0.0,
+            resolved_at=datetime.now(timezone.utc).isoformat(),
+            raw_account={"dry_run": True},
+        )
+    else:
+        client, session = resolve_account_session(
+            account_scope=effective_scope,  # type: ignore[arg-type]
+            account_id=body.account_id,
+        )
 
     if position_effect == "open":
         if order_class in {"option", "multileg", "combo"}:
@@ -530,30 +628,18 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
         logger.info("PDT checks deprecated; using operational gates only for %s", session.account_id)
 
     submitted_at = datetime.now(timezone.utc)
-    try:
-        response = _execute_with_fallback(
+    if session.classification == "paper" and _tradier_dry_run_enabled():
+        response = _paper_dry_run_response(session=session, payload=payload, body=body)
+    else:
+        if client is None:
+            raise RuntimeError("Tradier client unavailable outside paper dry-run mode.")
+        response = _place_order_with_confirmation(
             client=client,
             session=session,
             payload=payload,
-            primary_method="stream_confirmation",
-            fallback_method="polling_get_orders",
-            max_retries=3,
             timeout_sec=max(int(settings.tradier_timeout_sec), 1),
+            submitted_at=submitted_at,
         )
-    except Exception as exc:
-        recovered = None
-        if _is_timeout_recoverable_error(exc):
-            recovered = _reconcile_recent_order_after_timeout(
-                client,
-                session,
-                payload=payload,
-                submitted_at=submitted_at,
-                attempts=2,
-                backoff_sec=0.75,
-            )
-        if recovered is None:
-            raise
-        response = recovered
     broker_order_ids = _extract_broker_order_ids(response)
     if not broker_order_ids or not broker_order_ids.get("id"):
         raise ValueError(

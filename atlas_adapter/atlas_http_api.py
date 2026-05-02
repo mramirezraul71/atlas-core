@@ -18081,6 +18081,18 @@ def _build_options_engine_status_snapshot() -> dict[str, Any]:
         payload = json.loads(raw)
         return payload if isinstance(payload, dict) else None
 
+    def _query_quant_json(path: str) -> dict[str, Any] | None:
+        base = os.environ.get("ATLAS_CODE_QUANT_BASE_URL", "http://127.0.0.1:8795").rstrip("/")
+        url = f"{base}/{path.lstrip('/')}"
+        req = urllib.request.Request(url)
+        api_key = os.environ.get("ATLAS_CODE_QUANT_API_KEY") or os.environ.get("QUANT_API_KEY")
+        if api_key:
+            req.add_header("X-API-Key", api_key)
+        with urllib.request.urlopen(req, timeout=_OPTIONS_STATUS_METRICS_TIMEOUT_SEC) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+        payload = json.loads(raw)
+        return payload if isinstance(payload, dict) else None
+
     _metrics_text_cache: str | None = None
     _metrics_text_lock = threading.Lock()
 
@@ -18225,6 +18237,36 @@ def _build_options_engine_status_snapshot() -> dict[str, Any]:
         notes.append(f"go sessions blocked by sizing today={blocked_sessions_today}")
         if status == "GO":
             status = "DEGRADED"
+    runtime_snapshot: dict[str, Any] = {}
+    loop_snapshot: dict[str, Any] = {}
+    try:
+        runtime_snapshot = _query_quant_json("/options/runtime-status") or {}
+    except Exception:
+        runtime_snapshot = {}
+    try:
+        loop_payload = _query_quant_json("/operation/loop/status") or {}
+        loop_snapshot = loop_payload.get("data") if isinstance(loop_payload.get("data"), dict) else loop_payload
+    except Exception:
+        loop_snapshot = {}
+    options_runtime = runtime_snapshot.get("paper_runtime_loop") if isinstance(runtime_snapshot.get("paper_runtime_loop"), dict) else {}
+    pipeline_runtime = (
+        runtime_snapshot.get("multi_asset_pipeline_runtime")
+        if isinstance(runtime_snapshot.get("multi_asset_pipeline_runtime"), dict)
+        else {}
+    )
+    operation_loop_running = bool(loop_snapshot.get("running"))
+    operation_auton_mode = str(loop_snapshot.get("configured_auton_mode") or "").strip().lower()
+    runtime_active = (
+        bool(options_runtime.get("enabled"))
+        or bool(options_runtime.get("running"))
+        or bool(pipeline_runtime.get("enabled"))
+        or bool(pipeline_runtime.get("running"))
+        or operation_loop_running
+    )
+    structural_active = runtime_active and operation_auton_mode in {"paper_supervised", "paper_autonomous", "paper_aggressive", ""}
+    if status == "NO_GO" and structural_active:
+        status = "DEGRADED"
+        notes.append("runtime paper activo; sin señal ejecutable/cierre confirmado todavía")
 
     grafana_url = os.environ.get("ATLAS_GRAFANA_BASE_URL", "http://localhost:3002").rstrip("/")
     target = 100
@@ -18259,6 +18301,11 @@ def _build_options_engine_status_snapshot() -> dict[str, Any]:
         "options_ui_url": "/quant-ui",
         "last_updated_utc": datetime.now(timezone.utc).isoformat(),
         "notes": "; ".join(notes) if notes else "paper session status derived from live Prometheus metrics",
+        "runtime_active": runtime_active,
+        "operation_loop_running": operation_loop_running,
+        "operation_auton_mode": operation_auton_mode or None,
+        "options_runtime_enabled": bool(options_runtime.get("enabled")),
+        "options_runtime_running": bool(options_runtime.get("running")),
     }
 
 

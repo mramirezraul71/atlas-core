@@ -130,6 +130,16 @@ def test_compute_degradations_providers_and_camera() -> None:
     assert "STUB_MODE" not in codes
 
 
+def test_compute_degradations_ignores_intentionally_disabled_camera() -> None:
+    d = compute_degradations_active(
+        {"stub": False, "quant": True, "sse": True},
+        {"providers_checked": 2, "degraded_count": 0},
+        {"provider_ready": True, "state": "disabled"},
+    )
+    codes = {x["code"] for x in d}
+    assert "CAMERA_UNAVAILABLE" not in codes
+
+
 def test_build_dashboard_summary_missing_spy_candidate_degraded() -> None:
     rep = _golden_scanner_report()
     rep["candidates"][0]["symbol"] = "QQQ"

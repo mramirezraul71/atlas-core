@@ -119,6 +119,7 @@ from operations.startup_visual_connect import (
 )
 from operations.vision_calibration import VisionCalibrationService
 from selector.strategy_selector import StrategySelectorService
+from scanner import OpportunityScannerService
 from atlas_code_quant.options.paper_runtime_loop import (
     build_default_options_runtime_loop,
     options_runtime_loop_enabled,
@@ -224,7 +225,18 @@ class RadarScannerAdapter:
         return self.report(activity_limit=24)
 
     @staticmethod
+    def _normalize_direction(value: Any) -> str:
+        direction = str(value or "").strip().lower()
+        if direction in {"alcista", "bullish", "bull", "long", "buy", "up"}:
+            return "alcista"
+        if direction in {"bajista", "bearish", "bear", "short", "sell", "down"}:
+            return "bajista"
+        return "neutral"
+
+    @staticmethod
     def _to_candidate(row: dict[str, Any]) -> dict[str, Any]:
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        merged = {**payload, **row}
         score = row.get("score")
         try:
             selection_score = float(score)
@@ -236,14 +248,22 @@ class RadarScannerAdapter:
         except (TypeError, ValueError):
             hmin = 60
         timeframe = "1d" if hmin >= 720 else "1h" if hmin >= 60 else "15m" if hmin >= 15 else "5m"
+        direction = RadarScannerAdapter._normalize_direction(merged.get("direction"))
+        snapshot = merged.get("snapshot") if isinstance(merged.get("snapshot"), dict) else {}
+        price = merged.get("price")
+        if price is None:
+            price = merged.get("last") or merged.get("close") or snapshot.get("price")
+        volume = merged.get("volume")
+        if volume is None:
+            volume = merged.get("bar_volume") or snapshot.get("volume")
         return {
             "symbol": str(row.get("symbol") or "").strip().upper(),
-            "strategy_type": str(row.get("classification") or "radar_intake"),
+            "strategy_type": str(merged.get("strategy_type") or row.get("classification") or "radar_intake"),
             "selection_score": selection_score,
-            "ml_score": None,
+            "ml_score": merged.get("ml_score"),
             "local_win_rate_pct": min(100.0, max(0.0, selection_score)),
             "timeframe": timeframe,
-            "direction": str(row.get("direction") or "neutral"),
+            "direction": direction,
             "signal_strength_pct": selection_score,
             "has_options": True,
             "source": str(row.get("source") or "stub"),
@@ -252,6 +272,21 @@ class RadarScannerAdapter:
             "timestamp": str(row.get("timestamp") or datetime.utcnow().isoformat()),
             "snapshot_classification": str(row.get("classification") or "watchlist"),
             "degradations_active": list(row.get("degradations_active") or []),
+            "price": price,
+            "bid": merged.get("bid"),
+            "ask": merged.get("ask"),
+            "volume": volume,
+            "bar_volume": volume,
+            "predicted_move_pct": merged.get("predicted_move_pct"),
+            "confirmation": merged.get("confirmation") or {},
+            "market_regime": merged.get("market_regime") or merged.get("regime"),
+            "iv_rank": merged.get("iv_rank") or merged.get("iv_rank_pct"),
+            "iv_hv_ratio": merged.get("iv_hv_ratio"),
+            "liquidity_score": merged.get("liquidity_score"),
+            "skew_pct": merged.get("skew_pct"),
+            "term_structure_slope": merged.get("term_structure_slope"),
+            "options_thesis": merged.get("options_thesis") or merged.get("thesis"),
+            "order_flow": merged.get("order_flow") or {},
         }
 
     def report(self, activity_limit: int = 24) -> dict[str, Any]:
@@ -272,7 +307,7 @@ class RadarScannerAdapter:
             min_score=float(_FLAGS.radar_min_score),
         )
         self._last_trace_id = res.trace_id or self._last_trace_id
-        candidates = [self._to_candidate(o.__dict__) for o in res.batch.items]
+        candidates = [self._to_candidate(o.to_dict()) for o in res.batch.items]
         self._last_error = str(res.error or "")
         self._last_report = {
             "generated_at": datetime.utcnow().isoformat(),
@@ -323,7 +358,7 @@ _JOURNAL_SYNC = JournalSyncService(_JOURNAL)
 _VISION = SensorVisionService()
 _AUTON_EXECUTOR = AutonExecutorService()
 _JOURNAL_PRO = JournalProService(_JOURNAL)
-_SCANNER = RadarScannerAdapter(_RADAR_CLIENT)
+_SCANNER = RadarScannerAdapter(_RADAR_CLIENT) if _radar_intake_enabled() else OpportunityScannerService(_ADAPTIVE_LEARNING)
 _VISION_CALIBRATION = VisionCalibrationService()
 _SELECTOR = StrategySelectorService(_STRATEGY_TRACKER, _ADAPTIVE_LEARNING)
 _GRAFANA_METRICS = GrafanaDashboard() if _PROM_EXPORT_OK else None
@@ -657,14 +692,12 @@ async def _start_background_services() -> None:
                 await _JOURNAL_SYNC.start()
             else:
                 logger.info("Journal sync omitido en lightweight por QUANT_STARTUP_JOURNAL_SYNC_ENABLED=false")
-            if _radar_intake_enabled() and settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
+            if settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
                 if settings.startup_scanner_delay_sec > 0:
                     _mark_startup_background("lightweight_waiting_scanner")
                     await asyncio.sleep(settings.startup_scanner_delay_sec)
                 _mark_startup_background("lightweight_starting_scanner")
                 await _SCANNER.start()
-            elif not _radar_intake_enabled():
-                logger.info("Radar intake omitido en lightweight por ATLAS_RADAR_INTAKE_ENABLED=false")
             elif not settings.startup_scanner_enabled:
                 logger.info("Scanner omitido en lightweight por QUANT_STARTUP_SCANNER_ENABLED=false")
             if settings.startup_snapshot_prewarm_enabled:
@@ -729,14 +762,12 @@ async def _start_background_services() -> None:
         else:
             logger.info("Journal sync omitido por QUANT_STARTUP_JOURNAL_SYNC_ENABLED=false")
 
-        if _radar_intake_enabled() and settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
+        if settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
             if settings.startup_scanner_delay_sec > 0:
                 _mark_startup_background("waiting_scanner")
                 await asyncio.sleep(settings.startup_scanner_delay_sec)
             _mark_startup_background("starting_scanner")
             await _SCANNER.start()
-        elif not _radar_intake_enabled():
-            logger.info("Radar intake omitido por ATLAS_RADAR_INTAKE_ENABLED=false")
         elif not settings.startup_scanner_enabled:
             logger.info("Scanner omitido por QUANT_STARTUP_SCANNER_ENABLED=false")
 
@@ -1060,12 +1091,10 @@ def _auto_cycle_inactive_reasons(config: dict[str, Any] | None = None) -> list[s
         reasons.append("lightweight_startup_enabled")
     if not bool(settings.autocycle_auto_start):
         reasons.append("autocycle_auto_start_disabled")
-    if not _radar_intake_enabled():
-        reasons.append("radar_intake_disabled")
     if not bool(settings.scanner_enabled):
         reasons.append("legacy_scanner_setting_disabled")
     elif not bool(settings.scanner_auto_start):
-        reasons.append("legacy_scanner_auto_start_disabled")
+        reasons.append("scanner_auto_start_disabled")
     op_config = config or _OPERATION_CENTER.get_config()
     if not _auton_mode_requires_loop(op_config):
         reasons.append("auton_mode_off")

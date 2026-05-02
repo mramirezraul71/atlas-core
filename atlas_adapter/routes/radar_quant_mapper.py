@@ -92,9 +92,14 @@ def compute_degradations_active(
         )
     pr = camera_context.get("provider_ready")
     st = str(camera_context.get("state") or "").strip().lower()
-    bad_states = frozenset({"unavailable", "degraded", "disabled", "not_configured"})
+    # "disabled/off" can be an intentional stabilization mode.  Treat it as
+    # neutral so the institutional radar does not advertise a camera failure
+    # while visual validation is explicitly disconnected.
+    if st in {"disabled", "off"}:
+        return out
+    bad_states = frozenset({"unavailable", "degraded", "not_configured"})
     if pr is False or (st and st in bad_states):
-        sev = "warning" if st == "degraded" else "critical"
+        sev = "warning" if st in {"degraded", "not_configured"} else "critical"
         out.append(
             {
                 "code": "CAMERA_UNAVAILABLE",

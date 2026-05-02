@@ -153,6 +153,11 @@ _DEFAULT_STATE = {
     "runtime_mode_resolved": {},
 }
 
+
+def _paper_dry_run_enabled() -> bool:
+    raw = os.getenv("ATLAS_TRADIER_DRY_RUN", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
 PDT_RULE_REMOVAL_DATE = "2026-04-14"
 MIN_CAPITAL_OPERATIONAL = 500.0
 MIN_CAPITAL_RECOMMENDED = 2000.0
@@ -816,6 +821,34 @@ class OperationCenter:
             "pdt_status": {},
         }
 
+    def _paper_dry_run_monitor_summary(self, scope: str) -> dict[str, Any]:
+        return {
+            "generated_at": datetime.utcnow().isoformat(),
+            "refresh_interval_sec": settings.tradier_probability_refresh_sec,
+            "account_session": {
+                "scope": scope,
+                "classification": "paper",
+                "account_id": settings.tradier_paper_account_id or "PAPER-DRYRUN",
+                "dry_run": True,
+            },
+            "balances": {
+                "cash": 100000.0,
+                "total_equity": 100000.0,
+                "equity": 100000.0,
+                "option_buying_power": 100000.0,
+            },
+            "alerts": [
+                {
+                    "level": "info",
+                    "message": "ATLAS_TRADIER_DRY_RUN=true; using local virtual paper balances.",
+                    "scope": scope,
+                }
+            ],
+            "totals": {},
+            "strategies": [],
+            "pdt_status": {"status": "dry_run_virtual", "deprecated": True},
+        }
+
     def _cached_monitor_summary(self, scope: str) -> dict[str, Any] | None:
         with self._monitor_summary_lock:
             cached = self._monitor_summary_cache.get(scope)
@@ -862,6 +895,8 @@ class OperationCenter:
             return worker
 
     def _load_monitor_summary(self, scope: str, *, fast: bool = False) -> dict[str, Any]:
+        if str(scope or "").strip().lower() == "paper" and _paper_dry_run_enabled():
+            return self._paper_dry_run_monitor_summary(scope)
         ttl_sec = max(2, int(settings.tradier_monitor_cache_ttl_sec or 300))
         # `operation/status` debe degradar rapido; no puede quedar secuestrado por el broker.
         timeout_sec = max(1, min(int(settings.tradier_timeout_sec or 15), 5))
@@ -2200,7 +2235,10 @@ class OperationCenter:
         config["live_switch_state"] = live_switch_state_to_payload(live_switch_state)
         opening_equity_order = self._is_opening_equity_order(order_copy)
         monitor_started = time.perf_counter()
-        monitor = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
+        if scope == "paper" and _paper_dry_run_enabled():
+            monitor = self._paper_dry_run_monitor_summary(scope)
+        else:
+            monitor = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
         evaluation_timings["monitor_summary_sec"] = round(time.perf_counter() - monitor_started, 4)
         balances = monitor.get("balances") or {}
         option_bp = _safe_float(balances.get("option_buying_power"), 0.0)

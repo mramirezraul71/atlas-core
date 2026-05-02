@@ -20,8 +20,10 @@ class _FakeClient:
     def __init__(self, *, place_results: list[dict] | None = None, orders_results: list[list[dict]] | None = None) -> None:
         self.place_results = list(place_results or [])
         self.orders_results = list(orders_results or [])
+        self.place_calls = 0
 
     def place_order(self, account_id: str, data: dict) -> dict:
+        self.place_calls += 1
         if self.place_results:
             return dict(self.place_results.pop(0))
         return {"id": "default-order", "status": "accepted"}
@@ -197,12 +199,13 @@ class TestTradierExecutionFallback:
             )
 
     def test_route_order_to_tradier_guarantees_broker_order_id(self, monkeypatch) -> None:
+        monkeypatch.setenv("ATLAS_TRADIER_DRY_RUN", "false")
         session = _FakeSession()
         client = _FakeClient()
         monkeypatch.setattr(tradier_execution_module, "resolve_account_session", lambda **kwargs: (client, session))
         monkeypatch.setattr(
             tradier_execution_module,
-            "_execute_with_fallback",
+            "_place_order_with_confirmation",
             lambda **kwargs: {"order_id": "ABC123", "status": "accepted", "method_used": "stream_confirmation"},
         )
         monkeypatch.setattr(tradier_execution_module, "record_live_order_intent", lambda **kwargs: {"ok": True})
@@ -220,12 +223,13 @@ class TestTradierExecutionFallback:
         assert result["status"] == "sent"
 
     def test_route_order_to_tradier_raises_if_no_id(self, monkeypatch) -> None:
+        monkeypatch.setenv("ATLAS_TRADIER_DRY_RUN", "false")
         session = _FakeSession()
         client = _FakeClient()
         monkeypatch.setattr(tradier_execution_module, "resolve_account_session", lambda **kwargs: (client, session))
         monkeypatch.setattr(
             tradier_execution_module,
-            "_execute_with_fallback",
+            "_place_order_with_confirmation",
             lambda **kwargs: {"status": "accepted", "method_used": "stream_confirmation"},
         )
         monkeypatch.setattr(tradier_execution_module, "record_live_order_intent", lambda **kwargs: {"ok": True})
@@ -242,17 +246,13 @@ class TestTradierExecutionFallback:
             )
 
     def test_route_order_to_tradier_recovers_recent_order_after_timeout(self, monkeypatch) -> None:
+        monkeypatch.setenv("ATLAS_TRADIER_DRY_RUN", "false")
         session = _FakeSession()
         client = _FakeClient()
         monkeypatch.setattr(tradier_execution_module, "resolve_account_session", lambda **kwargs: (client, session))
         monkeypatch.setattr(
             tradier_execution_module,
-            "_execute_with_fallback",
-            lambda **kwargs: (_ for _ in ()).throw(TimeoutError("stream confirmation timeout")),
-        )
-        monkeypatch.setattr(
-            tradier_execution_module,
-            "_reconcile_recent_order_after_timeout",
+            "_place_order_with_confirmation",
             lambda *args, **kwargs: {
                 "order_id": "RECOVERED-1",
                 "status": "accepted",
@@ -340,13 +340,14 @@ class TestTradierExecutionFallback:
         assert match is None
 
     def test_route_order_to_tradier_non_recoverable_runtime_error_skips_reconciliation(self, monkeypatch) -> None:
+        monkeypatch.setenv("ATLAS_TRADIER_DRY_RUN", "false")
         session = _FakeSession()
         client = _FakeClient()
         reconcile_mock = MagicMock(return_value={"order_id": "SHOULD-NOT-HAPPEN"})
         monkeypatch.setattr(tradier_execution_module, "resolve_account_session", lambda **kwargs: (client, session))
         monkeypatch.setattr(
             tradier_execution_module,
-            "_execute_with_fallback",
+            "_place_order_with_confirmation",
             lambda **kwargs: (_ for _ in ()).throw(RuntimeError("broker rejected order payload")),
         )
         monkeypatch.setattr(tradier_execution_module, "_reconcile_recent_order_after_timeout", reconcile_mock)
@@ -365,3 +366,44 @@ class TestTradierExecutionFallback:
             )
 
         reconcile_mock.assert_not_called()
+
+    def test_route_order_to_tradier_paper_dry_run_does_not_call_broker(self, monkeypatch) -> None:
+        monkeypatch.setenv("ATLAS_TRADIER_DRY_RUN", "true")
+        session = _FakeSession()
+        client = _FakeClient()
+        monkeypatch.setattr(tradier_execution_module, "resolve_account_session", lambda **kwargs: (client, session))
+
+        result = tradier_execution_module.route_order_to_tradier(
+            OrderRequest(
+                symbol="SPY",
+                side="buy",
+                size=1,
+                order_type="market",
+                asset_class="equity",
+                account_scope="paper",
+                preview=False,
+            )
+        )
+
+        assert client.place_calls == 0
+        assert result["broker_order_ids_json"]["id"].startswith("TRADIER-PAPER-DRYRUN-")
+        assert result["method_used"] == "local_paper_dry_run"
+        assert result["mode"] == "submit"
+
+    def test_place_order_with_confirmation_submits_once_when_id_missing(self) -> None:
+        client = _FakeClient(
+            place_results=[{"status": "accepted"}],
+            orders_results=[[{"id": "REC-1", "symbol": "SPY", "qty": 1, "side": "buy", "type": "market"}]],
+        )
+        session = _FakeSession()
+
+        result = tradier_execution_module._place_order_with_confirmation(
+            client=client,
+            session=session,
+            payload={"symbol": "SPY", "side": "buy", "quantity": "1", "type": "market"},
+            timeout_sec=1,
+            submitted_at=datetime.now(timezone.utc),
+        )
+
+        assert client.place_calls == 1
+        assert result["order_id"] == "REC-1"

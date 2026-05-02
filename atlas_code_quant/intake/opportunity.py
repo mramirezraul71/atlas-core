@@ -1,7 +1,7 @@
 """Contratos tipados de intake Radar (F3 cutover)."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,6 +23,18 @@ class RadarOpportunity:
     trace_id: str = ""
     payload: dict[str, Any] = field(default_factory=dict)  # extensiones futuras
     generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a plain dict that is safe for scanner/JSON contracts.
+
+        The dataclass uses ``slots=True`` to keep the intake payload compact, so
+        callers must not rely on ``__dict__`` being present.
+        """
+        data = asdict(self)
+        payload = data.pop("payload", {}) or {}
+        if isinstance(payload, dict):
+            data.update(payload)
+        return data
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "RadarOpportunity":
