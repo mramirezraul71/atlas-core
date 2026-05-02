@@ -3944,6 +3944,13 @@ def serve_ui():
     return _dashboard_missing_page("ATLAS v4 no disponible", "No se encontró atlas_adapter/static/v4/index.html en el despliegue.")
 
 
+@app.get("/radar/dashboard")
+def serve_radar_dashboard_alias():
+    """Alias de compatibilidad para accesos antiguos del radar desde el dashboard central."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/ui/radar", status_code=302)
+
+
 @app.get("/v3")
 def serve_v3():
     """Legacy dashboard v3.8.0 (operational UI)."""
