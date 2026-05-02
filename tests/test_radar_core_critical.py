@@ -10,7 +10,11 @@ from modules.atlas_radar_kalshi.calibration import append_outcome, refit_from_di
 from modules.atlas_radar_kalshi.executor_v2 import KalshiExecutorV2
 from modules.atlas_radar_kalshi.exit_manager import ExitManager, Position
 from modules.atlas_radar_kalshi.gating import GateConfig, Gating
+import time
+
+from modules.atlas_radar_kalshi.gating import GateDecision
 from modules.atlas_radar_kalshi.risk_engine import RiskEngine, RiskLimits
+from modules.atlas_radar_kalshi.signals import SignalReadout
 from modules.atlas_radar_kalshi.scanner import OrderBookSnapshot
 from modules.atlas_radar_kalshi.signals import SignalReadout
 
@@ -64,6 +68,28 @@ def test_risk_on_close_updates_balance_and_recovers_safe_mode() -> None:
     assert risk.state.balance_cents == 100_500
     assert risk.state.safe_mode is False
     assert risk.state.safe_mode_reason == ""
+
+
+def test_risk_rate_limit_does_not_latch_safe_mode() -> None:
+    risk = RiskEngine(RiskLimits(max_orders_per_minute=2, max_open_positions=50))
+    risk.update_balance(100_000)
+    now = time.time()
+    risk.state.order_times.clear()
+    risk.state.order_times.extend([now, now])
+    gate = GateDecision(accepted=True, side="YES", price_cents=50)
+    readout = SignalReadout(
+        p_ensemble=0.55,
+        confidence=0.9,
+        spread_ticks=1,
+        depth_yes=100,
+        depth_no=100,
+        liquidity_score=0.9,
+    )
+    out = risk.size(gate, readout, "ANY")
+    assert out.contracts == 0
+    assert "rate_limit" in out.rationale
+    assert out.safe_mode is False
+    assert risk.state.safe_mode is False
 
 
 def test_risk_manual_recover_sets_probation() -> None:

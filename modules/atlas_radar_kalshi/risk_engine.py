@@ -157,6 +157,22 @@ class RiskEngine:
              ticker: str) -> SizingDecision:
         """Devuelve un :class:`SizingDecision`. Si breakers activos -> 0."""
         breaker = self._check_breakers()
+        if breaker is None:
+            # Limpia safe_mode “pegado” cuando el breaker ya no aplica (p. ej. rate_limit vencido).
+            self._maybe_clear_safe_mode()
+
+        if breaker == "rate_limit":
+            # Transitorio: no activar safe_mode persistente (antes bloqueaba órdenes hasta recover manual).
+            if breaker not in self.state.breakers[-3:]:
+                self.state.breakers.append(breaker)
+            return SizingDecision(
+                market_ticker=ticker, side=gate.side or "YES",
+                price_cents=gate.price_cents, contracts=0, notional_cents=0,
+                f_full=0.0, f_capped=0.0,
+                rationale="rate_limit:retry_later",
+                safe_mode=False,
+            )
+
         if breaker:
             self.state.safe_mode = True
             self.state.safe_mode_reason = breaker
