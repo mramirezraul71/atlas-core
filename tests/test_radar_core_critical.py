@@ -171,6 +171,8 @@ def test_calibration_refit_temporal_split(tmp_path: Path) -> None:
 async def test_brain_uses_executable_side_for_edge() -> None:
     brain = RadarBrain()
     brain.settings.edge_threshold = 0.01
+    # Aislar del .env: atlas_brain haría POST real y el test puede colgarse.
+    brain.settings.llm_backend = "ollama"
 
     async def _fake_ollama_prompt(prompt: str) -> LLMReading:
         return LLMReading(p_yes=0.55, confidence=0.9, rationale="ok")
