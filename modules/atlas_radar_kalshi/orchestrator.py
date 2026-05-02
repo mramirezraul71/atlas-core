@@ -52,6 +52,11 @@ class Health:
     # Diagnóstico watchdog (se rellenan en _watchdog)
     watchdog_stale_sec: float = 60.0
     seconds_since_activity: float = 0.0
+    # Último motivo por el que no hubo entrada (gating / riesgo / ejecutor)
+    last_entry_block_kind: str = ""
+    last_entry_block_reason: str = ""
+    last_entry_block_ticker: str = ""
+    last_entry_block_ts: float = 0.0
 
     def tick(self, kind: str) -> None:
         now = time.time()
@@ -61,6 +66,22 @@ class Health:
             self.last_decision_ts = now
         elif kind == "order":
             self.last_order_ts = now
+
+
+def _record_entry_block_health(
+    health: Health, kind: str, reason: str, ticker: str
+) -> None:
+    health.last_entry_block_kind = (kind or "")[:40]
+    health.last_entry_block_reason = (reason or "")[:420]
+    health.last_entry_block_ticker = (ticker or "")[:160]
+    health.last_entry_block_ts = time.time()
+
+
+def _clear_entry_block_health(health: Health) -> None:
+    health.last_entry_block_kind = ""
+    health.last_entry_block_reason = ""
+    health.last_entry_block_ticker = ""
+    health.last_entry_block_ts = 0.0
 
 
 # ===========================================================================
@@ -446,11 +467,17 @@ class Orchestrator:
             "score": gate.score, "gate": gate.reason,
         })
         if not gate.accepted:
+            _record_entry_block_health(
+                self.health, "gate", gate.reason, ev.market_ticker
+            )
             return
 
         # 5) sizing
         sizing = self.risk.size(gate, readout, ev.market_ticker)
         if sizing.contracts <= 0:
+            _record_entry_block_health(
+                self.health, "risk", sizing.rationale, ev.market_ticker
+            )
             if sizing.safe_mode:
                 self.journal.write("risk", {"event": "safe_mode",
                                             "rationale": sizing.rationale})
@@ -466,6 +493,18 @@ class Orchestrator:
             client_order_id=coid, reason="entry",
         )
         report = await self.executor.submit(order)
+        if report.ok and report.filled_contracts > 0:
+            _clear_entry_block_health(self.health)
+        elif not report.ok:
+            detail = (report.status or report.error or "executor_fail").strip()
+            _record_entry_block_health(
+                self.health, "executor", detail[:400], ev.market_ticker
+            )
+        else:
+            detail = "ok_sin_fill:" + (report.status or "").strip()
+            _record_entry_block_health(
+                self.health, "executor", detail[:400], ev.market_ticker
+            )
         self.health.tick("order")
         self.gating.stamp(ev.market_ticker)
         self.risk.on_order(ev.market_ticker, sizing.notional_cents)

@@ -50,7 +50,7 @@ from ..state.journal import Journal
 from ..metrics import compute as compute_perf, prometheus_text
 
 # Visible en /ui/radar: si no coincide tras pull, reiniciar proceso :8791.
-RADAR_UI_BUILD = "20260502-radar-autonomy-strip-v1"
+RADAR_UI_BUILD = "20260502-radar-entry-block-v1"
 _RADAR_PROFILE_OVERRIDE_KEYS = (
     "RADAR_EDGE_NET_MIN",
     "RADAR_CONFIDENCE_MIN",
@@ -1109,6 +1109,18 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 "seconds_since_activity": float(
                     getattr(h, "seconds_since_activity", 0.0)
                 ),
+                "last_entry_block_kind": str(
+                    getattr(h, "last_entry_block_kind", "") or ""
+                ),
+                "last_entry_block_reason": str(
+                    getattr(h, "last_entry_block_reason", "") or ""
+                ),
+                "last_entry_block_ticker": str(
+                    getattr(h, "last_entry_block_ticker", "") or ""
+                ),
+                "last_entry_block_ts": float(
+                    getattr(h, "last_entry_block_ts", 0.0)
+                ),
             }
         else:
             health_out = {
@@ -1118,6 +1130,10 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 "last_order_ts": 0.0,
                 "watchdog_stale_sec": 120.0,
                 "seconds_since_activity": 0.0,
+                "last_entry_block_kind": "",
+                "last_entry_block_reason": "",
+                "last_entry_block_ticker": "",
+                "last_entry_block_ts": 0.0,
             }
         session_out = {
             "decisions": len(state.decisions),
@@ -1209,6 +1225,12 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             "seconds_since_activity": float(
                 getattr(h, "seconds_since_activity", 0.0)
             ),
+            "last_entry_block_kind": getattr(h, "last_entry_block_kind", "") or "",
+            "last_entry_block_reason": getattr(h, "last_entry_block_reason", "")
+            or "",
+            "last_entry_block_ticker": getattr(h, "last_entry_block_ticker", "")
+            or "",
+            "last_entry_block_ts": float(getattr(h, "last_entry_block_ts", 0.0)),
             "note": (
                 "degraded=feed inactivo > umbral; no bloquea entradas en código; "
                 "ordenes=0 suele ser gating/conf/liquidez/riesgo."
@@ -1677,6 +1699,13 @@ _RADAR_HTML = r"""<!doctype html>
         <button class="btn" onclick="runOfflineExperiment()">Exp. Offline</button>
         <button class="btn" onclick="runOnlineExperiment()">Exp. Online</button>
       </div>
+      <p class="mut" style="margin:8px 0 0;font-size:11px;line-height:1.45">
+        El modo <strong>auto</strong> solo aplica parches de AutoTune en segundo plano si marcas
+        <strong>AutoTune activo</strong> y pulsas <em>Guardar AutoTune</em>. Eso no es “operar solo”:
+        las órdenes siguen dependiendo del <strong>gating</strong> (edge neto, confianza, liquidez, cooldown)
+        y del <strong>motor de riesgo</strong> (Kelly, límites de exposición, max_open). Si ves decisiones en vivo
+        pero la última orden es antigua, revisa el panel <strong>Por qué no hubo entrada</strong> abajo.
+      </p>
       <div class="mut" id="autotune_msg" style="margin-top:8px"></div>
     </div>
   </div>
@@ -1710,6 +1739,9 @@ _RADAR_HTML = r"""<!doctype html>
   <div class="tile sm" style="grid-column:span 2"><h3>Breakers (riesgo)</h3><div class="v smtxt" id="brk_line">—</div></div>
   <div class="tile sm"><h3>Última decisión / orden</h3><div class="v smtxt" id="age_do">—</div></div>
   <div class="tile sm"><h3>Exec intentos / errores</h3><div class="v" id="x_ae">0 / 0</div></div>
+  <div class="tile sm" style="grid-column:span 4"><h3>Por qué no hubo entrada</h3>
+    <div class="v smtxt" id="entry_block">—</div>
+    <div class="sub mut">Último rechazo de <strong>gating</strong>, tamaño <strong>riesgo = 0</strong> o fallo de <strong>ejecutor</strong> (las decisiones del cerebro pueden seguir en tiempo real).</div></div>
 </section>
 
 <section class="grid" style="grid-template-columns:repeat(4,1fr)">
@@ -2168,6 +2200,19 @@ async function refresh(){
     }
     if($('#brk_line')) $('#brk_line').textContent = (breakers.length ? breakers.slice(-4).join(' · ') : 'ninguno');
     if($('#age_do')) $('#age_do').textContent = 'dec ' + fmtRel(hh.last_decision_ts) + ' · ord ' + fmtRel(hh.last_order_ts);
+    if($('#entry_block')){
+      const rk = (hh.last_entry_block_reason || '').trim();
+      const k = (hh.last_entry_block_kind || '').trim();
+      const tk = (hh.last_entry_block_ticker || '').trim();
+      const bt = Number(hh.last_entry_block_ts || 0);
+      if(rk || k){
+        $('#entry_block').textContent =
+          (k ? '[' + k + '] ' : '') + rk + (tk ? ' · ' + tk : '') + ' · ' + fmtRel(bt);
+      }else{
+        $('#entry_block').textContent =
+          'Sin rechazo reciente registrado (o última entrada ejecutada con fill). Evalúa unos segundos con mercado activo.';
+      }
+    }
     if($('#x_ae')) $('#x_ae').textContent = (x.attempts??0) + ' / ' + (x.errors??0);
     const tb = $('#tbl tbody'); tb.innerHTML='';
     (mk.rows||[]).slice(0,40).forEach(row=>{
