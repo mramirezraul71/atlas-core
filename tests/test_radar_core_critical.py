@@ -129,6 +129,31 @@ def test_exit_manager_forced_exit() -> None:
     assert sig.reason == "forced"
 
 
+def test_exit_manager_autonomy_capacity_signal() -> None:
+    mgr = ExitManager()
+    mgr.open(
+        Position(
+            ticker="T1",
+            side="YES",
+            entry_price=50,
+            size=2,
+            entry_ts=0,
+            edge_at_entry=0.05,
+            target_price=55,
+            stop_price=45,
+        )
+    )
+    sig = mgr.evaluate(
+        "T1",
+        current_price=52,
+        current_edge=0.02,
+        autonomy_capacity=True,
+    )
+    assert sig.should_exit is True
+    assert sig.reason == "autonomy_capacity"
+    assert sig.target_price == 52
+
+
 def test_calibration_refit_temporal_split(tmp_path: Path) -> None:
     path = tmp_path / "radar_calibration.jsonl"
     for i in range(120):

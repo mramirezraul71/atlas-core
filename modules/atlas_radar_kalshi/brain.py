@@ -45,7 +45,7 @@ import asyncio
 import json
 import math
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 import numpy as np
@@ -421,6 +421,138 @@ class RadarBrain:
             "Estima la probabilidad real de que el evento se resuelva YES, "
             "tu confianza (0-1) y un rationale corto. JSON:"
         )
+
+    # ------------------------------------------------------------------
+    # Supervisor autonomía (diagnóstico operativo, JSON acotado)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_supervisor_json(raw: str) -> Dict[str, str]:
+        text = (raw or "{}").strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            text = text[start : end + 1]
+        try:
+            data = json.loads(text)
+        except Exception:
+            return {"action": "noop", "summary": "invalid_supervisor_json"}
+        action = str(data.get("action", "noop")).lower().strip()
+        allowed = {"noop", "shed_oldest", "log", "escalate"}
+        if action not in allowed:
+            action = "noop"
+        summary = str(data.get("summary", data.get("rationale", "")))[:500]
+        return {"action": action, "summary": summary}
+
+    async def _supervisor_ollama(self, prompt: str) -> Dict[str, str]:
+        """Consulta Ollama con salida JSON ``{action, summary}``."""
+        now = time.time()
+        if now < self._ollama_backoff_until:
+            return {"action": "noop", "summary": "ollama_backoff_active"}
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.settings.ollama_timeout_seconds
+            ) as client:
+                base_url = self.settings.ollama_endpoint.rstrip("/")
+                installed = await self._fetch_installed_models(client, base_url)
+                candidates = self._candidate_ollama_models(installed)
+                last_err: Optional[str] = None
+                for model in candidates:
+                    try:
+                        generate_payload = {
+                            "model": model,
+                            "prompt": prompt,
+                            "format": "json",
+                            "stream": False,
+                            "keep_alive": "30m",
+                            "options": {
+                                "temperature": 0.15,
+                                "num_ctx": 2048,
+                                "num_predict": 180,
+                            },
+                        }
+                        r = await client.post(
+                            f"{base_url}/api/generate",
+                            json=generate_payload,
+                        )
+                        if r.status_code != 404:
+                            r.raise_for_status()
+                            raw = str(r.json().get("response") or "{}")
+                            self._active_ollama_model = model
+                            return self._extract_supervisor_json(raw)
+                        chat_payload = {
+                            "model": model,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "format": "json",
+                            "stream": False,
+                            "keep_alive": "30m",
+                            "options": {
+                                "temperature": 0.15,
+                                "num_ctx": 2048,
+                                "num_predict": 180,
+                            },
+                        }
+                        rc = await client.post(
+                            f"{base_url}/api/chat", json=chat_payload
+                        )
+                        rc.raise_for_status()
+                        msg = (rc.json().get("message") or {})
+                        raw = str(msg.get("content") or "{}")
+                        self._active_ollama_model = model
+                        return self._extract_supervisor_json(raw)
+                    except httpx.HTTPStatusError as exc:
+                        body = (exc.response.text or "").lower()
+                        if exc.response.status_code == 404 and "model" in body:
+                            last_err = f"model_not_found:{model}"
+                            continue
+                        raise
+                    except Exception as exc:
+                        last_err = str(exc)
+                        continue
+                raise RuntimeError(last_err or "ollama_supervisor_empty")
+        except Exception as exc:
+            self._ollama_backoff_until = (
+                time.time() + float(self.settings.ollama_backoff_seconds)
+            )
+            self.log.warning("supervisor Ollama falló (%s)", exc)
+            return {"action": "noop", "summary": f"ollama_err:{exc}"}
+
+    async def supervisor_advise(self, snapshot: Dict[str, Any]) -> Dict[str, str]:
+        """Consulta al mismo backend LLM del radar para vigilar el estado operativo."""
+        body = json.dumps(snapshot, ensure_ascii=False)[:3500]
+        prompt = (
+            "Supervisor operativo del radar Kalshi (solo gestión, sin abrir trades).\n"
+            "Revisa el estado y responde EXCLUSIVAMENTE JSON válido:\n"
+            '{"action":"noop|shed_oldest|log|escalate","summary":"texto breve"}\n'
+            "noop = coherente; log = anomalía menor; shed_oldest = conviene liberar "
+            "un slot de max_open; escalate = riesgo que requiere revisión humana.\n"
+            f"Estado JSON:\n{body}\nJSON:"
+        )
+        if self.settings.llm_backend == "atlas_brain":
+            try:
+                base = self.settings.atlas_brain_base_url.rstrip("/")
+                url = f"{base}/brain/process"
+                timeout = float(self.settings.atlas_brain_timeout_seconds)
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    r = await client.post(url, json={"text": prompt})
+                    r.raise_for_status()
+                    payload = r.json()
+                if not payload.get("ok"):
+                    err = str(
+                        payload.get("error") or payload.get("detail") or "brain_error"
+                    )
+                    raise RuntimeError(err)
+                raw = str(payload.get("response") or "{}")
+                return self._extract_supervisor_json(raw)
+            except Exception as exc:
+                self.log.debug("supervisor atlas_brain (%s)", exc)
+                if self.settings.atlas_brain_fallback_ollama:
+                    return await self._supervisor_ollama(prompt)
+                return {"action": "noop", "summary": f"brain_err:{exc}"}
+        return await self._supervisor_ollama(prompt)
 
     # ------------------------------------------------------------------
     # 2) Cadena de Markov de 1er orden

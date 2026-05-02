@@ -11,6 +11,7 @@ Se monta en ``atlas_adapter.atlas_http_api:app`` (puerto 8791) y expone:
 - ``GET  /api/radar/metrics``      → KPIs (PnL acumulado, hit-rate, etc.).
 - ``GET  /api/radar/calibration-events`` → últimos ajustes (panel + bitácora ANS).
 - ``POST /api/radar/calibration-events`` → registro externo (scripts).
+- ``GET  /api/radar/autonomy/status`` → último tick del operador de autonomía.
 - ``WS   /api/radar/stream``       → canal en vivo (eventos del scanner
                                      + decisiones brain).
 
@@ -117,6 +118,13 @@ class RadarState:
             "error": None,
         }
         self.calibration_events: Deque[dict[str, Any]] = deque(maxlen=100)
+        self.autonomy_status: dict[str, Any] = {
+            "enabled": True,
+            "last_tick_ts": 0.0,
+            "last_actions": [],
+            "last_error": "",
+            "last_llm_action": None,
+        }
 
     # ------------------------------------------------------------------
     async def broadcast(self, payload: dict[str, Any]) -> None:
@@ -1052,6 +1060,11 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
             ans_ok=bool(body.ans_ok),
         )
         return {"ok": True, "logged": True}
+
+    @router.get("/api/radar/autonomy/status")
+    def autonomy_status() -> dict:
+        payload = getattr(state, "autonomy_status", None) or {}
+        return {"ok": True, "status": payload}
 
     @router.get("/api/radar/markets")
     def markets() -> dict:

@@ -78,11 +78,20 @@ class ExitManager:
         current_edge: float,
         data_degraded: bool = False,
         forced: bool = False,
+        autonomy_capacity: bool = False,
     ) -> ExitSignal:
         pos = self.positions.get(ticker)
         if not pos or pos.closed:
             return ExitSignal(should_exit=False)
         cfg = self.cfg
+
+        # 0) Autonomía: liberar slot (p. ej. tope max_open) sin esperar TP/SL
+        if autonomy_capacity:
+            return ExitSignal(
+                should_exit=True,
+                reason="autonomy_capacity",
+                target_price=max(1, min(99, current_price)),
+            )
 
         # 1) Forced exits
         if forced:

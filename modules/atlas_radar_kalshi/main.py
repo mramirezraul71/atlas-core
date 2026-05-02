@@ -269,6 +269,14 @@ def register(app, state: Optional[RadarState] = None,
                 state.orchestrator_task = asyncio.create_task(
                     orch.start(), name="atlas-radar-kalshi-orch"
                 )
+            from .autonomy_operator import autonomy_background_loop
+
+            atask = getattr(state, "autonomy_task", None)
+            if atask is None or atask.done():
+                state.autonomy_task = asyncio.create_task(
+                    autonomy_background_loop(state),
+                    name="atlas-radar-kalshi-autonomy",
+                )
 
         @app.on_event("shutdown")
         async def _stop_radar() -> None:  # pragma: no cover - runtime hook
@@ -276,6 +284,9 @@ def register(app, state: Optional[RadarState] = None,
             task = getattr(state, "orchestrator_task", None)
             if task is not None and not task.done():
                 task.cancel()
+            atask = getattr(state, "autonomy_task", None)
+            if atask is not None and not atask.done():
+                atask.cancel()
             if getattr(state, "runtime_enabled", True):
                 _release_runtime_lock()
     else:
