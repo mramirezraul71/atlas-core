@@ -209,6 +209,9 @@ class Orchestrator:
             for idx in range(self._event_workers)
         ]
         watchdog = asyncio.create_task(self._watchdog(), name="radar-watchdog")
+        reconcile_task = asyncio.create_task(
+            self._reconcile_loop(), name="radar-reconcile"
+        )
         try:
             async for ev in self.scanner.stream():
                 self.health.tick("event")
@@ -216,6 +219,11 @@ class Orchestrator:
                 if self._stop.is_set():
                     break
         finally:
+            reconcile_task.cancel()
+            try:
+                await reconcile_task
+            except asyncio.CancelledError:
+                pass
             watchdog.cancel()
             for t in self._worker_tasks:
                 t.cancel()
@@ -288,6 +296,9 @@ class Orchestrator:
             elif not kill_req and self.risk.state.kill_switch and \
                     os.getenv("ATLAS_RADAR_KILL", "0") != "1":
                 self.risk.reset_kill()
+            # Safe-mode “pegado” sin breaker activo: limpiar con la misma regla que size().
+            if self.risk.state.safe_mode and self.risk._check_breakers() is None:
+                self.risk._maybe_clear_safe_mode()
             await self.state.broadcast({"type": "ping",
                                         "degraded": self.health.degraded})
 
@@ -310,6 +321,18 @@ class Orchestrator:
                 self.state.calibration_runtime = stats
         except Exception as exc:
             self.log.debug("calibrator runtime refit failed: %s", exc)
+
+    async def _reconcile_loop(self) -> None:
+        interval = max(
+            30, int(os.getenv("RADAR_RECONCILE_INTERVAL_S", "120"))
+        )
+        while not self._stop.is_set():
+            await asyncio.sleep(float(interval))
+            try:
+                out = await self.executor.reconcile()
+                self.journal.write("reconcile", {"result": out})
+            except Exception as exc:
+                self.log.warning("reconcile failed: %s", exc)
 
     async def _attempt_feed_recovery(self, age_s: float) -> None:
         """Autocuración del feed sin reiniciar todo PUSH."""
@@ -472,6 +495,14 @@ class Orchestrator:
             _record_entry_block_health(
                 self.health, "gate", gate.reason, ev.market_ticker
             )
+            await self.state.broadcast({
+                "type": "rejected",
+                "ticker": ev.market_ticker,
+                "stage": "gate",
+                "reason": gate.reason,
+                "edge_net": gate.edge_net,
+                "confidence": readout.confidence,
+            })
             return
 
         # 5) sizing
@@ -480,6 +511,21 @@ class Orchestrator:
             _record_entry_block_health(
                 self.health, "risk", sizing.rationale, ev.market_ticker
             )
+            self.journal.write("sizing", {
+                "ticker": ev.market_ticker,
+                "sizing": sizing.model_dump(),
+                "gate": gate.model_dump(),
+                "balance_cents": self.risk.state.balance_cents,
+            })
+            await self.state.broadcast({
+                "type": "rejected",
+                "ticker": ev.market_ticker,
+                "stage": "sizing",
+                "reason": sizing.rationale if sizing.safe_mode
+                else f"zero_size:{sizing.rationale}",
+                "edge_net": gate.edge_net,
+                "confidence": readout.confidence,
+            })
             if sizing.safe_mode:
                 self.journal.write("risk", {"event": "safe_mode",
                                             "rationale": sizing.rationale})

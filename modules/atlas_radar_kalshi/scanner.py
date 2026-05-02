@@ -156,6 +156,7 @@ class KalshiScanner:
         self._new_market_events_emitted: int = 0
         self._discover_lock = asyncio.Lock()
         self.uses_public_rest_feed = self._public_feed_allowed()
+        self._ws_send_q: asyncio.Queue[dict] = asyncio.Queue(maxsize=200)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -290,7 +291,32 @@ class KalshiScanner:
                 self.log.debug("Fallback /markets->ticker emitidos=%d", emitted)
             if new:
                 self.log.info("Nuevos mercados detectados: %s", new[:5])
+                self._enqueue_ws_subscribe_markets(new)
             return new
+
+    def _enqueue_ws_subscribe_markets(self, tickers: list[str]) -> None:
+        """Suscripción incremental WS (mercados detectados tras el connect inicial)."""
+        if not self._credentials_ready() or not tickers:
+            return
+        max_batch = min(40, int(self.settings.ws_max_tickers))
+        for i in range(0, len(tickers), max_batch):
+            chunk = tickers[i : i + max_batch]
+            msg = {
+                "id": int(time.time() * 1000 + i) % (2**31),
+                "cmd": "subscribe",
+                "params": {
+                    "channels": ["orderbook_delta", "ticker"],
+                    "market_tickers": chunk,
+                },
+            }
+            try:
+                self._ws_send_q.put_nowait(msg)
+                self.log.info(
+                    "WS control: queued subscribe for %d market(s)",
+                    len(chunk),
+                )
+            except asyncio.QueueFull:
+                self.log.warning("WS control queue full; dropping subscribe batch")
 
     async def _rest_polling_loop(self) -> None:
         """Loop de descubrimiento periódico."""
@@ -418,6 +444,17 @@ class KalshiScanner:
             await ws.send(json.dumps(sub))
             self.log.info("Suscrito a %d tickers", len(selected))
 
+            async def _drain_ws_ctrl() -> None:
+                while True:
+                    ctrl = await self._ws_send_q.get()
+                    try:
+                        await ws.send(json.dumps(ctrl))
+                        n = len((ctrl.get("params") or {}).get("market_tickers") or [])
+                        self.log.info("WS control: sent subscribe (%d markets)", n)
+                    except Exception as exc:
+                        self.log.warning("WS control send failed: %s", exc)
+
+            ctrl_task = asyncio.create_task(_drain_ws_ctrl(), name="radar-ws-ctrl")
             try:
                 async for raw in ws:
                     try:
@@ -426,6 +463,11 @@ class KalshiScanner:
                         continue
                     await self._handle_ws_message(msg)
             finally:
+                ctrl_task.cancel()
+                try:
+                    await ctrl_task
+                except asyncio.CancelledError:
+                    pass
                 self._active_ws = None
 
     async def _handle_ws_message(self, msg: dict) -> None:

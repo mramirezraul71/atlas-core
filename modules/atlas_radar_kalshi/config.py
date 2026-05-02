@@ -3,8 +3,8 @@ config.py — Carga de configuración del Radar Kalshi.
 
 Responsabilidades
 -----------------
-1. Leer un archivo ``.env`` (ubicado en el mismo módulo o en
-   ``C:\\ATLAS\\config\\.env``, alineado con el resto de Atlas).
+1. Leer un archivo ``.env`` (módulo local, ``C:\\ATLAS\\config\\.env`` en Windows,
+   o ``~/.atlas/config/.env`` en POSIX si existe).
 2. Cargar la **API Key ID** de Kalshi y la **llave privada RSA** en
    formato PEM (firmas RSA-PSS según docs oficiales de Kalshi v2).
 3. Exponer endpoints (REST/WS demo o producción) y la URL del
@@ -29,6 +29,7 @@ Por qué Pydantic
 from __future__ import annotations
 
 import os
+import platform
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -40,11 +41,17 @@ from pydantic import BaseModel, Field, field_validator
 # Localización del .env
 # ---------------------------------------------------------------------------
 # Convención del proyecto Atlas:
-#   1) Si existe ``C:\ATLAS\config\.env`` (Windows / entorno productivo
-#      del usuario), se usa.
-#   2) En su defecto, ``modules/atlas_radar_kalshi/.env`` (desarrollo
-#      local cross-platform).
-_ATLAS_GLOBAL_ENV = Path(r"C:\ATLAS\config\.env")
+#   1) Windows: ``C:\ATLAS\config\.env`` si existe.
+#   2) Linux/macOS: ``~/.atlas/config/.env`` si existe (no se impone por defecto).
+#   3) Módulo: ``modules/atlas_radar_kalshi/.env`` (desarrollo local).
+def _resolve_atlas_global_env() -> Optional[Path]:
+    if platform.system() == "Windows":
+        return Path(r"C:\ATLAS\config\.env")
+    candidate = Path.home() / ".atlas" / "config" / ".env"
+    return candidate if candidate.is_file() else None
+
+
+_ATLAS_GLOBAL_ENV: Optional[Path] = _resolve_atlas_global_env()
 _ATLAS_CONFIG_DIR = Path(r"C:\ATLAS\config")
 _LOCAL_ENV = Path(__file__).resolve().parent / ".env"
 # PEM por defecto (mismo criterio que .env.example del módulo)
@@ -74,7 +81,7 @@ def _load_env() -> None:
         _ATLAS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
-    if _ATLAS_GLOBAL_ENV.exists():
+    if _ATLAS_GLOBAL_ENV is not None and _ATLAS_GLOBAL_ENV.exists():
         load_dotenv(_ATLAS_GLOBAL_ENV, override=False)
     if _LOCAL_ENV.exists():
         load_dotenv(_LOCAL_ENV, override=False)

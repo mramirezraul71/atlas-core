@@ -22,6 +22,7 @@ Outputs auxiliares
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -154,20 +155,46 @@ class SignalEnsemble:
         p_markov = self._markov(history)
         p_mom = self._momentum(history)
 
-        w = self.weights
-        p_ens = (w.micro * p_micro + w.markov * p_markov +
-                 w.llm * float(np.clip(p_llm, 0.01, 0.99)) +
-                 w.momentum * p_mom)
+        wn = self.weights
+        deg_thr = float(os.getenv("RADAR_LLM_DEGRADED_CONF_MAX", "0.15"))
+        llm_degraded = float(llm_confidence) <= deg_thr + 1e-12
+        p_clip = float(np.clip(p_llm, 0.01, 0.99))
+
+        if llm_degraded:
+            remain = wn.micro + wn.markov + wn.momentum
+            if remain <= 1e-9:
+                wm = wk = wmo = 1.0 / 3.0
+                wl = 0.0
+            else:
+                wm = wn.micro / remain
+                wk = wn.markov / remain
+                wmo = wn.momentum / remain
+                wl = 0.0
+        else:
+            wm, wk, wl, wmo = wn.micro, wn.markov, wn.llm, wn.momentum
+
+        p_ens = (
+            wm * p_micro + wk * p_markov + wl * p_clip + wmo * p_mom
+        )
         p_ens = float(np.clip(p_ens, 0.01, 0.99))
 
         # confidence:
         # - alta cuando las señales individuales coinciden,
         # - escala con la confianza del LLM y el book depth.
-        signals = np.array([p_micro, p_markov, p_llm, p_mom])
+        # Si el LLM está degradado (p. ej. Ollama caído), no penalizar con su 0.1.
+        if llm_degraded:
+            signals = np.array([p_micro, p_markov, p_mom])
+        else:
+            signals = np.array([p_micro, p_markov, p_llm, p_mom])
         agreement = 1.0 - float(np.std(signals)) * 2.0
         agreement = max(0.0, min(1.0, agreement))
         liquidity = min(1.0, (depth_yes + depth_no) / 2000.0)
-        confidence = 0.4 * agreement + 0.4 * float(llm_confidence) + 0.2 * liquidity
+        if llm_degraded:
+            confidence = 0.5 * agreement + 0.1 + 0.3 * liquidity
+        else:
+            confidence = (
+                0.4 * agreement + 0.4 * float(llm_confidence) + 0.2 * liquidity
+            )
 
         return SignalReadout(
             p_micro=p_micro, p_markov=p_markov, p_llm=p_llm,

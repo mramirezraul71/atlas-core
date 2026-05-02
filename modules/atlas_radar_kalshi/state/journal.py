@@ -9,6 +9,8 @@ Persistimos en JSONL (un evento por línea) bajo ``log_dir``:
 - ``radar_fills.jsonl``: fills individuales con slippage real.
 - ``radar_exits.jsonl``: cierres y resultado PnL.
 - ``radar_risk.jsonl``: cambios de breaker / kill / safe-mode.
+- ``radar_sizing.jsonl``: intentos con tamaño 0 o bloqueo post-gate.
+- ``radar_reconcile.jsonl``: resultados periódicos de ``reconcile()`` (live).
 
 El journal es la fuente de verdad para los reportes y para
 calcular métricas (PnL bruto/neto, hit-rate, profit factor,
