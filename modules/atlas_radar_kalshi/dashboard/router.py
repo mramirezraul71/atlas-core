@@ -712,7 +712,10 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 orch.profile = selected_profile
 
                 if execution_mode == "paper":
-                    orch.risk.update_balance(applied_paper_cents)
+                    orch.risk.update_balance(
+                        applied_paper_cents,
+                        reset_high_water=True,
+                    )
                     state.balance_cents = orch.risk.state.balance_cents
 
             # Si llega perfil, aplica defaults del perfil en runtime.
@@ -1209,6 +1212,9 @@ def build_router(state: Optional[RadarState] = None) -> APIRouter:
                 await ws.send_json({"type": "ping"})
         except WebSocketDisconnect:
             pass
+        except RuntimeError as exc:
+            if 'Cannot call "send" once a close message has been sent' not in str(exc):
+                raise
         finally:
             state.subscribers.discard(ws)
 

@@ -235,8 +235,13 @@ class RiskEngine:
         else:
             self._maybe_clear_safe_mode()
 
-    def update_balance(self, balance_cents: int) -> None:
+    def update_balance(self, balance_cents: int, reset_high_water: bool = False) -> None:
         self.state.balance_cents = balance_cents
+        if reset_high_water:
+            self.state.equity_high_day = balance_cents
+            self.state.equity_high_week = balance_cents
+            self._maybe_clear_safe_mode(force=True)
+            return
         self.state.equity_high_day = max(self.state.equity_high_day, balance_cents)
         self.state.equity_high_week = max(self.state.equity_high_week, balance_cents)
         self._maybe_clear_safe_mode()

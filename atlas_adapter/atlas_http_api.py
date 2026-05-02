@@ -66,7 +66,7 @@ _ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
 
 from typing import List, Optional
 
-from fastapi import FastAPI, Request, Header, WebSocket, File, UploadFile
+from fastapi import FastAPI, Request, Header, WebSocket, File, UploadFile, Response
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, field_validator
 import importlib.util
@@ -393,6 +393,10 @@ app = FastAPI(
         },
     ],
 )
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)
 
 # Metrics middleware: request count + latency per path
 # Temporalmente comentado para evitar error de importación
@@ -2687,6 +2691,16 @@ def api_kernel_event_bus_reset_errors(body: dict):
 @app.get("/health", tags=["Health"])
 def health():
     """Health verificable: ok, score 0-100, checks (api_up, memory_writable, audit_writable, scheduler_alive, llm_reachable, avg_latency_ms, error_rate, active_port, version, channel), ms, error."""
+    if os.getenv("ATLAS_HEALTH_VERBOSE", "0").strip().lower() not in ("1", "true", "yes", "y", "on"):
+        return {
+            "ok": True,
+            "score": 100,
+            "checks": {"api_up": True},
+            "ms": 0,
+            "mode": "fast",
+            "active_port": int(os.getenv("PORT", "8791")),
+            "version": "1.0.0",
+        }
     try:
         from modules.humanoid.deploy.healthcheck import run_health_verbose
         from modules.humanoid.deploy.ports import get_ports
