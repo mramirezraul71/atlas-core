@@ -116,3 +116,13 @@ atlas_code_quant/data/operation/brain_audit_log.jsonl
 # Worktrees / datos locales masivos (no son el monorepo canónico)
 _wt_*/
 appsmith_data/
+
+# Radar PEM dummy / credenciales locales (no versionar)
+secrets/
+
+# Actualizaciones pendientes (runtime / UI)
+data/pending_updates.json
+
+# Stubs locales paralelos al NEXUS/PUSH reales (fuera de atlas_adapter)
+push/
+nexus/main.py

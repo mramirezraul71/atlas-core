@@ -2,11 +2,36 @@
 
 from __future__ import annotations
 
-# Sin RADAR_PROFILE en entorno: paper con reglas cercanas a aggressive pero gating
-# tolerante a libros finos (REST/demo/prod) para que haya flujo de órdenes virtuales.
-RADAR_DEFAULT_PROFILE: str = "paper_aggressive"
+# Sin RADAR_PROFILE en entorno: feed REST público Kalshi (depth bajo / spreads
+# amplios en demo). Alineado con playbook paper_public_rest validado en sandbox.
+RADAR_DEFAULT_PROFILE: str = "paper_public_rest"
 
 RADAR_PROFILE_PRESETS: dict[str, dict[str, dict[str, float | int]]] = {
+    # REST público Kalshi sin credenciales válidas: libros con depth bajo y spreads
+    # amplios en demo. Gating mínimo para flujo paper real. Solo paper.
+    "paper_public_rest": {
+        "gate": {
+            "edge_net_min": 0.020,
+            "confidence_min": 0.30,
+            "spread_max_ticks": 95,
+            "min_depth_yes": 1,
+            "min_depth_no": 1,
+            "max_quote_age_ms": 120000,
+            "max_latency_ms": 5000,
+            "cooldown_seconds": 15,
+        },
+        "risk": {
+            "kelly_fraction": 0.15,
+            "max_position_pct": 0.02,
+            "max_market_exposure_pct": 0.12,
+            "max_total_exposure_pct": 0.45,
+            "daily_dd_limit_pct": 0.10,
+            "weekly_dd_limit_pct": 0.18,
+            "max_consecutive_losses": 8,
+            "max_open_positions": 12,
+            "max_orders_per_minute": 18,
+        },
+    },
     # Calibración en paper (feed REST/Kalshi público, libros 1-cara): gating
     # permisivo; riesgo acotado pero sin cortar por DD pequeño como aggressive.
     "paper_calib": {
