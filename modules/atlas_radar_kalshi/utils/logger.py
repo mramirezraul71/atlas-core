@@ -17,6 +17,17 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 
+
+class _SafeRotatingFileHandler(RotatingFileHandler):
+    """En Windows, ``os.rename`` del rollover falla si otro proceso mantiene el archivo."""
+
+    def doRollover(self) -> None:  # type: ignore[override]
+        try:
+            super().doRollover()
+        except (PermissionError, OSError):
+            pass
+
+
 _FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
 
@@ -49,14 +60,14 @@ def get_logger(component: str, log_dir: Optional[Path] = None,
     if log_dir is not None:
         try:
             log_dir.mkdir(parents=True, exist_ok=True)
-            shared = RotatingFileHandler(
+            shared = _SafeRotatingFileHandler(
                 log_dir / "atlas.log", maxBytes=5_000_000, backupCount=5,
                 encoding="utf-8",
             )
             shared.setFormatter(fmt)
             logger.addHandler(shared)
 
-            dedicated = RotatingFileHandler(
+            dedicated = _SafeRotatingFileHandler(
                 log_dir / "radar_kalshi.log", maxBytes=10_000_000,
                 backupCount=10, encoding="utf-8",
             )
