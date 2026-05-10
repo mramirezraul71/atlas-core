@@ -1,0 +1,16 @@
+stateDiagram-v2
+  [*] --> PAPER_BASELINE
+  PAPER_BASELINE --> PAPER_AGGRESSIVE: operator: bump_aggressiveness
+  PAPER_AGGRESSIVE --> SUPERVISED_LIVE: readiness_ok AND human_unlock_approved AND doppler_live_attested
+  SUPERVISED_LIVE --> GUARDED_LIVE: 30d metrics ok (Sharpe>1.0, MDD<5%, fills>95%)
+  GUARDED_LIVE --> FULL_LIVE: full_live_globally_locked=false (raro; gated)
+  SUPERVISED_LIVE --> PAPER_AGGRESSIVE: operator OR auto: degrade
+  GUARDED_LIVE --> SUPERVISED_LIVE: SLO breach
+  FULL_LIVE --> GUARDED_LIVE: any degrade
+  state kill <<choice>>
+  PAPER_BASELINE --> kill
+  PAPER_AGGRESSIVE --> kill
+  SUPERVISED_LIVE --> kill
+  GUARDED_LIVE --> kill
+  FULL_LIVE --> kill
+  kill --> PAPER_BASELINE: kill_switch_active

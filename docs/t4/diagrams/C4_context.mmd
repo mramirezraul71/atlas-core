@@ -1,0 +1,19 @@
+%% C4 - Context
+flowchart LR
+  user["👤 Operador<br/>(navegador)"]
+  dash["🖥️ t4_dashboard<br/>(Next.js SPA)"]
+  robot["⚙️ t4_robot<br/>(Python asyncio, VPS Chicago)"]
+  atlas["🧠 atlas-core<br/>(brain_core, autonomy_bridge)"]
+  t4["🏛️ Plus500 T4<br/>(Simulator | Live FCM)"]
+  doppler["🔐 Doppler / Infisical"]
+  grafana["📊 Grafana + Prometheus"]
+  telegram["📨 Telegram"]
+
+  user --> dash
+  dash <-->|REST + WS + SSE| robot
+  robot <-->|Redis pub/sub| atlas
+  robot <-->|WSS Protobuf| t4
+  robot -->|metrics| grafana
+  robot -->|alertas| telegram
+  robot -->|secrets| doppler
+  atlas -->|memorias / journal| robot
